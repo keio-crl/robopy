@@ -1,0 +1,55 @@
+[project]
+name = "dynamixelpy"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "tetsugo", email = "tetsugou2002@gmail.com" }
+]
+requires-python = ">=3.12"
+
+dependencies = [
+    "dynamixel-sdk>=3.7.31",
+    "opencv-python>=4.12.0.88",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.17.1",
+    "pytest>=8.4.1",
+    "ruff>=0.12.11",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.12,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.uv_build]
+package = true
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true
+
+[tool.mypy]
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = [
+    "src",
+    "tests",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = ["py312"]
+
+[tool.ruff.lint]
+preview = true
+select = ["ALL"]
+ignore = ["CPY"]
+fixable = ["ALL"]
+unfixable = []
+exclude = [".git", ".ruff_cache", ".venv",]
+
