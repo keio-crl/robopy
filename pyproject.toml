@@ -3,22 +3,19 @@ name = "dynamixelpy"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-authors = [
-    { name = "tetsugo", email = "tetsugou2002@gmail.com" }
-]
+authors = [{ name = "tetsugo", email = "tetsugou2002@gmail.com" }]
 requires-python = ">=3.12"
 
 dependencies = [
     "dynamixel-sdk>=3.7.31",
+    "numpy>=2.2.6",
     "opencv-python>=4.12.0.88",
+    "rich>=14.1.0",
 ]
 
 [dependency-groups]
-dev = [
-    "mypy>=1.17.1",
-    "pytest>=8.4.1",
-    "ruff>=0.12.11",
-]
+dev = ["mypy>=1.17.1", "pytest>=8.4.1", "ruff>=0.12.11"]
+linux = ["pyrealsense2>=2.54.2"]                         # Linux専用依存
 
 [build-system]
 requires = ["uv_build>=0.8.12,<0.9.0"]
@@ -31,25 +28,30 @@ package = true
 python_version = "3.12"
 ignore_missing_imports = true
 check_untyped_defs = true
-
-[tool.mypy]
 files = ["src", "tests"]
 
+
 [tool.pytest.ini_options]
-testpaths = [
-    "src",
-    "tests",
-]
+testpaths = ["src", "tests"]
 
 [tool.ruff]
-line-length = 88
-target-version = ["py312"]
+line-length = 100
+include = ["pyproject.toml", "src/**/*.py", "scripts/**/*.py"]
 
 [tool.ruff.lint]
 preview = true
-select = ["ALL"]
-ignore = ["CPY"]
+select = ["E", "F", "I"]
+ignore = [
+    "CPY",
+    "D100",
+    "D107",
+    "T201",
+    "D400",
+    "D415",
+    "INP001",
+    "ERA001",
+    "RET504",
+]
 fixable = ["ALL"]
 unfixable = []
-exclude = [".git", ".ruff_cache", ".venv",]
-
+exclude = [".git", ".ruff_cache", ".venv"]

@@ -1,0 +1,22 @@
+{
+	"[python]": {
+		"diffEditor.ignoreTrimWhitespace": true,
+		"editor.codeActionsOnSave": {
+			"source.fixAll": "explicit", // 自動修正
+			"source.organizeImports": "explicit" // import文のソート
+		},
+		"editor.defaultFormatter": "charliermarsh.ruff" // フォーマッターをRuffに設定
+	},
+	"ruff.lint.ignore": [
+		"T201", // print() の使用を許可
+		"D400",
+		"D415", // docstringの末尾がピリオド.の強制を無効化
+		"INP001", // __init__.py の設定不要
+		"ERA001", // コメントアウトされたコードをOK
+		"RET504", // 直接returnしなくてもOK
+		"TRY003",
+		"TC002"
+	], // Linter・Formatter無効化設定
+	"editor.tabSize": 4,
+	"ruff.lineLength": 100
+}
