@@ -225,4 +225,3 @@ class WebCamera(Camera):
         """__del__ method to ensure proper cleanup."""
         self.disconnect()
         cv2.destroyAllWindows()
-        cv2.destroyAllWindows()
