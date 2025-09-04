@@ -33,8 +33,7 @@ class DynamixelCommError(ConnectionError):
 class DynamixelMotor:
     """Class that holds the definition and state of an individual motor."""
 
-    def __init__(self, name: str, motor_id: int, model_name: str):
-        self.name = name
+    def __init__(self, motor_id: int, model_name: str):
         self.id = motor_id
         self.model_name = model_name
 

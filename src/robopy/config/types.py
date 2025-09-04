@@ -8,3 +8,11 @@ class OSType(Enum):
     LINUX = "Linux"
     MAC = "Darwin"
     OTHER = auto()
+
+
+class SensorType(Enum):
+    """Enum for different sensor types."""
+
+    CAMERA = "camera"
+    TACTILE = "tactile"
+    AUDIO = "audio"

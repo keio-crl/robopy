@@ -35,7 +35,7 @@ class ControlItem:
         dtype: The data type of the item.
         access: Access mode ("R" for read, "R/W" for read/write).
         calibration_required: Flag indicating if this item requires calibration
-                              (e.g., converting steps to degrees).
+        (e.g., converting steps to degrees).
     """
 
     address: int
