@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal
+from typing import Any, Dict, Literal, TypedDict
 
 
 class Dtype(Enum):
@@ -62,14 +62,19 @@ class XControlTable(Enum):
 
 
 # Definitions for different Dynamixel models
-MODEL_DEFINITIONS = {
+class ModelDefinition(TypedDict):
+    model_number: int
+    control_table: XControlTable | Any  # Replace Any with other control table enums as needed
+
+
+MODEL_DEFINITIONS: Dict[str, ModelDefinition] = {
     "xm430-w350": {"model_number": 1020, "control_table": XControlTable},
     "xl430-w250": {"model_number": 1060, "control_table": XControlTable},
 }
 
 
 # utility functions
-def get_model_definition(model_name: str) -> dict:
+def get_model_definition(model_name: str) -> ModelDefinition:
     """Return the model definition for a given model name.
 
     Raises:
