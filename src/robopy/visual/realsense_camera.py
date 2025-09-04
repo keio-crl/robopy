@@ -1,4 +1,4 @@
-from dynamixelpy.config.visual_config.camera_config import RealsenseCameraConfig
+from robopy.config.visual_config.camera_config import RealsenseCameraConfig
 
 from .camera import Camera
 
