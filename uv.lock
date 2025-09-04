@@ -23,43 +23,6 @@ wheels = [
 ]
 
 [[package]]
-name = "dynamixelpy"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "dynamixel-sdk" },
-    { name = "numpy" },
-    { name = "opencv-python" },
-    { name = "rich" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "ruff" },
-]
-linux = [
-    { name = "pyrealsense2" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "dynamixel-sdk", specifier = ">=3.7.31" },
-    { name = "numpy", specifier = ">=2.2.6" },
-    { name = "opencv-python", specifier = ">=4.12.0.88" },
-    { name = "rich", specifier = ">=14.1.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "mypy", specifier = ">=1.17.1" },
-    { name = "pytest", specifier = ">=8.4.1" },
-    { name = "ruff", specifier = ">=0.12.11" },
-]
-linux = [{ name = "pyrealsense2", specifier = ">=2.54.2" }]
-
-[[package]]
 name = "iniconfig"
 version = "2.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -269,6 +232,43 @@ sdist = { url = "https://files.pythonhosted.org/packages/fe/75/af448d8e52bf1d8fa
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e3/30/3c4d035596d3cf444529e0b2953ad0466f6049528a879d27534700580395/rich-14.1.0-py3-none-any.whl", hash = "sha256:536f5f1785986d6dbdea3c75205c473f970777b4a0d6c6dd1b696aa05a3fa04f", size = 243368, upload-time = "2025-07-25T07:32:56.73Z" },
 ]
+
+[[package]]
+name = "robopy"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "dynamixel-sdk" },
+    { name = "numpy" },
+    { name = "opencv-python" },
+    { name = "rich" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+linux = [
+    { name = "pyrealsense2" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "dynamixel-sdk", specifier = ">=3.7.31" },
+    { name = "numpy", specifier = ">=2.2.6" },
+    { name = "opencv-python", specifier = ">=4.12.0.88" },
+    { name = "rich", specifier = ">=14.1.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.17.1" },
+    { name = "pytest", specifier = ">=8.4.1" },
+    { name = "ruff", specifier = ">=0.12.11" },
+]
+linux = [{ name = "pyrealsense2", specifier = ">=2.54.2" }]
 
 [[package]]
 name = "ruff"

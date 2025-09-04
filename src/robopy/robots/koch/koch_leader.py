@@ -1,18 +1,24 @@
+import logging
+
+from robopy.config.robot_config.koch_config import KochConfig
 from robopy.motor.dynamixel_bus import DynamixelBus, DynamixelMotor
 from robopy.robots.common.arm import Arm
 
+logger = logging.getLogger(__name__)
+
 
 class KochLeader(Arm):
-    """Class representing the Koch Leader robotic arm"""
+    """Class representing the Koch Leader robotic arm with config and extended error handling."""
 
-    def __init__(self, port: str, motor_ids: list[int]):
-        self._port = port
+    def __init__(self, config: KochConfig, motor_ids: list[int]):
+        self.config = config
+        self._port = config.leader_port
 
-        # Ensure there are exactly 6 motor IDs for the Koch Leader arm
         if len(motor_ids) != 6:
+            logger.error("Koch Leader requires exactly 6 motor IDs.")
             raise ValueError("Koch Leader requires exactly 6 motor IDs.")
         self._motors = DynamixelBus(
-            port=port,
+            port=self._port,
             motors={
                 "shoulder_pan": DynamixelMotor(motor_ids[0], "xl330-m077"),
                 "shoulder_lift": DynamixelMotor(motor_ids[1], "xl330-m077"),
@@ -37,27 +43,34 @@ class KochLeader(Arm):
         return self._is_connected
 
     def connect(self) -> None:
-        # Implementation to connect to the Koch Leader arm
         if self._is_connected:
-            print("Already connected to the Koch Leader arm.")
+            logger.info("Already connected to the Koch Leader arm.")
             return
         try:
             self._motors.open()
             self._is_connected = True
-            print("Connected to the Koch Leader arm.")
+            logger.info("Connected to the Koch Leader arm.")
         except Exception as e:
-            err = f"Failed to connect to the Koch Leader arm: {e}"
-            raise ConnectionError(err)
+            logger.error(f"Failed to connect to the Koch Leader arm: {e}")
+            raise ConnectionError(f"Failed to connect to the Koch Leader arm: {e}")
 
     def disconnect(self) -> None:
         # Implementation to disconnect from the Koch Leader arm
         if not self._is_connected:
-            print("Not connected to the Koch Leader arm.")
+            logger.info("Not connected to the Koch Leader arm.")
             return
         try:
             self._motors.close()
             self._is_connected = False
-            print("Disconnected from the Koch Leader arm.")
+            logger.info("Disconnected from the Koch Leader arm.")
         except Exception as e:
-            err = f"Failed to disconnect from the Koch Leader arm: {e}"
-            raise ConnectionError(err)
+            logger.error(f"Failed to disconnect from the Koch Leader arm: {e}")
+            raise ConnectionError(f"Failed to disconnect from the Koch Leader arm: {e}")
+
+    @property
+    def motor_names(self) -> list[str]:
+        return list(self._motors.motors.keys())
+
+    @property
+    def motor_models(self) -> list[str]:
+        return [motor.model_name for motor in self._motors.motors.values()]

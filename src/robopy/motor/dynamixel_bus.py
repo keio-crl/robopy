@@ -6,13 +6,16 @@ individual motor information. This design promotes modularity and easy
 integration into larger robotic systems.
 """
 
+import logging
 from enum import Enum
 from typing import Any, Dict, List, Tuple
 
 import dynamixel_sdk as dxl
 import numpy as np
 
-from .control_table import ControlItem, cast_value, get_model_definition
+from .control_table import ControlItem, XControlTable, cast_value, get_model_definition
+
+logger = logging.getLogger(__name__)
 
 # Constants from the original script
 BAUDRATE = 1_000_000
@@ -62,12 +65,12 @@ class DynamixelBus:
             raise ConnectionError(f"Failed to open port {self.port_handler.port_name}.")
         if not self.port_handler.setBaudRate(baudrate):
             raise ConnectionError(f"Failed to set baudrate to {baudrate}.")
-        print(f"✅ Opened port {self.port_handler.port_name} (Baudrate: {baudrate})")
+        logger.info(f"Opened port {self.port_handler.port_name} (Baudrate: {baudrate})")
 
     def close(self) -> None:
         """Closes the communication port."""
         self.port_handler.closePort()
-        print(f"🛑 Closed port {self.port_handler.port_name}.")
+        logger.info(f"Closed port {self.port_handler.port_name}.")
 
     def __enter__(self):
         self.open()
@@ -79,7 +82,7 @@ class DynamixelBus:
     def set_calibration(self, calibration_data: Dict[str, Tuple[int, bool]]):
         """Sets the calibration data for the motors."""
         self.calibration = calibration_data
-        print("🔧 Calibration data set.")
+        logger.info("Calibration data set.")
 
     def _split_into_byte_chunks(self, value: int, length: int) -> List[int]:
         """Converts an integer value into a list of bytes for transmission."""
@@ -123,12 +126,12 @@ class DynamixelBus:
             motor = self.motors[name]
             # Ensure the motor uses the same control table
             if motor.control_table != item.__class__:
-                print(f"⚠️ Warning: Skipping {name} due to mismatched control table.")
+                logger.warning(f"Skipping {name} due to mismatched control table.")
                 continue
 
             data = self._split_into_byte_chunks(int(processed_values[i]), control_item.num_bytes)
             if not group_sync_write.addParam(motor.id, data):
-                print(f"❌ Failed to add parameter for {name} (ID-{motor.id}).")
+                logger.error(f"Failed to add parameter for {name} (ID-{motor.id}).")
 
         # Transmit the packet with retries
         comm_result = dxl.COMM_NOT_AVAILABLE  # initialize before loop
@@ -235,3 +238,79 @@ class DynamixelBus:
                 int_values[i] *= -1
 
         return int_values
+
+    def read(self, item: Enum, motor_name: str) -> Any:
+        """Reads a value from a specific control table item for a single motor.
+
+        Args:
+            item: The control table item enum.
+            motor_name: Name of the motor to read from.
+
+        Returns:
+            The value read from the motor.
+        """
+        result = self.sync_read(item, [motor_name])
+        return result.get(motor_name)
+
+    def write(self, item: Enum, motor_name: str, value: int | float) -> None:
+        """Writes a value to a specific control table item for a single motor.
+
+        Args:
+            item: The control table item enum.
+            motor_name: Name of the motor to write to.
+            value: Value to write.
+        """
+        self.sync_write(item, {motor_name: value})
+
+    def torque_disabled(self):
+        """Context manager that temporarily disables torque for all motors.
+
+        Returns:
+            TorqueDisabledContext: Context manager for torque control.
+        """
+        return TorqueDisabledContext(self)
+
+    def set_operating_mode(self, motor_name: str, mode: int) -> None:
+        """Sets the operating mode for a specific motor.
+
+        Args:
+            motor_name: Name of the motor.
+            mode: Operating mode value.
+        """
+        if motor_name not in self.motors:
+            raise ValueError(f"Motor '{motor_name}' not found in bus.")
+
+        with self.torque_disabled():
+            logger.info(f"Setting operating mode for {motor_name} to {mode}")
+            self.write(XControlTable.OPERATING_MODE, motor_name, mode)
+
+
+class TorqueDisabledContext:
+    """Context manager for temporarily disabling motor torque."""
+
+    def __init__(self, bus: DynamixelBus):
+        self.bus = bus
+        self.previous_states: Dict[str, Any] = {}
+
+    def __enter__(self):
+        """Disable torque for all motors and save previous states."""
+        logger.debug("Disabling torque for all motors")
+
+        # Read current torque states
+        motor_names = list(self.bus.motors.keys())
+        self.previous_states = self.bus.sync_read(XControlTable.TORQUE_ENABLE, motor_names)
+
+        # Disable torque for all motors
+        torque_off_values: Dict[str, int | float] = {name: 0 for name in motor_names}
+        self.bus.sync_write(XControlTable.TORQUE_ENABLE, torque_off_values)
+
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Restore previous torque states."""
+        logger.debug("Restoring previous torque states")
+
+        # Restore previous torque states
+        self.bus.sync_write(XControlTable.TORQUE_ENABLE, self.previous_states)
+        self.bus.sync_write(XControlTable.TORQUE_ENABLE, self.previous_states)
+        self.bus.sync_write(XControlTable.TORQUE_ENABLE, self.previous_states)

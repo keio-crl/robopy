@@ -28,3 +28,15 @@ class Arm(ABC):
     def connect(self) -> None:
         """Abstract method to connect the arm"""
         pass
+
+    @property
+    @abstractmethod
+    def motor_names(self) -> list[str]:
+        """Abstract property to get the names of the motors"""
+        pass
+
+    @property
+    @abstractmethod
+    def motor_models(self) -> list[str]:
+        """Abstract property to get the models of the motors"""
+        pass

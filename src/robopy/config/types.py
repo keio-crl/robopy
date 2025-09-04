@@ -1,4 +1,8 @@
 from enum import Enum, auto
+from typing import List, TypedDict
+
+from robopy.visual.realsense_camera import RealsenseCamera
+from robopy.visual.web_camera import WebCamera
 
 
 class OSType(Enum):
@@ -10,9 +14,8 @@ class OSType(Enum):
     OTHER = auto()
 
 
-class SensorType(Enum):
+class Sensors(TypedDict):
     """Enum for different sensor types."""
 
-    CAMERA = "camera"
-    TACTILE = "tactile"
-    AUDIO = "audio"
+    CAMERA: List[WebCamera | RealsenseCamera] | None
+    TACTILE: str | None  # TODO implement TactileSensor class
