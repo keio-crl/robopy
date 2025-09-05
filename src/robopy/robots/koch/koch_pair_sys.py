@@ -28,6 +28,16 @@ class KochPairSys(Robot):
         self.calibration_path = cfg.calibration_path
         self._is_connected = False
 
+        # Define explicit motor mapping between leader and follower
+        self._motor_mapping = {
+            "shoulder_pan": "shoulder_pan",
+            "shoulder_lift": "shoulder_lift",
+            "elbow_flex": "elbow_flex",
+            "wrist_flex": "wrist_flex",
+            "wrist_roll": "wrist_roll",
+            "gripper": "gripper",
+        }
+
     def connect(self) -> None:
         """Connects to all devices and handles calibration."""
         if self._is_connected:
@@ -41,16 +51,26 @@ class KochPairSys(Robot):
             self._follower.connect()
 
             # --- Calibration Logic ---
-            if os.path.exists(self.calibration_path):
-                logger.info(f"Loading calibration from '{self.calibration_path}'...")
-                with open(self.calibration_path, "rb") as f:
-                    calibration = pickle.load(f)
-            else:
-                logger.info("Calibration file not found. Starting new calibration procedure.")
-                calibration = self.run_calibration()
-                logger.info(f"Saving calibration to '{self.calibration_path}'...")
-                with open(self.calibration_path, "wb") as f:
-                    pickle.dump(calibration, f)
+            try:
+                if os.path.exists(self.calibration_path):
+                    logger.info(f"Loading calibration from '{self.calibration_path}'...")
+                    with open(self.calibration_path, "rb") as f:
+                        calibration = pickle.load(f)
+                else:
+                    logger.info("Calibration file not found. Starting new calibration procedure.")
+                    calibration = self.run_calibration()
+
+                    # Create directory if it doesn't exist
+                    os.makedirs(os.path.dirname(self.calibration_path), exist_ok=True)
+                    logger.info(f"Saving calibration to '{self.calibration_path}'...")
+                    with open(self.calibration_path, "wb") as f:
+                        pickle.dump(calibration, f)
+            except (OSError, IOError, PermissionError) as e:
+                logger.error(f"File operation error: {e}")
+                raise ConnectionError(f"Calibration file error: {e}")
+            except (pickle.PickleError, EOFError) as e:
+                logger.error(f"Calibration data corrupted: {e}")
+                raise ConnectionError(f"Calibration data error: {e}")
 
             # Apply calibration to each arm
             self._leader.motors.set_calibration(calibration["leader"])
@@ -61,10 +81,18 @@ class KochPairSys(Robot):
             self._is_connected = True
             logger.info("Connected to KochPairSys successfully")
 
-        except Exception as e:
-            logger.error("Failed to connect KochPairSys. Disconnecting all devices.")
+        except ConnectionError:
+            # Re-raise ConnectionError as is
             self.disconnect()
-            raise ConnectionError(f"Connection failed due to: {e}")
+            raise
+        except (OSError, TimeoutError, RuntimeError) as e:
+            logger.error(f"Hardware connection error: {e}")
+            self.disconnect()
+            raise ConnectionError(f"Connection failed due to hardware error: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error during connection: {e}")
+            self.disconnect()
+            raise ConnectionError(f"Connection failed due to unexpected error: {e}")
 
     def run_calibration(self) -> Dict[str, Dict[str, Tuple[int, bool]]]:
         """Orchestrates the calibration process for both arms."""
@@ -92,6 +120,8 @@ class KochPairSys(Robot):
 
     def get_observation(self):
         """Gets the current observation from both arms and sensors."""
+        if not self._is_connected:
+            raise ConnectionError("KochPairSys is not connected. Call connect() first.")
 
         leader_motor_names = list(self._leader.motors.motors.keys())
         follower_motor_names = list(self._follower.motors.motors.keys())
@@ -111,6 +141,8 @@ class KochPairSys(Robot):
     def send_action(self, action: dict) -> None:
         """Sends action (goal positions) to both arms.
         action: {'leader': {...}, 'follower': {...}}"""
+        if not self._is_connected:
+            raise ConnectionError("KochPairSys is not connected. Call connect() first.")
 
         leader_action = action.get("leader", {})
         follower_action = action.get("follower", {})
@@ -135,18 +167,22 @@ class KochPairSys(Robot):
                     XControlTable.PRESENT_POSITION, leader_motor_names
                 )
 
-                # Send leader positions as goal positions to follower
-                follower_motor_names = list(self._follower.motors.motors.keys())
-
-                # Map leader positions to follower (assuming same joint names)
+                # Map leader positions to follower using explicit mapping
                 follower_goals = {}
-                for i, (leader_motor, leader_pos) in enumerate(leader_positions.items()):
-                    if i < len(follower_motor_names):
-                        follower_motor = follower_motor_names[i]
-                        follower_goals[follower_motor] = leader_pos
+                for leader_motor, leader_pos in leader_positions.items():
+                    if leader_motor in self._motor_mapping:
+                        follower_motor = self._motor_mapping[leader_motor]
+                        # Verify that follower motor exists
+                        if follower_motor in self._follower.motors.motors:
+                            follower_goals[follower_motor] = leader_pos
+                        else:
+                            logger.warning(f"Follower motor '{follower_motor}' not found")
+                    else:
+                        logger.warning(f"No mapping found for leader motor '{leader_motor}'")
 
                 # Send action to follower
-                self._follower.motors.sync_write(XControlTable.GOAL_POSITION, follower_goals)
+                if follower_goals:
+                    self._follower.motors.sync_write(XControlTable.GOAL_POSITION, follower_goals)
 
                 time.sleep(0.01)  # 100Hz update rate
 
