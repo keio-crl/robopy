@@ -11,7 +11,7 @@ except ImportError:
 class RealsenseCamera(Camera):
     """Implementation class for Intel RealSense cameras using pyrealsense2"""
 
-    def __init__(self, config: RealsenseCameraConfig | None) -> None:
+    def __init__(self, index: int, name: str, config: RealsenseCameraConfig | None) -> None:
         super().__init__()
         if rs is None:
             err = (

@@ -3,6 +3,7 @@
 import logging
 import os
 import pickle
+import time
 from typing import Dict, Tuple
 
 from robopy.config.robot_config.koch_config import KochConfig
@@ -117,3 +118,66 @@ class KochPairSys(Robot):
         # 直接Enumを使用
         self._leader.motors.sync_write(XControlTable.GOAL_POSITION, leader_action)
         self._follower.motors.sync_write(XControlTable.GOAL_POSITION, follower_action)
+
+    def teleoperate(self) -> None:
+        """Teleoperation: Leader controls the Follower arm movements."""
+        if not self._is_connected:
+            raise ConnectionError("KochPairSys is not connected. Call connect() first.")
+
+        logger.info("Starting teleoperation. Leader will control follower.")
+        logger.info("Press Ctrl+C to stop teleoperation.")
+
+        try:
+            while True:
+                # Get current positions from leader arm
+                leader_motor_names = list(self._leader.motors.motors.keys())
+                leader_positions = self._leader.motors.sync_read(
+                    XControlTable.PRESENT_POSITION, leader_motor_names
+                )
+
+                # Send leader positions as goal positions to follower
+                follower_motor_names = list(self._follower.motors.motors.keys())
+
+                # Map leader positions to follower (assuming same joint names)
+                follower_goals = {}
+                for i, (leader_motor, leader_pos) in enumerate(leader_positions.items()):
+                    if i < len(follower_motor_names):
+                        follower_motor = follower_motor_names[i]
+                        follower_goals[follower_motor] = leader_pos
+
+                # Send action to follower
+                self._follower.motors.sync_write(XControlTable.GOAL_POSITION, follower_goals)
+
+                time.sleep(0.01)  # 100Hz update rate
+
+        except KeyboardInterrupt:
+            logger.info("Teleoperation stopped by user.")
+        except Exception as e:
+            logger.error(f"Error during teleoperation: {e}")
+            raise
+
+    def get_leader_action(self) -> dict:
+        """Get the current action (positions) from the leader arm."""
+        if not self._is_connected:
+            raise ConnectionError("KochPairSys is not connected. Call connect() first.")
+
+        leader_motor_names = list(self._leader.motors.motors.keys())
+        leader_positions = self._leader.motors.sync_read(
+            XControlTable.PRESENT_POSITION, leader_motor_names
+        )
+        return leader_positions
+
+    def send_follower_action(self, action: dict) -> None:
+        """Send action to the follower arm only."""
+        if not self._is_connected:
+            raise ConnectionError("KochPairSys is not connected. Call connect() first.")
+
+        self._follower.motors.sync_write(XControlTable.GOAL_POSITION, action)
+
+    @property
+    def leader(self) -> KochLeader:
+        return self._leader
+
+    @property
+    def follower(self) -> KochFollower:
+        return self._follower

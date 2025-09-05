@@ -1,5 +1,6 @@
+from dataclasses import dataclass
 from enum import Enum, auto
-from typing import List, TypedDict
+from typing import List
 
 from robopy.visual.realsense_camera import RealsenseCamera
 from robopy.visual.web_camera import WebCamera
@@ -14,8 +15,9 @@ class OSType(Enum):
     OTHER = auto()
 
 
-class Sensors(TypedDict):
+@dataclass
+class Sensors:
     """Enum for different sensor types."""
 
     CAMERA: List[WebCamera | RealsenseCamera] | None
-    TACTILE: str | None  # TODO implement TactileSensor class
+    TACTILE: str | None = None  # TODO implement TactileSensor class
