@@ -1,9 +1,14 @@
 import logging
 import pickle
 import time
-from typing import Any
 
-from robopy.config.robot_config.rakuda_config import RAKUDA_MOTOR_MAPPING, RakudaConfig
+import numpy as np
+
+from robopy.config.robot_config.rakuda_config import (
+    RAKUDA_MOTOR_MAPPING,
+    RakudaArmObs,
+    RakudaConfig,
+)
 from robopy.motor.control_table import XControlTable
 from robopy.motor.dynamixel_bus import DynamixelBus
 
@@ -50,8 +55,24 @@ class RakudaPairSys(Robot):
         self.leader.disconnect()
         self.follower.disconnect()
 
-    def get_observation(self) -> Any:
-        return super().get_observation()
+    def get_observation(self) -> RakudaArmObs:
+        """Get the current observation from both arms."""
+        if not self.is_connected:
+            raise ConnectionError("RakudaPairSys is not connected. Call connect() first.")
+
+        leader_motor_names = list(self._leader.motors.motors.keys())
+        follower_motor_names = list(self._follower.motors.motors.keys())
+        leader_obs = self._leader.motors.sync_read(
+            XControlTable.PRESENT_POSITION, leader_motor_names
+        )
+
+        follower_obs = self._follower.motors.sync_read(
+            XControlTable.PRESENT_POSITION, follower_motor_names
+        )
+
+        leader_obs = np.array(list(leader_obs.values()), dtype=np.float32)
+        follower_obs = np.array(list(follower_obs.values()), dtype=np.float32)
+        return RakudaArmObs(leader=leader_obs, follower=follower_obs)
 
     def teleoperate(self, max_iterations: int | None = None) -> None:
         """Leader controls follower. If max_iterations is set, run that many loops then return.
@@ -97,6 +118,43 @@ class RakudaPairSys(Robot):
         except Exception:
             logger.exception("Error during teleoperation.")
             raise
+
+    def teleoperate_step(self, if_record: bool = True) -> RakudaArmObs | None:
+        """teleoperate_step performs one iteration of teleoperation.
+
+        Args:
+            if_record (bool, optional): _description_. Defaults to True.
+
+        Raises:
+            ConnectionError: if not connected.
+
+        Returns:
+            RakudaArmObs | None: Current observation if if_record is True, else None.
+                            - leader: np.ndarray of leader arm positions
+                            - follower: np.ndarray of follower arm positions
+        """
+        if not self.is_connected:
+            raise ConnectionError("RakudaPairSys is not connected. Call connect() first.")
+
+        # Get current positions from leader arm
+        leader_positions = self.get_leader_action()
+
+        # Map leader positions to follower positions
+        follower_positions = {}
+        for leader_name, position in leader_positions.items():
+            follower_name = self._motor_mapping.get(leader_name)
+            if follower_name:
+                follower_positions[follower_name] = position
+
+        # Send positions to follower arm
+        try:
+            self.send_follower_action(follower_positions)
+        except Exception:
+            logger.exception("Failed to send follower action; continuing.")
+
+        # Return current observation
+        if if_record:
+            return self.get_observation()
 
     def get_leader_action(self) -> dict:
         """Get the current action (positions) from the leader arm."""

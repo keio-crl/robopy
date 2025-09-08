@@ -1,5 +1,7 @@
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, TypedDict
+
+from numpy.typing import NDArray
 
 
 @dataclass
@@ -8,6 +10,11 @@ class RakudaConfig:
 
     leader_port: str
     follower_port: str
+
+
+class RakudaArmObs(TypedDict):
+    leader: NDArray
+    follower: NDArray
 
 
 RAKUDA_MOTOR_MAPPING: Dict[str, str] = {

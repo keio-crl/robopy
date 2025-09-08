@@ -6,6 +6,9 @@ import pickle
 import time
 from typing import Dict, Tuple
 
+import numpy as np
+from numpy.typing import NDArray
+
 from robopy.config.robot_config.koch_config import KOCH_MOTOR_MAPPING, KochConfig
 from robopy.motor.control_table import XControlTable
 from robopy.robots.koch.calibration import run_arm_calibration
@@ -113,7 +116,7 @@ class KochPairSys(Robot):
             self._is_connected = False
             logger.info("Disconnected from KochPairSys")
 
-    def get_observation(self):
+    def get_observation(self) -> Dict[str, NDArray[np.float32]]:
         """Gets the current observation from both arms and sensors."""
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
@@ -128,6 +131,12 @@ class KochPairSys(Robot):
         follower_obs = self._follower.motors.sync_read(
             XControlTable.PRESENT_POSITION, follower_motor_names
         )
+
+        leader_obs = np.array(list(leader_obs.values()), dtype=np.float32)
+        follower_obs = np.array(list(follower_obs.values()), dtype=np.float32)
+        logger.debug(f"Leader positions: {leader_obs}")
+        logger.debug(f"Follower positions: {follower_obs}")
+
         return {
             "leader": leader_obs,
             "follower": follower_obs,
@@ -174,6 +183,37 @@ class KochPairSys(Robot):
             logger.error(f"Error during teleoperation: {e}")
             raise
 
+    def teleope_step(self, if_record: bool = True) -> None | Dict[str, NDArray[np.float32]]:
+        """Teleoperation step: Leader controls the Follower arm movements."""
+        if not self._is_connected:
+            raise ConnectionError("KochPairSys is not connected. Call connect() first.")
+
+        # Get current positions from leader arm
+        leader_motor_names = list(self._leader.motors.motors.keys())
+        leader_positions = self._leader.motors.sync_read(
+            XControlTable.PRESENT_POSITION, leader_motor_names
+        )
+
+        # Map leader positions to follower using explicit mapping
+        follower_goals = {}
+        for leader_motor, leader_pos in leader_positions.items():
+            if leader_motor in self._motor_mapping:
+                follower_motor = self._motor_mapping[leader_motor]
+                # Verify that follower motor exists
+                if follower_motor in self._follower.motors.motors:
+                    follower_goals[follower_motor] = leader_pos
+                else:
+                    logger.warning(f"Follower motor '{follower_motor}' not found")
+            else:
+                logger.warning(f"No mapping found for leader motor '{leader_motor}'")
+
+        # Send action to follower
+        if follower_goals:
+            self._follower.motors.sync_write(XControlTable.GOAL_POSITION, follower_goals)
+
+        if if_record:
+            return self.get_observation()
+
     def get_leader_action(self) -> dict:
         """Get the current action (positions) from the leader arm."""
         if not self._is_connected:
@@ -198,4 +238,8 @@ class KochPairSys(Robot):
 
     @property
     def follower(self) -> KochFollower:
+        return self._follower
+        return self._follower
+        return self._follower
+        return self._follower
         return self._follower
