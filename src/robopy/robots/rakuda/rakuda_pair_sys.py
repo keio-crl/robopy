@@ -1,8 +1,10 @@
 import logging
 import pickle
+import time
 from typing import Any
 
 from robopy.config.robot_config.rakuda_config import RakudaConfig
+from robopy.motor.control_table import XControlTable
 from robopy.motor.dynamixel_bus import DynamixelBus
 
 from ..common.robot import Robot
@@ -20,6 +22,25 @@ class RakudaPairSys(Robot):
         self._leader = RakudaLeader(cfg)
         self._follower = RakudaFollower(cfg)
         self._is_connected = False
+        self._motor_mapping = {
+            "torso_yaw": "torso_yaw",
+            "head_yaw": "head_yaw",
+            "head_pitch": "head_pitch",
+            "r_arm_sh_pitch1": "r_arm_sh_pitch1",
+            "r_arm_sh_roll": "r_arm_sh_roll",
+            "r_arm_sh_pitch2": "r_arm_sh_pitch2",
+            "r_arm_el_yaw": "r_arm_el_yaw",
+            "r_arm_wr_roll": "r_arm_wr_roll",
+            "r_arm_wr_yaw": "r_arm_wr_yaw",
+            "r_arm_grip": "r_arm_grip",
+            "l_arm_sh_pitch1": "l_arm_sh_pitch1",
+            "l_arm_sh_roll": "l_arm_sh_roll",
+            "l_arm_sh_pitch2": "l_arm_sh_pitch2",
+            "l_arm_el_yaw": "l_arm_el_yaw",
+            "l_arm_wr_roll": "l_arm_wr_roll",
+            "l_arm_wr_yaw": "l_arm_wr_yaw",
+            "l_arm_grip": "l_arm_grip",
+        }
 
     def connect(self) -> None:
         """Connect to both leader and follower arms."""
@@ -48,6 +69,48 @@ class RakudaPairSys(Robot):
 
     def get_observation(self) -> Any:
         return super().get_observation()
+
+    def teleoperate(self) -> None:
+        if not self.is_connected:
+            raise ConnectionError("RakudaPairSys is not connected. Call connect() first.")
+
+        try:
+            while True:
+                # Get current positions from leader arm
+                leader_positions = self.get_leader_action()
+                # Map leader positions to follower positions
+                follower_positions = {}
+                for leader_name, position in leader_positions.items():
+                    follower_name = self._motor_mapping.get(leader_name)
+                    if follower_name:
+                        follower_positions[follower_name] = position
+                # Send positions to follower arm
+                self.send_follower_action(follower_positions)
+                time.sleep(0.1)  # Adjust the sleep time as needed for responsiveness
+
+        except KeyboardInterrupt:
+            logger.info("Teleoperation stopped by user.")
+        except Exception as e:
+            logger.error(f"Error during teleoperation: {e}")
+            raise
+
+    def get_leader_action(self) -> dict:
+        """Get the current action (positions) from the leader arm."""
+        if not self._is_connected:
+            raise ConnectionError("KochPairSys is not connected. Call connect() first.")
+
+        leader_motor_names = list(self._leader.motors.motors.keys())
+        leader_positions = self._leader.motors.sync_read(
+            XControlTable.PRESENT_POSITION, leader_motor_names
+        )
+        return leader_positions
+
+    def send_follower_action(self, action: dict) -> None:
+        """Send action to the follower arm only."""
+        if not self._is_connected:
+            raise ConnectionError("KochPairSys is not connected. Call connect() first.")
+
+        self._follower.motors.sync_write(XControlTable.GOAL_POSITION, action)
 
     @property
     def is_connected(self) -> bool:
