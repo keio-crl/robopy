@@ -20,12 +20,13 @@ class KochFollower(Arm):
         self._motors = DynamixelBus(
             port=self._port,
             motors={
-                "shoulder_pan": DynamixelMotor(motor_ids[0], "xl330-m077"),
-                "shoulder_lift": DynamixelMotor(motor_ids[1], "xl330-m077"),
-                "elbow": DynamixelMotor(motor_ids[2], "xl330-m077"),
-                "wrist_flex": DynamixelMotor(motor_ids[3], "xl330-m077"),
-                "wrist_roll": DynamixelMotor(motor_ids[4], "xl330-m077"),
-                "gripper": DynamixelMotor(motor_ids[5], "xl330-m077"),
+                "shoulder_pan": DynamixelMotor(motor_ids[0], "shoulder_pan", "xl330-m077"),
+                "shouder_lift": DynamixelMotor(motor_ids[1], "shoulder_lift", "xl330-m077"),
+                "elbow": DynamixelMotor(motor_ids[2], "elbow", "xl330-m077"),
+                "wrist_flex": DynamixelMotor(motor_ids[3], "wrist_flex", "xl330-m077"),
+                "wrist_roll": DynamixelMotor(motor_ids[4], "wrist_roll", "xl330-m077"),
+                "gripper": DynamixelMotor(motor_ids[5], "gripper", "xl330-m077"),
+                #
             },
         )
         self._is_connected = False

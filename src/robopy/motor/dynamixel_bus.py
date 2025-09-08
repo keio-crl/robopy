@@ -36,8 +36,9 @@ class DynamixelCommError(ConnectionError):
 class DynamixelMotor:
     """Class that holds the definition and state of an individual motor."""
 
-    def __init__(self, motor_id: int, model_name: str):
+    def __init__(self, motor_id: int, motor_name: str, model_name: str):
         self.id = motor_id
+        self.motor_name = motor_name
         self.model_name = model_name
 
         definition = get_model_definition(model_name)
@@ -52,7 +53,7 @@ class DynamixelBus:
     Handles synchronized reading and writing, calibration, and error handling.
     """
 
-    def __init__(self, port: str, motors: Dict[str, DynamixelMotor]):
+    def __init__(self, port: str, motors: Dict[str, DynamixelMotor], need_calibration: bool = True):
         self.port_handler = dxl.PortHandler(port)
         self.packet_handler = dxl.PacketHandler(PROTOCOL_VERSION)
         self.motors = motors
@@ -139,6 +140,7 @@ class DynamixelBus:
         for _ in range(NUM_WRITE_RETRY):
             comm_result = group_sync_write.txPacket()
             if comm_result == dxl.COMM_SUCCESS:
+                print(f"Successfully wrote {item.name} to motors: {motor_names_to_write}")
                 return
 
         raise DynamixelCommError(f"Failed to sync write {item.name}.", comm_result)
@@ -159,7 +161,7 @@ class DynamixelBus:
         )
 
         # Add parameters to the sync read group
-        motors_to_read = []
+        motors_to_read: List[DynamixelMotor] = []
         for name in motor_names:
             if name not in self.motors:
                 continue
@@ -187,16 +189,18 @@ class DynamixelBus:
                 raw_value = group_sync_read.getData(
                     motor.id, control_item.address, control_item.num_bytes
                 )
-                results[motor.name] = cast_value(raw_value, control_item.dtype)
-                raw_values.append(results[motor.name])
+                results[motor.motor_name] = cast_value(raw_value, control_item.dtype)
+                raw_values.append(results[motor.motor_name])
 
-        # Apply calibration if needed (e.g., steps to degrees)
         if control_item.calibration_required and self.calibration:
             calibrated_values = self._apply_calibration(
-                np.array(raw_values), [m.name for m in motors_to_read]
+                np.array(raw_values), [m.motor_name for m in motors_to_read]
             )
             for i, motor in enumerate(motors_to_read):
-                results[motor.name] = calibrated_values[i]
+                if results[motor.motor_name] is not None:
+                    raise ValueError("A same motor name exists multiple times in the bus.")
+
+                results[motor.motor_name] = calibrated_values[i]
 
         return results
 
@@ -268,49 +272,19 @@ class DynamixelBus:
         Returns:
             TorqueDisabledContext: Context manager for torque control.
         """
-        return TorqueDisabledContext(self)
-
-    def set_operating_mode(self, motor_name: str, mode: int) -> None:
-        """Sets the operating mode for a specific motor.
-
-        Args:
-            motor_name: Name of the motor.
-            mode: Operating mode value.
-        """
-        if motor_name not in self.motors:
-            raise ValueError(f"Motor '{motor_name}' not found in bus.")
-
-        with self.torque_disabled():
-            logger.info(f"Setting operating mode for {motor_name} to {mode}")
-            self.write(XControlTable.OPERATING_MODE, motor_name, mode)
-
-
-class TorqueDisabledContext:
-    """Context manager for temporarily disabling motor torque."""
-
-    def __init__(self, bus: DynamixelBus):
-        self.bus = bus
-        self.previous_states: Dict[str, Any] = {}
-
-    def __enter__(self):
-        """Disable torque for all motors and save previous states."""
-        logger.debug("Disabling torque for all motors")
-
-        # Read current torque states
-        motor_names = list(self.bus.motors.keys())
-        self.previous_states = self.bus.sync_read(XControlTable.TORQUE_ENABLE, motor_names)
-
-        # Disable torque for all motors
+        motor_names = list(self.motors.keys())
         torque_off_values: Dict[str, int | float] = {name: 0 for name in motor_names}
-        self.bus.sync_write(XControlTable.TORQUE_ENABLE, torque_off_values)
 
-        return self
+        self.sync_write(XControlTable.TORQUE_ENABLE, torque_off_values)
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Restore previous torque states."""
-        logger.debug("Restoring previous torque states")
+    def __repr__(self) -> str:
+        motor_list = ", ".join(self.motors.keys())
+        return f"DynamixelBus(port={self.port_handler.port_name}, motors=[{motor_list}])"
 
-        # Restore previous torque states
-        self.bus.sync_write(XControlTable.TORQUE_ENABLE, self.previous_states)
-        self.bus.sync_write(XControlTable.TORQUE_ENABLE, self.previous_states)
-        self.bus.sync_write(XControlTable.TORQUE_ENABLE, self.previous_states)
+    def torque_enabled(self) -> None:
+        """Context manager for temporarily enabling motor torque."""
+
+        motor_names = list(self.motors.keys())
+
+        torque_on_values: Dict[str, int | float] = {name: 1 for name in motor_names}
+        self.sync_write(XControlTable.TORQUE_ENABLE, torque_on_values)

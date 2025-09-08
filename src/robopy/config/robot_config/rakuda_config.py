@@ -7,4 +7,3 @@ class RakudaConfig:
 
     leader_port: str
     follower_port: str
-    calibration_path: str

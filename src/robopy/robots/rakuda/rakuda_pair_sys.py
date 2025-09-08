@@ -52,9 +52,8 @@ class RakudaPairSys(Robot):
             self._leader.connect()
             self._follower.connect()
             logger.info("Successfully connected to both leader and follower arms.")
-
+            print("Successfully connected to both leader and follower arms.")
             self._is_connected = True
-
         except (OSError, IOError, PermissionError) as e:
             logger.error(f"Failed to connect to arms: {e}")
             raise ConnectionError(f"Failed to connect to arms: {e}")
@@ -70,28 +69,49 @@ class RakudaPairSys(Robot):
     def get_observation(self) -> Any:
         return super().get_observation()
 
-    def teleoperate(self) -> None:
+    def teleoperate(self, max_iterations: int | None = None) -> None:
+        """Leader controls follower. If max_iterations is set, run that many loops then return.
+        This function logs leader/follower positions each loop for debugging."""
         if not self.is_connected:
             raise ConnectionError("RakudaPairSys is not connected. Call connect() first.")
 
+        logger.info("Starting teleoperation. Leader will control follower.")
+        iterations = 0
         try:
             while True:
+                iterations += 1
                 # Get current positions from leader arm
                 leader_positions = self.get_leader_action()
+                logger.info(f"Leader positions ({len(leader_positions)}): {leader_positions}")
+
                 # Map leader positions to follower positions
                 follower_positions = {}
                 for leader_name, position in leader_positions.items():
                     follower_name = self._motor_mapping.get(leader_name)
                     if follower_name:
                         follower_positions[follower_name] = position
+                logger.info(
+                    f"Mapped follower positions ({len(follower_positions)}): {follower_positions}"
+                )
+
                 # Send positions to follower arm
-                self.send_follower_action(follower_positions)
-                time.sleep(0.1)  # Adjust the sleep time as needed for responsiveness
+                try:
+                    self.send_follower_action(follower_positions)
+                    logger.info("Sent follower action.")
+                except Exception:
+                    logger.exception("Failed to send follower action; continuing loop.")
+
+                if max_iterations is not None and iterations >= max_iterations:
+                    logger.info("Reached max_iterations; exiting teleoperate.")
+                    break
+
+                time.sleep(0.1)  # Adjust as needed
 
         except KeyboardInterrupt:
+            self.follower.motors.torque_disabled()
             logger.info("Teleoperation stopped by user.")
-        except Exception as e:
-            logger.error(f"Error during teleoperation: {e}")
+        except Exception:
+            logger.exception("Error during teleoperation.")
             raise
 
     def get_leader_action(self) -> dict:
@@ -104,6 +124,17 @@ class RakudaPairSys(Robot):
             XControlTable.PRESENT_POSITION, leader_motor_names
         )
         return leader_positions
+
+    def get_follower_action(self) -> dict:
+        """Get the current action (positions) from the follower arm."""
+        if not self._is_connected:
+            raise ConnectionError("KochPairSys is not connected. Call connect() first.")
+
+        follower_motor_names = list(self._follower.motors.motors.keys())
+        follower_positions = self._follower.motors.sync_read(
+            XControlTable.PRESENT_POSITION, follower_motor_names
+        )
+        return follower_positions
 
     def send_follower_action(self, action: dict) -> None:
         """Send action to the follower arm only."""

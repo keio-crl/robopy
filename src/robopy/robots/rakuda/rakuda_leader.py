@@ -20,25 +20,24 @@ class RakudaLeader(Arm):
             port=self._port,
             motors={
                 # head
-                "torso_yaw": DynamixelMotor(27, "xc330-t288"),
-                "head_yaw": DynamixelMotor(28, "xc330-t288"),
-                "head_pitch": DynamixelMotor(29, "xc330-t288"),
+                "torso_yaw": DynamixelMotor(27, "torso_yaw", "xc330-t288"),
+                "head_yaw": DynamixelMotor(28, "head_yaw", "xc330-t288"),
+                "head_pitch": DynamixelMotor(29, "head_pitch", "xc330-t288"),
                 # right
-                "r_arm_sh_pitch1": DynamixelMotor(1, "xc330-t288"),
-                "r_arm_sh_roll": DynamixelMotor(3, "xc330-t288"),
-                "r_arm_sh_pitch2": DynamixelMotor(5, "xc330-t288"),
-                "r_arm_el_yaw": DynamixelMotor(7, "xc330-t288"),
-                "r_arm_wr_roll": DynamixelMotor(9, "xc330-t288"),
-                "r_arm_wr_yaw": DynamixelMotor(11, "xc330-t288"),
-                "r_arm_grip": DynamixelMotor(31, "xc330-t288"),
+                "r_arm_sh_pitch1": DynamixelMotor(1, "r_arm_sh_pitch1", "xc330-t288"),
+                "r_arm_sh_roll": DynamixelMotor(3, "r_arm_sh_roll", "xc330-t288"),
+                "r_arm_sh_pitch2": DynamixelMotor(5, "r_arm_sh_pitch2", "xc330-t288"),
+                "r_arm_el_yaw": DynamixelMotor(7, "r_arm_el_yaw", "xc330-t288"),
+                "r_arm_wr_roll": DynamixelMotor(9, "r_arm_wr_roll", "xc330-t288"),
+                "r_arm_wr_yaw": DynamixelMotor(11, "r_arm_wr_yaw", "xc330-t288"),
+                "r_arm_grip": DynamixelMotor(31, "r_arm_grip", "xc330-t288"),
                 # left
-                "l_arm_sh_pitch1": DynamixelMotor(2, "xc330-t288"),
-                "l_arm_sh_roll": DynamixelMotor(4, "xc330-t288"),
-                "l_arm_sh_pitch2": DynamixelMotor(6, "xc330-t288"),
-                "l_arm_el_yaw": DynamixelMotor(8, "xc330-t288"),
-                "l_arm_wr_roll": DynamixelMotor(10, "xc330-t288"),
-                "l_arm_wr_yaw": DynamixelMotor(12, "xc330-t288"),
-                "l_arm_grip": DynamixelMotor(30, "xc330-t288"),
+                "l_arm_sh_pitch1": DynamixelMotor(2, "l_arm_sh_pitch1", "xc330-t288"),
+                "l_arm_sh_roll": DynamixelMotor(4, "l_arm_sh_roll", "xc330-t288"),
+                "l_arm_sh_pitch2": DynamixelMotor(6, "l_arm_sh_pitch2", "xc330-t288"),
+                "l_arm_el_yaw": DynamixelMotor(8, "l_arm_el_yaw", "xc330-t288"),
+                "l_arm_wr_roll": DynamixelMotor(10, "l_arm_wr_roll", "xc330-t288"),
+                "l_arm_wr_yaw": DynamixelMotor(12, "l_arm_wr_yaw", "xc330-t288"),
             },
         )
 
@@ -49,7 +48,7 @@ class RakudaLeader(Arm):
         try:
             self._mortors.open()
             self._is_connected = True
-            logger.info("Connected to the Rakuda Leader arm.")
+            print("Connected to the Rakuda Leader arm.")
         except Exception as e:
             logger.error(f"Failed to connect to the Rakuda Leader arm: {e}")
             raise ConnectionError(f"Failed to connect to the Rakuda Leader arm: {e}")
