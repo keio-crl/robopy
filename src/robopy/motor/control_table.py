@@ -80,11 +80,13 @@ class ModelDefinition(TypedDict):
 # A dictionary mapping model names to their detailed definitions.
 # This makes it easy to add support for new motor models in the future.
 MODEL_DEFINITIONS: Dict[str, ModelDefinition] = {
-    "xl330-m077": {"model_number": 1160, "control_table": XControlTable, "resolution": 4096},
-    "xl330-m288": {"model_number": 1170, "control_table": XControlTable, "resolution": 4096},
+    "xl330-m077": {"model_number": 1190, "control_table": XControlTable, "resolution": 4096},
+    "xl330-m288": {"model_number": 1200, "control_table": XControlTable, "resolution": 4096},
+    "xc330-t288": {"model_number": 1220, "control_table": XControlTable, "resolution": 4096},
     "xl430-w250": {"model_number": 1060, "control_table": XControlTable, "resolution": 4096},
     "xm430-w350": {"model_number": 1020, "control_table": XControlTable, "resolution": 4096},
     "xm540-w270": {"model_number": 1120, "control_table": XControlTable, "resolution": 4096},
+    "xc430-w150": {"model_number": 1070, "control_table": XControlTable, "resolution": 4096},
 }
 
 # --- Utility Functions ---

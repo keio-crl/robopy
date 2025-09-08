@@ -52,7 +52,3 @@ class KochObservation:
     leader: ArrayLike
     follower: ArrayLike
     sensors: KochSensorRetuns
-    sensors: KochSensorRetuns
-    sensors: KochSensorRetuns
-    sensors: KochSensorRetuns
-    sensors: KochSensorRetuns

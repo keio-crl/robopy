@@ -13,6 +13,8 @@ class RealsenseCamera(Camera):
 
     def __init__(self, index: int, name: str, config: RealsenseCameraConfig | None) -> None:
         super().__init__()
+        self.index = index
+        self.name = name
         if rs is None:
             err = (
                 """pyrealsense2 is not installed.
@@ -21,6 +23,7 @@ class RealsenseCamera(Camera):
             raise ImportError(err)
         self.config = config if config is not None else RealsenseCameraConfig()
         self.pipeline = rs.pipeline()
+        self.is_connected = False
 
     def connect(self) -> None:
         return super().connect()

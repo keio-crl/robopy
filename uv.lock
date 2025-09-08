@@ -12,6 +12,17 @@ wheels = [
 ]
 
 [[package]]
+name = "digit-interface"
+version = "0.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "opencv-python" },
+    { name = "pyudev" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a7/b9/55ce0ca74e800ab31654b9da2dfe79b3105af04147449898c4654c369480/digit_interface-0.2.1.tar.gz", hash = "sha256:6a0df5fa590eaaa28b8d31519638b22008d7f253c206452f865ed35bb3c39f64", size = 12195, upload-time = "2021-09-22T01:18:46.418Z" }
+
+[[package]]
 name = "dynamixel-sdk"
 version = "3.7.31"
 source = { registry = "https://pypi.org/simple" }
@@ -221,6 +232,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyudev"
+version = "0.24.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c4/5c/6cc034da13830e3da123ccf9a30910bc868fa16670362f004e4b788d0df1/pyudev-0.24.3.tar.gz", hash = "sha256:2e945427a21674893bb97632401db62139d91cea1ee96137cc7b07ad22198fc7", size = 55970, upload-time = "2024-05-10T18:24:04.599Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9d/3b/c37870f68ceb067707ca7b04db364a1478fcd40c6194007fb6e492ff9a92/pyudev-0.24.3-py3-none-any.whl", hash = "sha256:e8246f0a014fe370119ba2bc781bfbe62c0298d0d6b39c94e83102a8a3f56960", size = 62677, upload-time = "2024-05-10T18:24:02.743Z" },
+]
+
+[[package]]
 name = "rich"
 version = "14.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -238,6 +258,7 @@ name = "robopy"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "digit-interface" },
     { name = "dynamixel-sdk" },
     { name = "numpy" },
     { name = "opencv-python" },
@@ -256,6 +277,7 @@ linux = [
 
 [package.metadata]
 requires-dist = [
+    { name = "digit-interface", specifier = ">=0.2.1" },
     { name = "dynamixel-sdk", specifier = ">=3.7.31" },
     { name = "numpy", specifier = ">=2.2.6" },
     { name = "opencv-python", specifier = ">=4.12.0.88" },

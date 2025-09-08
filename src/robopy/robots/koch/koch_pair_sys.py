@@ -138,19 +138,6 @@ class KochPairSys(Robot):
             "follower": follower_obs,
         }
 
-    def send_action(self, action: dict) -> None:
-        """Sends action (goal positions) to both arms.
-        action: {'leader': {...}, 'follower': {...}}"""
-        if not self._is_connected:
-            raise ConnectionError("KochPairSys is not connected. Call connect() first.")
-
-        leader_action = action.get("leader", {})
-        follower_action = action.get("follower", {})
-
-        # 直接Enumを使用
-        self._leader.motors.sync_write(XControlTable.GOAL_POSITION, leader_action)
-        self._follower.motors.sync_write(XControlTable.GOAL_POSITION, follower_action)
-
     def teleoperate(self) -> None:
         """Teleoperation: Leader controls the Follower arm movements."""
         if not self._is_connected:

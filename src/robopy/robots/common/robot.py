@@ -22,8 +22,8 @@ class Robot(ABC, Generic[T]):
         """Abstract method to get the current observation from the robot"""
 
     @abstractmethod
-    def send_action(self, action: T) -> None:
-        """Abstract method to send an action command to the robot"""
+    def teleoperate(self) -> None:
+        """Abstract method for teleoperation between leader and follower"""
 
     @abstractmethod
     def connect(self) -> None:

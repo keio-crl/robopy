@@ -1,7 +1,12 @@
+from typing import Dict, List
+
+from numpy import ndarray
+
 from robopy.config.robot_config.koch_config import KochConfig
 from robopy.config.types import Sensors
 from robopy.config.visual_config.camera_config import RealsenseCameraConfig, WebCameraConfig
 from robopy.robots.common.composed import ComposedRobot
+from robopy.visual.realsense_camera import RealsenseCamera
 from robopy.visual.web_camera import WebCamera
 
 from .koch_pair_sys import KochPairSys
@@ -36,14 +41,14 @@ class KochRobot(ComposedRobot):
         robot_obs = self._robot_system.get_observation()
 
         # Get camera data
-        camera_data = []
+        camera_data: Dict[str, ndarray | None] = {}
         for cam in self._cameras:
             if cam.is_connected:
-                camera_data.append(cam.read())
+                camera_data[cam.name] = cam.read()
             else:
-                camera_data.append(None)
+                camera_data[cam.name] = None
 
-        return {"robot": robot_obs, "cameras": camera_data, "sensors": self._sensors}
+        return {"robot": robot_obs, "cameras": camera_data}
 
     def _init_sensors(self) -> None:
         """_init_sensors Initializes sensors based on the provided configuration.
@@ -51,7 +56,7 @@ class KochRobot(ComposedRobot):
         Raises:
             ValueError: If an unsupported camera configuration type is encountered.
         """
-        self._cameras = []
+        self._cameras: List[WebCamera | RealsenseCamera] = []
         index = 0
         for name, cam_cfg in self.camera_cfg.items():
             if isinstance(cam_cfg, WebCameraConfig):
