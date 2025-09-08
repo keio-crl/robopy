@@ -38,6 +38,7 @@ class RakudaLeader(Arm):
                 "l_arm_el_yaw": DynamixelMotor(8, "l_arm_el_yaw", "xc330-t288"),
                 "l_arm_wr_roll": DynamixelMotor(10, "l_arm_wr_roll", "xc330-t288"),
                 "l_arm_wr_yaw": DynamixelMotor(12, "l_arm_wr_yaw", "xc330-t288"),
+                "l_arm_grip": DynamixelMotor(32, "l_arm_grip", "xc330-t288"),
             },
         )
 

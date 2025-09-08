@@ -52,3 +52,13 @@ class KochObservation:
     leader: ArrayLike
     follower: ArrayLike
     sensors: KochSensorRetuns
+
+
+KOCH_MOTOR_MAPPING: Dict[str, str] = {
+    "shoulder_pan": "shoulder_pan",
+    "shoulder_lift": "shoulder_lift",
+    "elbow_flex": "elbow_flex",
+    "wrist_flex": "wrist_flex",
+    "wrist_roll": "wrist_roll",
+    "gripper": "gripper",
+}

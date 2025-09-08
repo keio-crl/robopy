@@ -3,7 +3,7 @@ import pickle
 import time
 from typing import Any
 
-from robopy.config.robot_config.rakuda_config import RakudaConfig
+from robopy.config.robot_config.rakuda_config import RAKUDA_MOTOR_MAPPING, RakudaConfig
 from robopy.motor.control_table import XControlTable
 from robopy.motor.dynamixel_bus import DynamixelBus
 
@@ -22,25 +22,9 @@ class RakudaPairSys(Robot):
         self._leader = RakudaLeader(cfg)
         self._follower = RakudaFollower(cfg)
         self._is_connected = False
-        self._motor_mapping = {
-            "torso_yaw": "torso_yaw",
-            "head_yaw": "head_yaw",
-            "head_pitch": "head_pitch",
-            "r_arm_sh_pitch1": "r_arm_sh_pitch1",
-            "r_arm_sh_roll": "r_arm_sh_roll",
-            "r_arm_sh_pitch2": "r_arm_sh_pitch2",
-            "r_arm_el_yaw": "r_arm_el_yaw",
-            "r_arm_wr_roll": "r_arm_wr_roll",
-            "r_arm_wr_yaw": "r_arm_wr_yaw",
-            "r_arm_grip": "r_arm_grip",
-            "l_arm_sh_pitch1": "l_arm_sh_pitch1",
-            "l_arm_sh_roll": "l_arm_sh_roll",
-            "l_arm_sh_pitch2": "l_arm_sh_pitch2",
-            "l_arm_el_yaw": "l_arm_el_yaw",
-            "l_arm_wr_roll": "l_arm_wr_roll",
-            "l_arm_wr_yaw": "l_arm_wr_yaw",
-            "l_arm_grip": "l_arm_grip",
-        }
+        self._motor_mapping = (
+            RAKUDA_MOTOR_MAPPING  # key: leader motor name, value: follower motor name
+        )
 
     def connect(self) -> None:
         """Connect to both leader and follower arms."""

@@ -6,8 +6,8 @@ import pickle
 import time
 from typing import Dict, Tuple
 
-from robopy.config.robot_config.koch_config import KochConfig
-from robopy.motor.control_table import XControlTable  # 直接インポート
+from robopy.config.robot_config.koch_config import KOCH_MOTOR_MAPPING, KochConfig
+from robopy.motor.control_table import XControlTable
 from robopy.robots.koch.calibration import run_arm_calibration
 
 from ..common.robot import Robot
@@ -29,14 +29,9 @@ class KochPairSys(Robot):
         self._is_connected = False
 
         # Define explicit motor mapping between leader and follower
-        self._motor_mapping = {
-            "shoulder_pan": "shoulder_pan",
-            "shoulder_lift": "shoulder_lift",
-            "elbow_flex": "elbow_flex",
-            "wrist_flex": "wrist_flex",
-            "wrist_roll": "wrist_roll",
-            "gripper": "gripper",
-        }
+        self._motor_mapping = (
+            KOCH_MOTOR_MAPPING  # key: leader motor name, value: follower motor name
+        )
 
     def connect(self) -> None:
         """Connects to all devices and handles calibration."""

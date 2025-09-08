@@ -38,6 +38,7 @@ class RakudaFollower(Arm):
                 "l_arm_el_yaw": DynamixelMotor(8, "l_arm_el_yaw", "xm430-w350"),
                 "l_arm_wr_roll": DynamixelMotor(10, "l_arm_wr_roll", "xm430-w350"),
                 "l_arm_wr_yaw": DynamixelMotor(12, "l_arm_wr_yaw", "xm430-w350"),
+                "l_arm_grip": DynamixelMotor(32, "l_arm_grip", "xm430-w350"),
             },
         )
 
