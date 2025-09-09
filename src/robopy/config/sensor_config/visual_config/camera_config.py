@@ -45,12 +45,12 @@ class WebCameraConfig(CameraConfig):
 class RealsenseCameraConfig(CameraConfig):
     """Configuration class for RealSense cameras."""
 
+    name: str = "main"
     fps: int | float | None = 30
     is_depth_camera: bool = True
     is_realsense: bool = True
     min_depth: float = 100.0
     max_depth: float = 2000.0
-    name: str = "main"
 
     def __post_init__(self) -> None:
         """__post_init__ method to validate the configuration.

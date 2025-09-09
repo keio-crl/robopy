@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 from numpy.typing import NDArray
 
-from robopy.config.visual_config.camera_config import CameraLog, RealsenseCameraConfig
+from robopy.config.sensor_config.visual_config.camera_config import CameraLog, RealsenseCameraConfig
 
 from .camera import Camera
 

@@ -1,7 +1,12 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Dict, TypedDict
+from typing import Dict, List, TypedDict
 
 from numpy.typing import NDArray
+
+from robopy.config.sensor_config.params_config import CameraParams, TactileParams
+from robopy.config.sensor_config.visual_config.camera_config import RealsenseCameraConfig
 
 
 @dataclass
@@ -10,7 +15,20 @@ class RakudaConfig:
 
     leader_port: str
     follower_port: str
+    sensors: RakudaSensorParams | None = None
     slow_mode: bool = False
+
+
+@dataclass
+class RakudaSensorParams:
+    cameras: List[CameraParams]
+    tactile: List[TactileParams]
+
+
+@dataclass
+class RakudaSensorConfigs:
+    cameras: List[RealsenseCameraConfig]
+    tactile: List[TactileParams]
 
 
 class RakudaArmObs(TypedDict):

@@ -3,7 +3,10 @@ from typing import Dict
 
 from numpy.typing import ArrayLike
 
-from robopy.config.visual_config.camera_config import RealsenseCameraConfig, WebCameraConfig
+from robopy.config.sensor_config.visual_config.camera_config import (
+    RealsenseCameraConfig,
+    WebCameraConfig,
+)
 
 
 @dataclass

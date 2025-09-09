@@ -10,8 +10,8 @@ from cv2 import VideoCapture
 from numpy.typing import NDArray
 from rich import print as rprint
 
+from robopy.config.sensor_config.visual_config.camera_config import CameraLog, WebCameraConfig
 from robopy.config.types import OSType
-from robopy.config.visual_config.camera_config import CameraLog, WebCameraConfig
 
 from .camera import Camera
 from .utils import find_camera_indices

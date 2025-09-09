@@ -3,8 +3,11 @@ from typing import Dict, List
 from numpy import ndarray
 
 from robopy.config.robot_config.koch_config import KochConfig
+from robopy.config.sensor_config.visual_config.camera_config import (
+    RealsenseCameraConfig,
+    WebCameraConfig,
+)
 from robopy.config.types import Sensors
-from robopy.config.visual_config.camera_config import RealsenseCameraConfig, WebCameraConfig
 from robopy.robots.common.composed import ComposedRobot
 from robopy.sensors.visual.realsense_camera import RealsenseCamera
 from robopy.sensors.visual.web_camera import WebCamera
