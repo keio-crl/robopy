@@ -10,6 +10,7 @@ class RakudaConfig:
 
     leader_port: str
     follower_port: str
+    slow_mode: bool = False
 
 
 class RakudaArmObs(TypedDict):

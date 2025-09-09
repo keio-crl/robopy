@@ -64,6 +64,9 @@ class XControlTable(Enum):
     PRESENT_POSITION = ControlItem(132, 4, Dtype.INT32, "R", calibration_required=True)
     PRESENT_INPUT_VOLTAGE = ControlItem(144, 2, Dtype.UINT16, "R")
     PRESENT_TEMPERATURE = ControlItem(146, 1, Dtype.UINT8, "R")
+    POSITION_P_GAIN = ControlItem(84, 2, Dtype.UINT16, "R/W")
+    POSITION_I_GAIN = ControlItem(82, 2, Dtype.UINT16, "R/W")
+    POSITION_D_GAIN = ControlItem(80, 2, Dtype.UINT16, "R/W")
 
 
 # --- Model Specific Definitions ---

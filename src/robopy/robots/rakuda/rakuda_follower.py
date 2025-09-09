@@ -1,6 +1,7 @@
 import logging
 
 from robopy.config.robot_config.rakuda_config import RakudaConfig
+from robopy.motor.control_table import XControlTable
 from robopy.motor.dynamixel_bus import DynamixelBus, DynamixelMotor
 from robopy.robots.common.arm import Arm
 
@@ -38,7 +39,7 @@ class RakudaFollower(Arm):
                 "l_arm_el_yaw": DynamixelMotor(8, "l_arm_el_yaw", "xm430-w350"),
                 "l_arm_wr_roll": DynamixelMotor(10, "l_arm_wr_roll", "xm430-w350"),
                 "l_arm_wr_yaw": DynamixelMotor(12, "l_arm_wr_yaw", "xm430-w350"),
-                "l_arm_grip": DynamixelMotor(32, "l_arm_grip", "xm430-w350"),
+                "l_arm_grip": DynamixelMotor(30, "l_arm_grip", "xm430-w350"),
             },
         )
 
@@ -48,12 +49,34 @@ class RakudaFollower(Arm):
             return
         try:
             self._motors.open()
-            self.motors.torque_enabled()
+            self._init_control_mode()
+
+            self._motors.torque_enabled()
             self._is_connected = True
             print("Connected to the Rakuda Follower arm.")
+
         except Exception as e:
             logger.error(f"Failed to connect to the Rakuda Follower arm: {e}")
             raise ConnectionError(f"Failed to connect to the Rakuda Follower arm: {e}")
+
+    def _init_control_mode(self) -> None:
+        # Set 2 gripper motors to Current-based position control mode: 5
+        # details:https://emanual.robotis.com/docs/en/dxl/x/xm430-w350/#operating-mode
+
+        self.motors.write(XControlTable.DRIVE_MODE, "l_arm_grip", 5)
+        self.motors.write(XControlTable.DRIVE_MODE, "r_arm_grip", 5)
+
+        # Set PID gains for gripper motors
+        if self.config.slow_mode:
+            p, i, d = 128, 0, 512
+        else:
+            p, i, d = 512, 256, 128
+        self.motors.write(XControlTable.POSITION_P_GAIN, "l_arm_grip", p)
+        self.motors.write(XControlTable.POSITION_I_GAIN, "l_arm_grip", i)
+        self.motors.write(XControlTable.POSITION_D_GAIN, "l_arm_grip", d)
+        self.motors.write(XControlTable.POSITION_P_GAIN, "r_arm_grip", p)
+        self.motors.write(XControlTable.POSITION_I_GAIN, "r_arm_grip", i)
+        self.motors.write(XControlTable.POSITION_D_GAIN, "r_arm_grip", d)
 
     def disconnect(self) -> None:
         # Implementation to disconnect from the Rakuda Follower arm

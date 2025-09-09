@@ -1,6 +1,5 @@
 import logging
 import pickle
-import time
 
 import numpy as np
 
@@ -109,8 +108,6 @@ class RakudaPairSys(Robot):
                 if max_iterations is not None and iterations >= max_iterations:
                     logger.info("Reached max_iterations; exiting teleoperate.")
                     break
-
-                time.sleep(0.1)  # Adjust as needed
 
         except KeyboardInterrupt:
             self.follower.motors.torque_disabled()
