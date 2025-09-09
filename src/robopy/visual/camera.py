@@ -14,7 +14,7 @@ class Camera(ABC):
     @abstractmethod
     def read(self) -> NDArray[Any]:
         """Read frames from the camera and return them as a NumPy array"""
-        """Read frames from the camera and return them as a NumPy array"""
+        pass
 
     @abstractmethod
     def disconnect(self) -> None:

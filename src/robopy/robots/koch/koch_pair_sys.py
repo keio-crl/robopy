@@ -132,14 +132,14 @@ class KochPairSys(Robot):
             XControlTable.PRESENT_POSITION, follower_motor_names
         )
 
-        leader_obs = np.array(list(leader_obs.values()), dtype=np.float32)
-        follower_obs = np.array(list(follower_obs.values()), dtype=np.float32)
-        logger.debug(f"Leader positions: {leader_obs}")
-        logger.debug(f"Follower positions: {follower_obs}")
+        leader_obs_array = np.array(list(leader_obs.values()), dtype=np.float32)
+        follower_obs_array = np.array(list(follower_obs.values()), dtype=np.float32)
+        logger.debug(f"Leader positions: {leader_obs_array}")
+        logger.debug(f"Follower positions: {follower_obs_array}")
 
         return {
-            "leader": leader_obs,
-            "follower": follower_obs,
+            "leader": leader_obs_array,
+            "follower": follower_obs_array,
         }
 
     def teleoperate(self) -> None:
@@ -213,6 +213,7 @@ class KochPairSys(Robot):
 
         if if_record:
             return self.get_observation()
+        return None
 
     def get_leader_action(self) -> dict:
         """Get the current action (positions) from the leader arm."""
@@ -238,6 +239,7 @@ class KochPairSys(Robot):
 
     @property
     def follower(self) -> KochFollower:
+        return self._follower
         return self._follower
         return self._follower
         return self._follower

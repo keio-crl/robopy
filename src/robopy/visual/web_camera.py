@@ -83,7 +83,7 @@ class WebCamera(Camera):
             available_indices = find_camera_indices()
             err = (
                 f"Camera with index {self.camera_index} could not be opened. "
-                f"Available camera indices are: {available_indices}",
+                f"Available camera indices are: {available_indices}"
             )
             del temp_cap
             raise OSError(err)
@@ -129,7 +129,7 @@ class WebCamera(Camera):
             if H != self.config.height or W != self.config.width:
                 err = (
                     f"Camera resolution is {W}x{H}, but expected "
-                    f"{self.config.width}x{self.config.height}.",
+                    f"{self.config.width}x{self.config.height}."
                 )
                 raise OSError(err)
         end_time = time.perf_counter()
@@ -184,7 +184,7 @@ class WebCamera(Camera):
             self.config.fps,
             rel_tol=1e-2,
         ):
-            err = (f"Warning: Unable to set FPS to {self.config.fps}. Actual FPS is {actual_fps}.",)
+            err = f"Warning: Unable to set FPS to {self.config.fps}. Actual FPS is {actual_fps}."
             raise OSError(err)
         if self.config.width is not None and not math.isclose(
             actual_width,
@@ -192,8 +192,8 @@ class WebCamera(Camera):
             rel_tol=1e-2,
         ):
             err = (
-                f"Warning: Unable to set width to {self.config.width}. ",
-                f"Actual width is {actual_width}.",
+                f"Warning: Unable to set width to {self.config.width}. "
+                f"Actual width is {actual_width}."
             )
             raise OSError(err)
         if self.config.height is not None and not math.isclose(
@@ -202,8 +202,8 @@ class WebCamera(Camera):
             rel_tol=1e-2,
         ):
             err = (
-                f"Warning: Unable to set height to {self.config.height}.",
-                f"Actual height is {actual_height}.",
+                f"Warning: Unable to set height to {self.config.height}. "
+                f"Actual height is {actual_height}."
             )
             raise OSError(err)
         self.config.fps = actual_fps
@@ -224,4 +224,7 @@ class WebCamera(Camera):
     def __del__(self) -> None:
         """__del__ method to ensure proper cleanup."""
         self.disconnect()
+        cv2.destroyAllWindows()
+        cv2.destroyAllWindows()
+        cv2.destroyAllWindows()
         cv2.destroyAllWindows()

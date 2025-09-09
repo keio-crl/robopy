@@ -70,9 +70,9 @@ class RakudaPairSys(Robot):
             XControlTable.PRESENT_POSITION, follower_motor_names
         )
 
-        leader_obs = np.array(list(leader_obs.values()), dtype=np.float32)
-        follower_obs = np.array(list(follower_obs.values()), dtype=np.float32)
-        return RakudaArmObs(leader=leader_obs, follower=follower_obs)
+        leader_obs_array = np.array(list(leader_obs.values()), dtype=np.float32)
+        follower_obs_array = np.array(list(follower_obs.values()), dtype=np.float32)
+        return RakudaArmObs(leader=leader_obs_array, follower=follower_obs_array)
 
     def teleoperate(self, max_iterations: int | None = None) -> None:
         """Leader controls follower. If max_iterations is set, run that many loops then return.
@@ -155,6 +155,7 @@ class RakudaPairSys(Robot):
         # Return current observation
         if if_record:
             return self.get_observation()
+        return None
 
     def get_leader_action(self) -> dict:
         """Get the current action (positions) from the leader arm."""

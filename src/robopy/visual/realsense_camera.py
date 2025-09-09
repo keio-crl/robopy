@@ -26,4 +26,5 @@ class RealsenseCamera(Camera):
         self.is_connected = False
 
     def connect(self) -> None:
-        return super().connect()
+        # TODO: Implement actual connection logic
+        pass
