@@ -35,8 +35,8 @@ class WebCameraConfig(CameraConfig):
             ValueError: If color_mode is not 'rgb' or 'bgr'.
 
         """
-        if self.color_mode is not Literal["rgb", "bgr"]:
-            error_msg = (f" {self.color_mode} is not supported. Use 'rgb' or 'bgr'.",)
+        if self.color_mode not in ["rgb", "bgr"]:
+            error_msg = f"{self.color_mode} is not supported. Use 'rgb' or 'bgr'."
             raise ValueError(error_msg)
         print(f"OpenCVCameraConfig: {self}")
 
@@ -59,8 +59,8 @@ class RealsenseCameraConfig(CameraConfig):
             ValueError: If color_mode is not 'rgb' or 'bgr'.
 
         """
-        if self.color_mode is not Literal["rgb", "bgr"]:
-            error_msg = (f" {self.color_mode} is not supported. Use 'rgb' or 'bgr'.",)
+        if self.color_mode not in ["rgb", "bgr"]:
+            error_msg = f"{self.color_mode} is not supported. Use 'rgb' or 'bgr'."
             raise ValueError(error_msg)
         print(f"RealsenseCameraConfig: {self}")
 

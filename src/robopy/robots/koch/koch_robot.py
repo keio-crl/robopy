@@ -44,7 +44,7 @@ class KochRobot(ComposedRobot):
         camera_data: Dict[str, ndarray | None] = {}
         for cam in self._cameras:
             if cam.is_connected:
-                camera_data[cam.name] = cam.read()
+                camera_data[cam.name] = cam.get_observation()
             else:
                 camera_data[cam.name] = None
 

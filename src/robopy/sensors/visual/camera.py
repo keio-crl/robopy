@@ -1,24 +1,15 @@
-from abc import ABC, abstractmethod
-from typing import Any
+from abc import abstractmethod
 
-from numpy.typing import NDArray
+from robopy.sensors.common.sensor import Sensor
 
 
-class Camera(ABC):
+class Camera(Sensor):
     """Abstract Base Class for Camera"""
 
     @abstractmethod
-    def connect(self) -> None:
-        """Connect to the camera"""
-
-    @abstractmethod
-    def read(self) -> NDArray[Any]:
-        """Read frames from the camera and return them as a NumPy array"""
-        pass
-
-    @abstractmethod
-    def disconnect(self) -> None:
-        """Disconnect from the camera"""
+    def record(self) -> None:
+        """Start recording video from the camera."""
+        ...
 
     @abstractmethod
     def __del__(self) -> None:

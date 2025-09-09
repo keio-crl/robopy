@@ -48,7 +48,7 @@ class WebCamera(Camera):
         self.config = config if config is not None else WebCameraConfig()
         self.log: CameraLog = {"timestamp_utc": 0.0, "delta_time": 0.0}
         self.stop_event: Event | None = None
-        self.is_connected = False
+        self._is_connected = False
 
         for key, value in kwargs.items():
             if hasattr(self.config, key):
@@ -89,9 +89,9 @@ class WebCamera(Camera):
             raise OSError(err)
         self.cap = temp_cap
         self._check_set_actual_settings()
-        self.is_connected = True
+        self._is_connected = True
 
-    def read(self, specific_color: Literal["rgb", "bgr"] | None = None) -> NDArray:
+    def get_observation(self, specific_color: Literal["rgb", "bgr"] | None = None) -> NDArray:
         """read frames from the camera and return them as a NumPy array.
 
         Args:
@@ -219,12 +219,16 @@ class WebCamera(Camera):
         """
         # release and mark disconnected
         self.cap.release() if self.cap is not None else None
-        self.is_connected = False
+        self._is_connected = False
+
+    @property
+    def is_connected(self) -> bool:
+        return self._is_connected
 
     def __del__(self) -> None:
         """__del__ method to ensure proper cleanup."""
         self.disconnect()
         cv2.destroyAllWindows()
-        cv2.destroyAllWindows()
-        cv2.destroyAllWindows()
-        cv2.destroyAllWindows()
+
+    def record(self) -> None:
+        raise NotImplementedError("Recording not implemented for WebCamera.")
