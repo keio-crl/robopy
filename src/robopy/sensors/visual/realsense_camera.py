@@ -22,7 +22,6 @@ class RealsenseCamera(Camera):
             )
             raise ImportError(err)
         self.config = config if config is not None else RealsenseCameraConfig()
-        self.pipeline = rs.pipeline()
         self.is_connected = False
 
     def connect(self) -> None:

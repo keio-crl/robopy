@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import List
 
-from robopy.visual.realsense_camera import RealsenseCamera
-from robopy.visual.web_camera import WebCamera
+from robopy.sensors.visual.realsense_camera import RealsenseCamera
+from robopy.sensors.visual.web_camera import WebCamera
 
 
 class OSType(Enum):
