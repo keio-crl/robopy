@@ -31,7 +31,7 @@ def main():
     # Create camera with standard settings
     config = RealsenseCameraConfig(fps=30, width=640, height=480, color_mode="rgb")
 
-    camera = RealsenseCamera(index=0, name="demo_camera", config=config)
+    camera = RealsenseCamera(config=config)
 
     try:
         # Connect to camera (starts background thread)

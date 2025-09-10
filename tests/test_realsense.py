@@ -19,7 +19,7 @@ def test_realsense_camera():
     config = RealsenseCameraConfig(fps=30, width=640, height=480, color_mode="rgb")
 
     # Create camera instance
-    camera = RealsenseCamera(index=0, name="test_camera", config=config)
+    camera = RealsenseCamera(config=config)
 
     try:
         # Test connection

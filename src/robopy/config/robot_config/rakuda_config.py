@@ -7,6 +7,7 @@ from numpy.typing import NDArray
 
 from robopy.config.sensor_config.params_config import CameraParams, TactileParams
 from robopy.config.sensor_config.visual_config.camera_config import RealsenseCameraConfig
+from robopy.sensors.visual.realsense_camera import RealsenseCamera
 
 
 @dataclass
@@ -17,6 +18,11 @@ class RakudaConfig:
     follower_port: str
     sensors: RakudaSensorParams | None = None
     slow_mode: bool = False
+
+
+@dataclass
+class RakudaSensorType:
+    cameras: List[RealsenseCamera]
 
 
 @dataclass

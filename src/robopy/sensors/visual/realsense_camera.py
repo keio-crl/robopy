@@ -28,10 +28,10 @@ class RealsenseCamera(Camera):
     allowing async_read() to return the latest frame without blocking.
     """
 
-    def __init__(self, index: int, name: str, config: RealsenseCameraConfig | None) -> None:
+    def __init__(self, config: RealsenseCameraConfig) -> None:
         super().__init__()
-        self.index = index
-        self.name = name
+        self.index = config.index
+        self.name = config.name
         self.config = config if config is not None else RealsenseCameraConfig()
         self._is_connected = False
         self.log: CameraLog = {"timestamp_utc": 0.0, "delta_time": 0.0}

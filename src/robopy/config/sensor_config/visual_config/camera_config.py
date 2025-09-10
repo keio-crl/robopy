@@ -46,6 +46,7 @@ class RealsenseCameraConfig(CameraConfig):
     """Configuration class for RealSense cameras."""
 
     name: str = "main"
+    index: int = 0
     fps: int | float | None = 30
     is_depth_camera: bool = True
     is_realsense: bool = True
