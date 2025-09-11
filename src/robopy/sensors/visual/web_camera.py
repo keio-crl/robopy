@@ -145,6 +145,58 @@ class WebCamera(Camera):
 
         return color_img
 
+    def async_read(self, timeout_ms: float = 100.0) -> NDArray[np.float32]:
+        """Asynchronously read the latest frame from the camera.
+
+        This method returns the most recent frame captured by the camera.
+        If no new frame is available within the specified timeout, it returns None.
+
+        Args:
+            timeout_ms (float, optional): Maximum time to wait for a new frame in milliseconds.
+                Defaults to 100.0 ms.
+
+        Raises:
+            OSError: Camera is not connected.
+
+        Returns:
+            NDArray[np.float32] | None: The latest frame as a NumPy array in CHW format,
+                or None if no new frame is available within the timeout.
+        """
+        if self.cap is None or not self.cap.isOpened():
+            err = "Camera is not connected."
+            raise OSError(err)
+
+        start_time = time.perf_counter()
+        while True:
+            ret, color_img = self.cap.read()
+            if ret:
+                if self.config.color_mode == "rgb":
+                    color_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2RGB)
+
+                H, W, _ = color_img.shape
+                if self.config.width is not None and self.config.height is not None:
+                    if H != self.config.height or W != self.config.width:
+                        err = (
+                            f"Camera resolution is {W}x{H}, but expected "
+                            f"{self.config.width}x{self.config.height}."
+                        )
+                        raise OSError(err)
+
+                # Convert HWC to CHW
+                if color_img.shape[-1] == 3 or color_img.shape[-1] == 1:
+                    color_img = color_img.transpose(2, 0, 1)  # HWC to CHW
+                color_img = color_img.astype("float32")
+
+                self.log["timestamp_utc"] = datetime.now(timezone.utc).timestamp()
+                end_time = time.perf_counter()
+                self.log["delta_time"] = end_time - start_time
+
+                return color_img
+
+            elapsed_time_ms = (time.perf_counter() - start_time) * 1000.0
+            if elapsed_time_ms >= timeout_ms:
+                raise TimeoutError("No new frame available within the specified timeout.")
+
     def _check_set_actual_settings(self) -> None:
         """Apply requested camera settings and verify actual values.
 

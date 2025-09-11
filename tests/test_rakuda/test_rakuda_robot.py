@@ -4,10 +4,7 @@ from robopy.robots.rakuda.rakuda_robot import RakudaRobot
 config = RakudaConfig(
     leader_port="/dev/ttyUSB0",
     follower_port="/dev/ttyUSB1",
-    sensors=RakudaSensorParams(
-        cameras=[],
-        tactile=[],
-    ),
+    sensors=RakudaSensorParams(),
     slow_mode=False,
 )
 
@@ -26,7 +23,7 @@ def test_rakuda_robot_get_observation():
     robot = RakudaRobot(config)
     robot.connect()
     obs = robot.get_observation()
-
+    print(obs)
     assert "arms" in obs
     assert "leader" in obs["arms"]
     assert "follower" in obs["arms"]
@@ -35,3 +32,7 @@ def test_rakuda_robot_get_observation():
 
     if robot.is_connected:
         robot.disconnect()
+
+
+if __name__ == "__main__":
+    test_rakuda_robot_get_observation()

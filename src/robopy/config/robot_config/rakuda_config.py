@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, TypedDict
 
 import numpy as np
@@ -16,14 +16,14 @@ class RakudaConfig:
 
     leader_port: str
     follower_port: str
-    sensors: RakudaSensorParams | None = None
+    sensors: RakudaSensorParams | None = field(default=None)
     slow_mode: bool = False
 
 
 @dataclass
 class RakudaSensorParams:
-    cameras: List[CameraParams] | None
-    tactile: List[TactileParams] | None
+    cameras: List[CameraParams] | None = field(default=None)
+    tactile: List[TactileParams] | None = field(default=None)
 
 
 @dataclass
@@ -33,8 +33,8 @@ class RakudaSensorConfigs:
 
 
 class RakudaArmObs(TypedDict):
-    leader: NDArray[np.float16]
-    follower: NDArray[np.float16]
+    leader: NDArray[np.float32]
+    follower: NDArray[np.float32]
 
 
 class RakudaSensorObs(TypedDict):

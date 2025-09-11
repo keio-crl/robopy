@@ -70,8 +70,8 @@ class RakudaPairSys(Robot):
             XControlTable.PRESENT_POSITION, follower_motor_names
         )
 
-        leader_obs_array = np.array(list(leader_obs.values()), dtype=np.float16)
-        follower_obs_array = np.array(list(follower_obs.values()), dtype=np.float16)
+        leader_obs_array = np.array(list(leader_obs.values()), dtype=np.float32)
+        follower_obs_array = np.array(list(follower_obs.values()), dtype=np.float32)
         return RakudaArmObs(leader=leader_obs_array, follower=follower_obs_array)
 
     def teleoperate(self, max_seconds: float | None = None) -> None:
@@ -88,17 +88,12 @@ class RakudaPairSys(Robot):
             while True:
                 # Get current positions from leader arm
                 leader_positions = self.get_leader_action()
-                logger.info(f"Leader positions ({len(leader_positions)}): {leader_positions}")
-
                 # Map leader positions to follower positions
                 follower_positions = {}
                 for leader_name, position in leader_positions.items():
                     follower_name = self._motor_mapping.get(leader_name)
                     if follower_name:
                         follower_positions[follower_name] = position
-                logger.info(
-                    f"Mapped follower positions ({len(follower_positions)}): {follower_positions}"
-                )
 
                 # Send positions to follower arm
                 try:
@@ -121,7 +116,7 @@ class RakudaPairSys(Robot):
             logger.exception("Error during teleoperation.")
             raise
 
-    def teleoperate_step(self, if_record: bool = True) -> RakudaArmObs | None:
+    def teleoperate_step(self) -> RakudaArmObs | None:
         """teleoperate_step performs one iteration of teleoperation.
 
         Args:
@@ -153,11 +148,6 @@ class RakudaPairSys(Robot):
             self.send_follower_action(follower_positions)
         except Exception:
             logger.exception("Failed to send follower action; continuing.")
-
-        # Return current observation
-        if if_record:
-            return self.get_observation()
-        return None
 
     def get_leader_action(self) -> dict:
         """Get the current action (positions) from the leader arm."""

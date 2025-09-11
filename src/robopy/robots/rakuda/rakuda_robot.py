@@ -1,5 +1,6 @@
+import time
 from logging import getLogger
-from typing import Dict, override
+from typing import DefaultDict, Dict, List, override
 
 import numpy as np
 from numpy.typing import NDArray
@@ -42,6 +43,12 @@ class RakudaRobot(ComposedRobot):
     def disconnect(self) -> None:
         self._pair_sys.disconnect()
 
+        for cam in self._sensors.cameras or []:
+            cam.disconnect()
+
+        for tac in self._sensors.tactile or []:
+            tac.disconnect()
+
     @override
     def teleoperation(self, max_seconds: float | None = None) -> None:
         """Start teleoperation for Rakuda robot."""
@@ -53,7 +60,7 @@ class RakudaRobot(ComposedRobot):
         else:
             self._pair_sys.teleoperate()
 
-    def record(self, max_seconds: float, fps: int = 5):
+    def record(self, max_seconds: float, fps: int = 5) -> RakudaObs:
         """record function for Rakuda robot. Not implemented."""
         if not self.is_connected:
             raise ConnectionError("RakudaRobot is not connected. Call connect() first.")
@@ -61,7 +68,59 @@ class RakudaRobot(ComposedRobot):
         if max_seconds <= 0:
             raise ValueError("max_seconds must be greater than 0.")
 
-        pass
+        leader_obs = []
+        follower_obs = []
+        camera_obs: Dict[str, List] = DefaultDict(list)
+        tactile_obs: Dict[str, List] = DefaultDict(list)
+
+        start_time = time.time()
+        get_obs_interval = 1.0 / fps
+        while time.time() - start_time < max_seconds:
+            interval_start = time.time()
+            self.robot_system.teleoperate_step()
+            
+            leader, follower = self.get_arm_observation()
+            leader_obs.append(leader)
+            follower_obs.append(follower)
+            sensor_data = self.sensors_observation()
+            camera_data = sensor_data["cameras"]
+            tactile_data = sensor_data["tactile"]
+
+            for cam_name, cam_frame in camera_data.items():
+                camera_obs[cam_name].append(cam_frame)
+
+            for tac_name, tac_frame in tactile_data.items():
+                tactile_obs[tac_name].append(tac_frame)
+
+            elapsed = time.time() - interval_start
+            sleep_time = max(0, (1.0 / fps) - elapsed)
+            time.sleep(sleep_time)
+            if time.time() - start_time >= max_seconds:
+                break
+
+        # proccess observations to numpy arrays
+        leader_obs = np.array(leader_obs)
+        follower_obs = np.array(follower_obs)
+        arms: RakudaArmObs = {"leader": leader_obs, "follower": follower_obs}
+
+        # process camera observations
+        camera_obs_np: Dict[str, NDArray[np.float32] | None] = {}
+        for cam_name, frames in camera_obs.items():
+            if frames:
+                camera_obs_np[cam_name] = np.array(frames)
+            else:
+                camera_obs_np[cam_name] = None
+
+        # process tactile observations
+        tactile_obs_np: Dict[str, NDArray[np.float32] | None] = {}
+        for tac_name, frames in tactile_obs.items():
+            if frames:
+                tactile_obs_np[tac_name] = np.array(frames)
+            else:
+                tactile_obs_np[tac_name] = None
+
+        sensors_obs = RakudaSensorObs(cameras=camera_obs_np, tactile=tactile_obs_np)
+        return RakudaObs(arms=arms, sensors=sensors_obs)
 
     @override
     def get_observation(self) -> RakudaObs:
