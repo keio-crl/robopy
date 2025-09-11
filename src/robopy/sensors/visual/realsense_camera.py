@@ -133,7 +133,9 @@ class RealsenseCamera(Camera):
         self._is_connected = False
         logger.info(f"{self.name} disconnected.")
 
-    def get_observation(self, specific_color: Literal["rgb", "bgr"] | None = None) -> NDArray:
+    def get_observation(
+        self, specific_color: Literal["rgb", "bgr"] | None = None
+    ) -> NDArray[np.float32]:
         """Read frames from the camera synchronously (blocking).
 
         Args:
@@ -158,7 +160,7 @@ class RealsenseCamera(Camera):
             raise OSError("Failed to capture color frame.")
 
         # Convert to numpy array
-        color_image = np.asanyarray(color_frame.get_data())  # type: ignore
+        color_image = np.asanyarray(color_frame.get_data(), dtype=np.float32)  # type: ignore
 
         # Convert color format if needed (RealSense outputs RGB by default)
         if specific_color == "bgr":
@@ -179,6 +181,7 @@ class RealsenseCamera(Camera):
         # Convert HWC to CHW
         if color_image.shape[-1] == 3:
             color_image = color_image.transpose(2, 0, 1)
+        color_image = color_image.astype("float32")
 
         return color_image
 

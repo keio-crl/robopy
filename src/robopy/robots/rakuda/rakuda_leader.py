@@ -18,7 +18,7 @@ class RakudaLeader(RakudaArm):
         """Create motor configuration for the leader arm using xc330-t288 motors."""
         return {
             # head
-            "torso_yaw": DynamixelMotor(27, "torso_yaw", "xc330-t288"),
+            "torso_yaw": DynamixelMotor(27, "torso_yaw", "xm430-w350"),  # different model
             "head_yaw": DynamixelMotor(28, "head_yaw", "xc330-t288"),
             "head_pitch": DynamixelMotor(29, "head_pitch", "xc330-t288"),
             # right

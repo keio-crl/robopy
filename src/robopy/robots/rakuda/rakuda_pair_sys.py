@@ -1,5 +1,6 @@
 import logging
 import pickle
+import time
 
 import numpy as np
 
@@ -69,21 +70,22 @@ class RakudaPairSys(Robot):
             XControlTable.PRESENT_POSITION, follower_motor_names
         )
 
-        leader_obs_array = np.array(list(leader_obs.values()), dtype=np.float32)
-        follower_obs_array = np.array(list(follower_obs.values()), dtype=np.float32)
+        leader_obs_array = np.array(list(leader_obs.values()), dtype=np.float16)
+        follower_obs_array = np.array(list(follower_obs.values()), dtype=np.float16)
         return RakudaArmObs(leader=leader_obs_array, follower=follower_obs_array)
 
-    def teleoperate(self, max_iterations: int | None = None) -> None:
-        """Leader controls follower. If max_iterations is set, run that many loops then return.
-        This function logs leader/follower positions each loop for debugging."""
+    def teleoperate(self, max_seconds: float | None = None) -> None:
+        """
+        Leader controls follower. If max_seconds is set,
+        run for that many seconds then return.
+        """
         if not self.is_connected:
             raise ConnectionError("RakudaPairSys is not connected. Call connect() first.")
 
         logger.info("Starting teleoperation. Leader will control follower.")
-        iterations = 0
+        start_time = time.time()
         try:
             while True:
-                iterations += 1
                 # Get current positions from leader arm
                 leader_positions = self.get_leader_action()
                 logger.info(f"Leader positions ({len(leader_positions)}): {leader_positions}")
@@ -105,10 +107,13 @@ class RakudaPairSys(Robot):
                 except Exception:
                     logger.exception("Failed to send follower action; continuing loop.")
 
-                if max_iterations is not None and iterations >= max_iterations:
-                    logger.info("Reached max_iterations; exiting teleoperate.")
+                # Check for max_seconds
+                if max_seconds is not None and (time.time() - start_time) >= max_seconds:
+                    logger.info("Reached max_seconds; exiting teleoperate.")
                     break
 
+            self.follower.motors.torque_disabled()
+            # TODO: add a better way to stop smoothly, eg. set a home position
         except KeyboardInterrupt:
             self.follower.motors.torque_disabled()
             logger.info("Teleoperation stopped by user.")

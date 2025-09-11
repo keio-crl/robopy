@@ -3,11 +3,11 @@ from typing import Dict, List
 from numpy import ndarray
 
 from robopy.config.robot_config.koch_config import KochConfig
+from robopy.config.sensor_config.sensors import Sensors
 from robopy.config.sensor_config.visual_config.camera_config import (
     RealsenseCameraConfig,
     WebCameraConfig,
 )
-from robopy.config.types import Sensors
 from robopy.robots.common.composed import ComposedRobot
 from robopy.sensors.visual.realsense_camera import RealsenseCamera
 from robopy.sensors.visual.web_camera import WebCamera
@@ -23,7 +23,7 @@ class KochRobot(ComposedRobot):
         self._robot_system = KochPairSys(cfg)
         self._init_sensors()
 
-    def teleoperation(self) -> None:
+    def teleoperation(self, max_seconds: float) -> None:
         """Start teleoperation mode where leader controls follower."""
         if not self._robot_system:
             raise RuntimeError("Robot system is not initialized.")
@@ -71,7 +71,7 @@ class KochRobot(ComposedRobot):
                 raise ValueError(f"Unsupported camera config type: {type(cam_cfg)}")
             self._cameras.append(cam)
             index += 1
-        self._sensors = Sensors(CAMERA=self._cameras)
+        self._sensors = Sensors(cameras=self._cameras, tactile=None)
 
     def connect(self) -> None:
         self._robot_system.connect()

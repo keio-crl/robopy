@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, TypedDict
 
+import numpy as np
 from numpy.typing import NDArray
 
 from robopy.config.sensor_config.params_config import CameraParams, TactileParams
 from robopy.config.sensor_config.visual_config.camera_config import RealsenseCameraConfig
-from robopy.sensors.visual.realsense_camera import RealsenseCamera
 
 
 @dataclass
@@ -21,14 +21,9 @@ class RakudaConfig:
 
 
 @dataclass
-class RakudaSensorType:
-    cameras: List[RealsenseCamera]
-
-
-@dataclass
 class RakudaSensorParams:
-    cameras: List[CameraParams]
-    tactile: List[TactileParams]
+    cameras: List[CameraParams] | None
+    tactile: List[TactileParams] | None
 
 
 @dataclass
@@ -38,8 +33,24 @@ class RakudaSensorConfigs:
 
 
 class RakudaArmObs(TypedDict):
-    leader: NDArray
-    follower: NDArray
+    leader: NDArray[np.float16]
+    follower: NDArray[np.float16]
+
+
+class RakudaSensorObs(TypedDict):
+    cameras: Dict[str, NDArray[np.float32] | None]
+    tactile: Dict[str, NDArray[np.float32] | None]
+
+
+class RakudaObs(TypedDict):
+    """
+    Overall observation structure for Rakuda robot.
+    arms: Observations from the robot arms (leader and follower).
+    sensors: Observations from the sensors (cameras and tactile).
+    """
+
+    arms: RakudaArmObs
+    sensors: RakudaSensorObs | None
 
 
 RAKUDA_MOTOR_MAPPING: Dict[str, str] = {

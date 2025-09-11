@@ -6,6 +6,7 @@ from threading import Event
 from typing import Literal
 
 import cv2
+import numpy as np
 from cv2 import VideoCapture
 from numpy.typing import NDArray
 from rich import print as rprint
@@ -91,7 +92,9 @@ class WebCamera(Camera):
         self._check_set_actual_settings()
         self._is_connected = True
 
-    def get_observation(self, specific_color: Literal["rgb", "bgr"] | None = None) -> NDArray:
+    def get_observation(
+        self, specific_color: Literal["rgb", "bgr"] | None = None
+    ) -> NDArray[np.float32]:
         """read frames from the camera and return them as a NumPy array.
 
         Args:
@@ -138,6 +141,8 @@ class WebCamera(Camera):
         # last check: convert HWC to CHW
         if color_img.shape[-1] == 3 or color_img.shape[-1] == 1:
             color_img = color_img.transpose(2, 0, 1)  # HWC to CHW
+        color_img = color_img.astype("float32")
+
         return color_img
 
     def _check_set_actual_settings(self) -> None:
