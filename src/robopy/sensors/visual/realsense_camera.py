@@ -458,7 +458,10 @@ class RealsenseCamera(Camera):
         logger.debug(f"Capture loop started for {self.name}")
         frame_count = 0
 
-        while not self.stop_event.is_set():  # type: ignore
+        if self.stop_event is None:
+            raise RuntimeError("Stop event is not initialized.")
+
+        while not self.stop_event.is_set():
             try:
                 start_time = time.perf_counter()
 

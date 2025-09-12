@@ -201,12 +201,12 @@ class RakudaRobot(ComposedRobot):
                 for tac_param in tactile_params:
                     tactile_configs.append(tac_param)
             else:
-                tactile_configs.append(TactileParams(name="main", fps=30))
+                tactile_configs.append(TactileParams(name="main", serial_num="123", fps=30))
 
         # if no sensors config is provided, use default configs
         else:
             camera_configs = [RealsenseCameraConfig()]
-            tactile_configs = [TactileParams(name="main", fps=30)]
+            tactile_configs = [TactileParams(serial_num="123")]
 
         sensor_configs = RakudaSensorConfigs(cameras=camera_configs, tactile=tactile_configs)
         return sensor_configs

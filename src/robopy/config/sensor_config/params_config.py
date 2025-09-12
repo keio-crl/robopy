@@ -11,5 +11,6 @@ class CameraParams:
 
 @dataclass
 class TactileParams:
-    name: str
-    fps: int
+    serial_num: str
+    name: str = "main"
+    fps: int | None = 30
