@@ -116,7 +116,7 @@ class RakudaPairSys(Robot):
             logger.exception("Error during teleoperation.")
             raise
 
-    def teleoperate_step(self) -> RakudaArmObs | None:
+    def teleoperate_step(self) -> None:
         """teleoperate_step performs one iteration of teleoperation.
 
         Args:

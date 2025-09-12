@@ -60,6 +60,9 @@ class RealsenseCamera(Camera):
         self.serial_number: str | None = None
 
         # Set capture dimensions considering rotation
+        self.capture_width: int | float | None = None
+        self.capture_height: int | float | None = None
+
         if self.config.width and self.config.height:
             self.capture_width, self.capture_height = self.config.width, self.config.height
         else:

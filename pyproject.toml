@@ -15,7 +15,11 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["mypy>=1.17.1", "pytest>=8.4.1", "ruff>=0.12.11"]
+dev = [
+    "mypy>=1.17.1",
+    "pytest>=8.4.1",
+    "ruff>=0.12.11",
+]
 linux = ["pyrealsense2>=2.54.2"]                         # Linux専用依存
 
 [build-system]

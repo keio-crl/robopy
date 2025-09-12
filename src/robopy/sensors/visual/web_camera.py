@@ -139,9 +139,9 @@ class WebCamera(Camera):
         # last check: convert HWC to CHW
         if color_img.shape[-1] == 3 or color_img.shape[-1] == 1:
             color_img = color_img.transpose(2, 0, 1)  # HWC to CHW
-        color_img = color_img.astype("float32")
+        img: NDArray[np.float32] = color_img.astype("float32")
 
-        return color_img
+        return img
 
     def async_read(self, timeout_ms: float = 100.0) -> NDArray[np.float32]:
         """Asynchronously read the latest frame from the camera.
@@ -183,13 +183,13 @@ class WebCamera(Camera):
                 # Convert HWC to CHW
                 if color_img.shape[-1] == 3 or color_img.shape[-1] == 1:
                     color_img = color_img.transpose(2, 0, 1)  # HWC to CHW
-                color_img = color_img.astype("float32")
+                img: NDArray[np.float32] = color_img.astype("float32")
 
                 self.log["timestamp_utc"] = datetime.now(timezone.utc).timestamp()
                 end_time = time.perf_counter()
                 self.log["delta_time"] = end_time - start_time
 
-                return color_img
+                return img
 
             elapsed_time_ms = (time.perf_counter() - start_time) * 1000.0
             if elapsed_time_ms >= timeout_ms:

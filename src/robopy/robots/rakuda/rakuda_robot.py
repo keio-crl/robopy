@@ -99,9 +99,9 @@ class RakudaRobot(ComposedRobot):
             frame_count += 1
             interval_start = time.time()
         # proccess observations to numpy arrays
-        leader_obs = np.array(leader_obs)
-        follower_obs = np.array(follower_obs)
-        arms: RakudaArmObs = {"leader": leader_obs, "follower": follower_obs}
+        leader_obs_np = np.array(leader_obs)
+        follower_obs_np = np.array(follower_obs)
+        arms: RakudaArmObs = {"leader": leader_obs_np, "follower": follower_obs_np}
 
         # process camera observations
         camera_obs_np: Dict[str, NDArray[np.float32] | None] = {}

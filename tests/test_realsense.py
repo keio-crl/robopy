@@ -88,7 +88,7 @@ def simulate_main_thread_work(work_duration: float = 0.01):
     """Simulate some CPU-intensive work on the main thread"""
     # Simulate computational work (matrix operations, calculations, etc.)
     start = time.time()
-    result = 0
+    result = 0.0
     while time.time() - start < work_duration:
         # Simple computation to consume CPU cycles
         for i in range(1000):
