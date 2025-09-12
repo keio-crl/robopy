@@ -92,9 +92,7 @@ class WebCamera(Camera):
         self._check_set_actual_settings()
         self._is_connected = True
 
-    def get_observation(
-        self, specific_color: Literal["rgb", "bgr"] | None = None
-    ) -> NDArray[np.float32]:
+    def read(self, specific_color: Literal["rgb", "bgr"] | None = None) -> NDArray[np.float32]:
         """read frames from the camera and return them as a NumPy array.
 
         Args:

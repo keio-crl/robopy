@@ -22,7 +22,7 @@ class DigitSensor(Sensor):
     def is_connected(self) -> bool:
         return self._is_connected
 
-    def get_observation(self) -> None:
+    def read(self) -> None:
         if not self.is_connected:
             raise RuntimeError(f"Digit sensor {self.name} is not connected.")
         # Placeholder for actual tactile data retrieval logic

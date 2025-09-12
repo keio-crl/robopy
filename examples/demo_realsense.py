@@ -56,7 +56,7 @@ def main():
 
         # Show that we can still do sync reads if needed
         logger.info("Demonstrating synchronous read...")
-        sync_frame = camera.get_observation()
+        sync_frame = camera.read()
         logger.info(f"Sync frame shape: {sync_frame.shape}")
 
         # Test depth if available

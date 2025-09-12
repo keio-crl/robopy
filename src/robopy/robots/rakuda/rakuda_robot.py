@@ -153,7 +153,7 @@ class RakudaRobot(ComposedRobot):
         if self._sensors.cameras is not None:
             for cam in self._sensors.cameras:
                 if cam.is_connected:
-                    camera_data[cam.name] = cam.get_observation()
+                    camera_data[cam.name] = cam.read()
                 else:
                     logger.warning(f"Camera {cam.name} is not connected.")
                     camera_data[cam.name] = None
@@ -166,7 +166,7 @@ class RakudaRobot(ComposedRobot):
         if self._sensors.tactile is not None:
             for tac in self._sensors.tactile:
                 if tac.is_connected:
-                    tactile_data[tac.name] = tac.get_observation()
+                    tactile_data[tac.name] = tac.read()
                 else:
                     tactile_data[tac.name] = None
         else:

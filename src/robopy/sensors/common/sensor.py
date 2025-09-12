@@ -24,6 +24,6 @@ class Sensor(ABC, Generic[T]):
         ...
 
     @abstractmethod
-    def get_observation(self) -> T:
+    def read(self) -> T:
         """Get the current observation from the sensor."""
         ...

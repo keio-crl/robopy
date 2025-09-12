@@ -265,7 +265,7 @@ def test_blocking_vs_nonblocking_comparison():
         blocking_times = []
         for i in range(30):  # 30 frames
             start = time.time()
-            _ = camera.get_observation()  # Don't store unused frame
+            _ = camera.read()  # Don't store unused frame
             end = time.time()
             blocking_times.append((end - start) * 1000)
             time.sleep(0.01)  # Small delay between reads
@@ -330,7 +330,7 @@ def test_realsense_camera():
 
         # Test synchronous reading
         logger.info("Testing synchronous read...")
-        frame = camera.get_observation()
+        frame = camera.read()
         logger.info(f"Captured frame shape: {frame.shape}")
 
         # Test asynchronous reading
@@ -395,7 +395,7 @@ def test_basic_functionality():
 
         # Test synchronous reading
         logger.info("Testing synchronous read...")
-        frame = camera.get_observation()
+        frame = camera.read()
         logger.info(f"Captured frame shape: {frame.shape}")
 
         # Test asynchronous reading

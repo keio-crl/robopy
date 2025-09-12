@@ -2,7 +2,7 @@ import logging
 import time
 from datetime import datetime, timezone
 from threading import Event, Lock, Thread
-from typing import Any, Literal
+from typing import Any, Literal, override
 
 import cv2
 import numpy as np
@@ -161,9 +161,8 @@ class RealsenseCamera(Camera):
         self._is_connected = False
         logger.info(f"{self.name} disconnected.")
 
-    def get_observation(
-        self, specific_color: Literal["rgb", "bgr"] | None = None
-    ) -> NDArray[np.float32]:
+    @override
+    def read(self, specific_color: Literal["rgb", "bgr"] | None = None) -> NDArray[np.float32]:
         """Read frames from the camera synchronously (blocking).
 
         This method provides synchronous frame reading similar to LeRobot's read().
