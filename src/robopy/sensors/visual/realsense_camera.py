@@ -2,7 +2,7 @@ import logging
 import time
 from datetime import datetime, timezone
 from threading import Event, Lock, Thread
-from typing import Literal
+from typing import Any, Literal
 
 import cv2
 import numpy as np
@@ -23,9 +23,11 @@ logger = logging.getLogger(__name__)
 class RealsenseCamera(Camera):
     """Implementation class for Intel RealSense cameras using pyrealsense2
 
-    This implementation focuses on threading to avoid blocking the main thread.
+    This implementation uses threading to avoid blocking the main thread.
     The camera runs a background thread that continuously captures frames,
     allowing async_read() to return the latest frame without blocking.
+
+    Based on LeRobot's implementation adapted for robopy architecture.
     """
 
     def __init__(self, config: RealsenseCameraConfig) -> None:
@@ -57,7 +59,16 @@ class RealsenseCamera(Camera):
         # Serial number for device identification (more reliable than index)
         self.serial_number: str | None = None
 
-    def connect(self) -> None:
+        # Set capture dimensions considering rotation
+        if self.config.width and self.config.height:
+            self.capture_width, self.capture_height = self.config.width, self.config.height
+        else:
+            self.capture_width, self.capture_height = None, None
+
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}({self.name})"
+
+    def connect(self, warmup: bool = True) -> None:
         """Connect to the RealSense camera and start background capture thread."""
         if self._is_connected:
             logger.warning(f"{self.name} is already connected.")
@@ -105,6 +116,23 @@ class RealsenseCamera(Camera):
             self._update_config_from_stream()
             self._is_connected = True
 
+            # Warmup period
+            if warmup:
+                logger.debug(
+                    f"""Warming up {self.name} for 
+                        {self.config.warmup_s if hasattr(self.config, "warmup_s") else 1}
+                        s...
+                    """,
+                )
+                time.sleep(1)  # Basic warmup
+                # Take a few frames to warm up the camera
+                for _ in range(5):
+                    try:
+                        self._read_frame_sync(timeout_ms=1000)
+                        time.sleep(0.1)
+                    except Exception as e:
+                        logger.warning(f"Warmup frame failed: {e}")
+
             # Start background capture thread
             self._start_capture_thread()
 
@@ -138,6 +166,9 @@ class RealsenseCamera(Camera):
     ) -> NDArray[np.float32]:
         """Read frames from the camera synchronously (blocking).
 
+        This method provides synchronous frame reading similar to LeRobot's read().
+        For non-blocking access, use async_read().
+
         Args:
             specific_color: Color format override. If None, uses config.color_mode.
 
@@ -152,40 +183,15 @@ class RealsenseCamera(Camera):
             specific_color = self.config.color_mode
         self.log["timestamp_utc"] = datetime.now(timezone.utc).timestamp()
 
-        # Wait for frames with timeout
-        frames = self.rs_pipeline.wait_for_frames(timeout_ms=1000)  # type: ignore
-        color_frame = frames.get_color_frame()  # type: ignore
-
-        if not color_frame:
-            raise OSError("Failed to capture color frame.")
-
-        # Convert to numpy array
-        color_image = np.asanyarray(color_frame.get_data(), dtype=np.float32)  # type: ignore
-
-        # Convert color format if needed (RealSense outputs RGB by default)
-        if specific_color == "bgr":
-            color_image = cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR)
-
-        # Validate resolution
-        H, W, _ = color_image.shape
-        if self.config.width and self.config.height:
-            if H != self.config.height or W != self.config.width:
-                raise OSError(
-                    f"Camera resolution is {W}x{H}, but expected "
-                    f"{self.config.width}x{self.config.height}."
-                )
+        # Read frame synchronously
+        color_image = self._read_frame_sync(timeout_ms=1000, color_mode=specific_color)
 
         end_time = time.perf_counter()
         self.log["delta_time"] = end_time - start_time
 
-        # Convert HWC to CHW
-        if color_image.shape[-1] == 3:
-            color_image = color_image.transpose(2, 0, 1)
-        color_image = color_image.astype("float32")
-
         return color_image
 
-    def async_read(self, timeout_ms: float = 200) -> NDArray:
+    def async_read(self, timeout_ms: float = 200) -> NDArray[np.float32]:
         """Read the latest available frame asynchronously (non-blocking).
 
         This method retrieves the most recent frame captured by the background
@@ -237,11 +243,15 @@ class RealsenseCamera(Camera):
             raise RuntimeError("Depth stream is not enabled for this camera.")
 
         # Wait for frames
-        frames = self.rs_pipeline.wait_for_frames(timeout_ms=timeout_ms)  # type: ignore
+        ret, frames = self.rs_pipeline.try_wait_for_frames(timeout_ms=timeout_ms)  # type: ignore
+
+        if not ret or frames is None:
+            raise OSError("Failed to capture depth frame.")
+
         depth_frame = frames.get_depth_frame()  # type: ignore
 
         if not depth_frame:
-            raise OSError("Failed to capture depth frame.")
+            raise OSError("Failed to get depth frame from frameset.")
 
         # Convert to numpy array
         depth_image = np.asanyarray(depth_frame.get_data())  # type: ignore
@@ -280,11 +290,133 @@ class RealsenseCamera(Camera):
 
     def record(self) -> None:
         """Start recording (placeholder for Camera interface)."""
-        # This could be implemented to save frames to disk
         logger.info(f"Recording started for {self.name}")
+
+    @staticmethod
+    def find_cameras() -> list[dict[str, Any]]:
+        """Find available Intel RealSense cameras connected to the system.
+
+        Returns:
+            List of dictionaries containing camera information.
+        """
+        if rs is None:
+            raise ImportError("pyrealsense2 is not installed.")
+
+        found_cameras_info = []
+        context = rs.context()  # type: ignore
+        devices = context.query_devices()  # type: ignore
+
+        for device in devices:
+            camera_info = {
+                "name": device.get_info(rs.camera_info.name),  # type: ignore
+                "type": "RealSense",
+                "serial_number": device.get_info(rs.camera_info.serial_number),  # type: ignore
+                "firmware_version": device.get_info(rs.camera_info.firmware_version),  # type: ignore
+                "usb_type_descriptor": device.get_info(rs.camera_info.usb_type_descriptor),  # type: ignore
+                "physical_port": device.get_info(rs.camera_info.physical_port),  # type: ignore
+                "product_id": device.get_info(rs.camera_info.product_id),  # type: ignore
+                "product_line": device.get_info(rs.camera_info.product_line),  # type: ignore
+            }
+
+            # Get default stream profiles
+            sensors = device.query_sensors()  # type: ignore
+            for sensor in sensors:
+                profiles = sensor.get_stream_profiles()  # type: ignore
+
+                for profile in profiles:
+                    if profile.is_video_stream_profile() and profile.is_default():  # type: ignore
+                        vprofile = profile.as_video_stream_profile()  # type: ignore
+                        stream_info = {
+                            "stream_type": vprofile.stream_name(),  # type: ignore
+                            "format": vprofile.format().name,  # type: ignore
+                            "width": vprofile.width(),  # type: ignore
+                            "height": vprofile.height(),  # type: ignore
+                            "fps": vprofile.fps(),  # type: ignore
+                        }
+                        camera_info["default_stream_profile"] = stream_info
+                        break
+
+            found_cameras_info.append(camera_info)
+
+        return found_cameras_info
+
+    def _read_frame_sync(
+        self, timeout_ms: int = 1000, color_mode: str | None = None
+    ) -> NDArray[np.float32]:
+        """Read a single frame synchronously from the camera.
+
+        Args:
+            timeout_ms: Timeout for frame capture.
+            color_mode: Color mode override.
+
+        Returns:
+            NDArray: Processed frame in CHW format.
+        """
+        if color_mode is None:
+            color_mode = self.config.color_mode
+
+        # Wait for frames with timeout
+        ret, frames = self.rs_pipeline.try_wait_for_frames(timeout_ms=timeout_ms)  # type: ignore
+
+        if not ret or frames is None:
+            raise OSError(f"Failed to capture frame from {self.name}")
+
+        color_frame = frames.get_color_frame()  # type: ignore
+
+        if not color_frame:
+            raise OSError("Failed to get color frame from frameset.")
+
+        # Convert to numpy array
+        color_image = np.asanyarray(color_frame.get_data(), dtype=np.float32)  # type: ignore
+
+        # Process the image
+        processed_image = self._postprocess_image(color_image, color_mode)
+
+        return processed_image
+
+    def _postprocess_image(
+        self, image: NDArray, color_mode: str | None = None
+    ) -> NDArray[np.float32]:
+        """Process raw image data according to configuration.
+
+        Args:
+            image: Raw image data from RealSense (RGB format).
+            color_mode: Target color mode.
+
+        Returns:
+            NDArray: Processed image in CHW format.
+        """
+        if color_mode is None:
+            color_mode = self.config.color_mode
+
+        processed_image = image
+
+        # Convert color format if needed (RealSense outputs RGB by default)
+        if color_mode == "bgr":
+            processed_image = cv2.cvtColor(processed_image, cv2.COLOR_RGB2BGR)
+
+        # Validate resolution
+        H, W, _ = processed_image.shape
+        if self.config.width and self.config.height:
+            if H != self.config.height or W != self.config.width:
+                raise OSError(
+                    f"Camera resolution is {W}x{H}, but expected "
+                    f"{self.config.width}x{self.config.height}."
+                )
+
+        # Convert HWC to CHW
+        if processed_image.shape[-1] == 3:
+            processed_image = processed_image.transpose(2, 0, 1)
+
+        processed_image = processed_image.astype("float32")
+
+        return processed_image
 
     def _find_camera_serial(self) -> None:
         """Find camera serial number by index."""
+        if rs is None:
+            raise ImportError("pyrealsense2 is not installed.")
+
         context = rs.context()  # type: ignore
         devices = context.query_devices()  # type: ignore
 
@@ -315,8 +447,15 @@ class RealsenseCamera(Camera):
         if self.config.height is None:
             self.config.height = color_stream.height()  # type: ignore
 
+        # Update capture dimensions
+        if self.config.width and self.config.height:
+            self.capture_width, self.capture_height = self.config.width, self.config.height
+
     def _capture_loop(self) -> None:
-        """Background thread loop for continuous frame capture."""
+        """Background thread loop for continuous frame capture.
+
+        Similar to LeRobot's _read_loop but adapted for robopy's structure.
+        """
         logger.debug(f"Capture loop started for {self.name}")
         frame_count = 0
 
@@ -325,23 +464,19 @@ class RealsenseCamera(Camera):
                 start_time = time.perf_counter()
 
                 # Capture frames with timeout
-                frames = self.rs_pipeline.wait_for_frames(timeout_ms=500)  # type: ignore
+                ret, frames = self.rs_pipeline.try_wait_for_frames(timeout_ms=500)  # type: ignore
+
+                if not ret or frames is None:
+                    continue
 
                 # Process color frame
                 color_frame = frames.get_color_frame()  # type: ignore
                 if color_frame:
                     color_image = np.asanyarray(color_frame.get_data())  # type: ignore
-
-                    # Convert color format
-                    if self.config.color_mode == "bgr":
-                        color_image = cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR)
-
-                    # Convert to CHW format
-                    if color_image.shape[-1] == 3:
-                        color_image = color_image.transpose(2, 0, 1)
+                    processed_image = self._postprocess_image(color_image)
 
                     with self.frame_lock:
-                        self.latest_color_frame = color_image
+                        self.latest_color_frame = processed_image
 
                 # Process depth frame if available
                 if self.config.is_depth_camera:
@@ -367,10 +502,12 @@ class RealsenseCamera(Camera):
                     logger.warning(f"Error in capture loop for {self.name}: {e}")
                 time.sleep(0.01)  # Small delay on error
 
+        logger.debug(f"Capture loop stopped for {self.name}")
+
     def _start_capture_thread(self) -> None:
         """Start background capture thread."""
         if self.thread is not None and self.thread.is_alive():
-            return
+            self._stop_capture_thread()
 
         self.stop_event = Event()
         self.thread = Thread(target=self._capture_loop, name=f"{self.name}_capture", daemon=True)

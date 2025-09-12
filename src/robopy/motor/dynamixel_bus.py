@@ -140,7 +140,6 @@ class DynamixelBus:
         for _ in range(NUM_WRITE_RETRY):
             comm_result = group_sync_write.txPacket()
             if comm_result == dxl.COMM_SUCCESS:
-                print(f"Successfully wrote {item.name} to motors: {motor_names_to_write}")
                 return
 
         raise DynamixelCommError(f"Failed to sync write {item.name}.", comm_result)

@@ -12,8 +12,8 @@ config = RakudaConfig(
 def test_rakuda_record():
     rakuda = RakudaRobot(config)
     rakuda.connect()
-    obs = rakuda.record(max_seconds=10, fps=5)
-    print(obs)
+    obs = rakuda.record(max_frame=15, fps=5)
+    print(obs["arms"]["leader"].shape)
 
 
 if __name__ == "__main__":

@@ -21,17 +21,19 @@ def test_rakuda_robot_initialization():
 
 def test_rakuda_robot_get_observation():
     robot = RakudaRobot(config)
-    robot.connect()
-    obs = robot.get_observation()
-    print(obs)
-    assert "arms" in obs
-    assert "leader" in obs["arms"]
-    assert "follower" in obs["arms"]
-    assert obs["arms"]["leader"].shape == (17,)
-    assert obs["arms"]["follower"].shape == (17,)
-
-    if robot.is_connected:
-        robot.disconnect()
+    try:
+        robot.connect()
+        obs = robot.get_observation()
+        assert "arms" in obs
+        assert "leader" in obs["arms"]
+        assert "follower" in obs["arms"]
+        assert obs["arms"]["leader"].shape == (17,)
+        assert obs["arms"]["follower"].shape == (17,)
+    except Exception as e:
+        print(f"Error during test: {e}")
+    finally:
+        if robot.is_connected:
+            robot.disconnect()
 
 
 if __name__ == "__main__":

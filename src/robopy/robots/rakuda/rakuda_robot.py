@@ -60,28 +60,32 @@ class RakudaRobot(ComposedRobot):
         else:
             self._pair_sys.teleoperate()
 
-    def record(self, max_seconds: float, fps: int = 5) -> RakudaObs:
-        """record function for Rakuda robot. Not implemented."""
+    def record(self, max_frame: int, fps: int = 5) -> RakudaObs:
         if not self.is_connected:
-            raise ConnectionError("RakudaRobot is not connected. Call connect() first.")
+            self.connect()
 
-        if max_seconds <= 0:
-            raise ValueError("max_seconds must be greater than 0.")
+        if max_frame <= 0:
+            raise ValueError("max_frame must be greater than 0.")
 
         leader_obs = []
         follower_obs = []
         camera_obs: Dict[str, List] = DefaultDict(list)
         tactile_obs: Dict[str, List] = DefaultDict(list)
 
-        start_time = time.time()
         get_obs_interval = 1.0 / fps
-        while time.time() - start_time < max_seconds:
-            interval_start = time.time()
+        frame_count = 0
+        interval_start = time.time()
+        while frame_count < max_frame:
             self.robot_system.teleoperate_step()
-            
-            leader, follower = self.get_arm_observation()
-            leader_obs.append(leader)
-            follower_obs.append(follower)
+
+            if time.time() - interval_start < get_obs_interval:
+                continue
+
+            arm_obs = self.get_arm_observation()
+
+            leader_obs.append(arm_obs["leader"])
+            follower_obs.append(arm_obs["follower"])
+
             sensor_data = self.sensors_observation()
             camera_data = sensor_data["cameras"]
             tactile_data = sensor_data["tactile"]
@@ -92,12 +96,8 @@ class RakudaRobot(ComposedRobot):
             for tac_name, tac_frame in tactile_data.items():
                 tactile_obs[tac_name].append(tac_frame)
 
-            elapsed = time.time() - interval_start
-            sleep_time = max(0, (1.0 / fps) - elapsed)
-            time.sleep(sleep_time)
-            if time.time() - start_time >= max_seconds:
-                break
-
+            frame_count += 1
+            interval_start = time.time()
         # proccess observations to numpy arrays
         leader_obs = np.array(leader_obs)
         follower_obs = np.array(follower_obs)
@@ -120,6 +120,7 @@ class RakudaRobot(ComposedRobot):
                 tactile_obs_np[tac_name] = None
 
         sensors_obs = RakudaSensorObs(cameras=camera_obs_np, tactile=tactile_obs_np)
+        self.disconnect()
         return RakudaObs(arms=arms, sensors=sensors_obs)
 
     @override
@@ -228,7 +229,6 @@ class RakudaRobot(ComposedRobot):
 
         sensors = Sensors(cameras=cameras)
         self._sensors = sensors
-        print(f"Initialized sensors: {sensors}")
         return sensors
 
     @property

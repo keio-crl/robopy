@@ -48,6 +48,7 @@ class RealsenseCameraConfig(CameraConfig):
     name: str = "main"
     index: int = 0
     fps: int | float | None = 30
+    warmup_s: float = 1.0
     is_depth_camera: bool = True
     is_realsense: bool = True
     min_depth: float = 100.0
@@ -63,7 +64,6 @@ class RealsenseCameraConfig(CameraConfig):
         if self.color_mode not in ["rgb", "bgr"]:
             error_msg = f"{self.color_mode} is not supported. Use 'rgb' or 'bgr'."
             raise ValueError(error_msg)
-        print(f"RealsenseCameraConfig: {self}")
 
 
 class CameraLog(TypedDict):
