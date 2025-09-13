@@ -74,29 +74,38 @@ class RakudaRobot(ComposedRobot):
         get_obs_interval = 1.0 / fps
         frame_count = 0
         interval_start = time.time()
-        while frame_count < max_frame:
-            self.robot_system.teleoperate_step()
 
-            if time.time() - interval_start < get_obs_interval:
-                continue
+        try:
+            while frame_count < max_frame:
+                self.robot_system.teleoperate_step()
 
-            arm_obs = self.get_arm_observation()
+                if time.time() - interval_start < get_obs_interval:
+                    continue
 
-            leader_obs.append(arm_obs["leader"])
-            follower_obs.append(arm_obs["follower"])
+                arm_obs = self.get_arm_observation()
 
-            sensor_data = self.sensors_observation()
-            camera_data = sensor_data["cameras"]
-            tactile_data = sensor_data["tactile"]
+                leader_obs.append(arm_obs["leader"])
+                follower_obs.append(arm_obs["follower"])
 
-            for cam_name, cam_frame in camera_data.items():
-                camera_obs[cam_name].append(cam_frame)
+                sensor_data = self.sensors_observation()
+                camera_data = sensor_data["cameras"]
+                tactile_data = sensor_data["tactile"]
 
-            for tac_name, tac_frame in tactile_data.items():
-                tactile_obs[tac_name].append(tac_frame)
+                for cam_name, cam_frame in camera_data.items():
+                    camera_obs[cam_name].append(cam_frame)
 
-            frame_count += 1
-            interval_start = time.time()
+                for tac_name, tac_frame in tactile_data.items():
+                    tactile_obs[tac_name].append(tac_frame)
+
+                frame_count += 1
+                interval_start = time.time()
+
+        except KeyboardInterrupt:
+            logger.info("Recording interrupted by user.")
+        except Exception as e:
+            logger.error(f"An error occurred during recording: {e}")
+            raise e
+
         # proccess observations to numpy arrays
         leader_obs_np = np.array(leader_obs)
         follower_obs_np = np.array(follower_obs)
@@ -119,7 +128,6 @@ class RakudaRobot(ComposedRobot):
                 tactile_obs_np[tac_name] = None
 
         sensors_obs = RakudaSensorObs(cameras=camera_obs_np, tactile=tactile_obs_np)
-        self.disconnect()
         return RakudaObs(arms=arms, sensors=sensors_obs)
 
     @override
@@ -152,7 +160,7 @@ class RakudaRobot(ComposedRobot):
         if self._sensors.cameras is not None:
             for cam in self._sensors.cameras:
                 if cam.is_connected:
-                    camera_data[cam.name] = cam.async_read(timeout_ms=50)
+                    camera_data[cam.name] = cam.async_read(timeout_ms=16)  # ~60fps
                 else:
                     logger.warning(f"Camera {cam.name} is not connected.")
                     camera_data[cam.name] = None
@@ -165,7 +173,7 @@ class RakudaRobot(ComposedRobot):
         if self._sensors.tactile is not None:
             for tac in self._sensors.tactile:
                 if tac.is_connected:
-                    tactile_data[tac.name] = tac.read()
+                    tactile_data[tac.name] = None  # TODO
                 else:
                     tactile_data[tac.name] = None
         else:
@@ -246,3 +254,9 @@ class RakudaRobot(ComposedRobot):
     @property
     def robot_system(self) -> RakudaPairSys:
         return self._pair_sys
+
+    def __del__(self):
+        try:
+            self.disconnect()
+        except Exception:
+            pass

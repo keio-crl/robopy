@@ -193,7 +193,7 @@ class RealsenseCamera(Camera):
 
         return color_image
 
-    def async_read(self, timeout_ms: float = 200) -> NDArray[np.float32]:
+    def async_read(self, timeout_ms: float = 16) -> NDArray[np.float32]:
         """Read the latest available frame asynchronously (non-blocking).
 
         This method retrieves the most recent frame captured by the background

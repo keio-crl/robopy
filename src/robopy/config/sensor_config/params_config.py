@@ -14,3 +14,9 @@ class TactileParams:
     serial_num: str
     name: str = "main"
     fps: int | None = 30
+
+
+@dataclass
+class SensorsParams:
+    cameras: list[CameraParams] | None = None
+    tactile: list[TactileParams] | None = None
