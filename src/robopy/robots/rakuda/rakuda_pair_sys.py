@@ -116,7 +116,7 @@ class RakudaPairSys(Robot):
             logger.exception("Error during teleoperation.")
             raise
 
-    def teleoperate_step(self) -> None:
+    def teleoperate_step(self) -> RakudaArmObs:
         """teleoperate_step performs one iteration of teleoperation.
 
         Args:
@@ -137,17 +137,21 @@ class RakudaPairSys(Robot):
         leader_positions = self.get_leader_action()
 
         # Map leader positions to follower positions
-        follower_positions = {}
+        follower_goal_positions = {}
         for leader_name, position in leader_positions.items():
             follower_name = self._motor_mapping.get(leader_name)
             if follower_name:
-                follower_positions[follower_name] = position
+                follower_goal_positions[follower_name] = position
 
         # Send positions to follower arm
         try:
-            self.send_follower_action(follower_positions)
+            self.send_follower_action(follower_goal_positions)
         except Exception:
             logger.exception("Failed to send follower action; continuing.")
+
+        leader_obs = np.array(list(leader_positions.values()), dtype=np.float32)
+        follower_obs = np.array(list(follower_goal_positions.values()), dtype=np.float32)
+        return RakudaArmObs(leader=leader_obs, follower=follower_obs)
 
     def get_leader_action(self) -> dict:
         """Get the current action (positions) from the leader arm."""
