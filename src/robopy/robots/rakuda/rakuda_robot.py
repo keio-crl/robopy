@@ -12,7 +12,6 @@ from robopy.config.robot_config.rakuda_config import (
     RakudaSensorConfigs,
     RakudaSensorObs,
 )
-from robopy.config.sensor_config.params_config import TactileParams
 from robopy.config.sensor_config.sensors import Sensors
 from robopy.config.sensor_config.visual_config.camera_config import RealsenseCameraConfig
 from robopy.sensors.tactile.digit_sensor import DigitSensor
@@ -153,7 +152,7 @@ class RakudaRobot(ComposedRobot):
         if self._sensors.cameras is not None:
             for cam in self._sensors.cameras:
                 if cam.is_connected:
-                    camera_data[cam.name] = cam.read()
+                    camera_data[cam.name] = cam.async_read(timeout_ms=50)
                 else:
                     logger.warning(f"Camera {cam.name} is not connected.")
                     camera_data[cam.name] = None
@@ -200,13 +199,10 @@ class RakudaRobot(ComposedRobot):
                 tactile_params = self.config.sensors.tactile
                 for tac_param in tactile_params:
                     tactile_configs.append(tac_param)
-            else:
-                tactile_configs.append(TactileParams(name="main", serial_num="123", fps=30))
-
         # if no sensors config is provided, use default configs
         else:
             camera_configs = [RealsenseCameraConfig()]
-            tactile_configs = [TactileParams(serial_num="123")]
+            tactile_configs = []
 
         sensor_configs = RakudaSensorConfigs(cameras=camera_configs, tactile=tactile_configs)
         return sensor_configs
@@ -227,7 +223,7 @@ class RakudaRobot(ComposedRobot):
             digit.connect()
             tactiles.append(digit)
 
-        sensors = Sensors(cameras=cameras)
+        sensors = Sensors(cameras=cameras, tactile=tactiles)
         self._sensors = sensors
         return sensors
 

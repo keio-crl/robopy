@@ -7,22 +7,17 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 
 def main():
-    rakuda_config = RakudaConfig(
-        leader_port="/dev/ttyUSB0",
-        follower_port="/dev/ttyUSB1",
-    )
-    rakuda = RakudaPairSys(cfg=rakuda_config)
-    rakuda.connect()
-
-    print(rakuda.motors)
-    rakuda.teleoperate()
-    # for i in range(100):
-    #    print("leader")
-    #    print(rakuda.get_leader_action())
-    #    print("follower")
-    #    print(rakuda.get_follower_action())
-
-    rakuda.disconnect()
+    try:
+        rakuda_config = RakudaConfig(
+            leader_port="/dev/ttyUSB0",
+            follower_port="/dev/ttyUSB1",
+        )
+        rakuda = RakudaPairSys(cfg=rakuda_config)
+        rakuda.connect()
+        rakuda.teleoperate(max_seconds=5)
+        rakuda.disconnect()
+    except Exception as e:
+        raise e
 
 
 if __name__ == "__main__":

@@ -22,8 +22,6 @@ class DigitSensor(Sensor):
         self.serial_num = config.serial_num
         self._is_connected = False
         self.digit = Digit(serial=self.serial_num, name=self.name)
-        if self.fps is not None:
-            self.digit.set_fps(self.fps)
 
         # Threading for async read
         self.thread: Thread | None = None
@@ -37,6 +35,9 @@ class DigitSensor(Sensor):
             raise RuntimeError(f"Failed to initialize Digit sensor: {self.name}")
         self.digit.connect()
         self._is_connected = True
+
+        if self.fps is not None:
+            self.digit.set_fps(self.fps)
         logger.info(f"Digit sensor {self.name} connected.")
 
     def disconnect(self) -> None:
