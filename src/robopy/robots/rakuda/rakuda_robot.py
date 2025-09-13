@@ -166,7 +166,8 @@ class RakudaRobot(ComposedRobot):
 
         logger.info(f"Starting parallel recording: {max_frame} frames at {fps}Hz")
         logger.info(
-            f"Target interval: {get_obs_interval * 1000:.1f}ms, Max processing time: {max_processing_time_ms}ms"
+            f"""Target interval: {get_obs_interval * 1000:.1f}ms, 
+            Max processing time: {max_processing_time_ms}ms"""
         )
 
         try:
@@ -243,7 +244,8 @@ class RakudaRobot(ComposedRobot):
                     if processing_time > max_processing_time:
                         skipped_frames += 1
                         logger.warning(
-                            f"Frame {frame_count} took {processing_time * 1000:.1f}ms (>{max_processing_time_ms}ms), skipping"
+                            f"""Frame {frame_count} took {processing_time * 1000:.1f}ms 
+                            (>{max_processing_time_ms}ms), skipping"""
                         )
                         continue
 

@@ -8,3 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+
+# test outputs
+tests/**/*.gif
+tests/**/*.blosc2
