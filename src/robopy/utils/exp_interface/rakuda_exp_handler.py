@@ -1,7 +1,14 @@
+import concurrent
+import concurrent.futures
+import os
+from time import sleep
+from venv import logger
+
 from robopy.config import RakudaConfig
 from robopy.config.robot_config.rakuda_config import RakudaObs, RakudaSensorParams
 from robopy.config.sensor_config import TactileParams
 from robopy.robots.rakuda.rakuda_robot import RakudaRobot
+from robopy.utils.animation_maker import visualize_rakuda_obs
 
 
 class RakudaExpHandler:
@@ -71,14 +78,67 @@ class RakudaExpHandler:
             RuntimeError: _failed to save data
         """
         try:
-            obs = self.record(max_frames=max_frames, if_async=if_async)
+            print("Starting recording...")
+            if not self.robot.is_connected:
+                self.robot.connect()
+
+            while True:
+                print("Press 'Enter' to warm up , or 'q' to quit")
+                input_str = input()
+                if input_str.lower() == "q":
+                    print("Exiting...")
+                    self.robot.disconnect()
+                    sleep(0.5)
+                    return
+                print("Warming up for 5 seconds...")
+                self.robot.teleoperation(5)
+                print("Press 'Enter' to start recording...")
+                input()
+
+                if if_async:
+                    obs = self.robot.record_parallel(max_frame=max_frames, fps=self.fps)
+                else:
+                    obs = self.robot.record(max_frame=max_frames, fps=self.fps)
+                print(
+                    "Recording finished. print 1~9 to save data,",
+                    " or 'e' to record again",
+                )
+                input_str = input()
+
+                # handle user input
+                if input_str.lower() == "e":
+                    print("Recording again...")
+                    continue
+                # save data
+                elif input_str in [str(i) for i in range(1, 10)]:
+                    save_dir = os.path.join("data", f"{save_path}", f"{input_str}")
+                    unique_save_dir = save_dir
+                    count = 1
+                    while os.path.exists(unique_save_dir):
+                        unique_save_dir = f"{save_dir}_{count}"
+                        count += 1
+                    os.makedirs(unique_save_dir)
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                        futures = executor.submit(
+                            visualize_rakuda_obs, obs, unique_save_dir, self.fps
+                        )
+                        try:
+                            futures.result()
+                            print(f"Data saved to {unique_save_dir}")
+                        except Exception as e:
+                            raise RuntimeError(f"Failed to save data: {e}")
+
+                # disconnect and exit
+                else:
+                    print("Invalid input. Exiting...")
+                    self.robot.disconnect()
+                    return
         except Exception as e:
             raise RuntimeError(f"Failed to record from Rakuda robot: {e}")
-
-        try:
-            pass
-        except Exception as e:
-            raise RuntimeError(f"Failed to save data: {e}")
+        except KeyboardInterrupt:
+            logger.info("Recording stopped by user...")
+            sleep(0.5)
+            self.robot.disconnect()
 
     def _init_config(
         self,
