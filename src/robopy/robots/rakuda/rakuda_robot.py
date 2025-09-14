@@ -363,6 +363,24 @@ class RakudaRobot(ComposedRobot):
 
         return RakudaSensorObs(cameras=camera_data, tactile=tactile_data)
 
+    def send(self, leader_action: NDArray[np.float32]) -> None:
+        """Send action to the leader arm only."""
+        if not self.is_connected:
+            raise ConnectionError("RakudaRobot is not connected. Call connect() first.")
+
+        leader_action_dict = {}
+        leader_motor_names = list(self._pair_sys.leader.motors.motors.keys())
+        if len(leader_action) != len(leader_motor_names):
+            raise ValueError(
+                f"Leader action length {len(leader_action)} does not match "
+                f"number of leader motors {len(leader_motor_names)}"
+            )
+
+        for i, motor_name in enumerate(leader_motor_names):
+            leader_action_dict[motor_name] = int(leader_action[i])
+
+        self._pair_sys.send_follower_action(leader_action_dict)
+
     def _init_config(self) -> RakudaSensorConfigs:
         """Initialize sensor configurations based on the provided robot configuration."""
 
