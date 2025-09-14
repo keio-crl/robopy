@@ -13,3 +13,5 @@ wheels/
 # test outputs
 tests/**/*.gif
 tests/**/*.blosc2
+tests/**/*.npy
+tests/**/*.png

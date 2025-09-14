@@ -58,6 +58,28 @@ class RakudaExpHandler:
             raise RuntimeError(f"Failed to record from Rakuda robot: {e}")
         return obs
 
+    def recode_save(self, max_frames: int, save_path: str, if_async: bool = True) -> None:
+        """record and save data from Rakuda robot
+
+        Args:
+            max_frames (int): maximum number of frames to record
+            save_path (str): path to save the recorded data
+            if_async (bool, optional): if a . Defaults to True.
+
+        Raises:
+            RuntimeError: _failed to record from Rakuda robot
+            RuntimeError: _failed to save data
+        """
+        try:
+            obs = self.record(max_frames=max_frames, if_async=if_async)
+        except Exception as e:
+            raise RuntimeError(f"Failed to record from Rakuda robot: {e}")
+
+        try:
+            pass
+        except Exception as e:
+            raise RuntimeError(f"Failed to save data: {e}")
+
     def _init_config(
         self,
         leader_port_num: str,

@@ -191,6 +191,13 @@ class RealsenseCamera(Camera):
         end_time = time.perf_counter()
         self.log["delta_time"] = end_time - start_time
 
+        if len(color_image.shape) == 3 and color_image.shape[0] != 3:
+            logger.warning(
+                f"Unexpected frame shape {color_image.shape} from {self.name}, "
+                "expected 3 channels in CHW format."
+            )
+            color_image = color_image.transpose(2, 1, 0)  # Convert HWC to CHW
+
         return color_image
 
     def async_read(self, timeout_ms: float = 16) -> NDArray[np.float32]:
@@ -226,6 +233,13 @@ class RealsenseCamera(Camera):
 
         if frame is None:
             raise RuntimeError(f"Internal error: Event set but no frame available for {self.name}.")
+
+        if len(frame.shape) == 3 and frame.shape[0] != 3:
+            logger.warning(
+                f"Unexpected frame shape {frame.shape} from {self.name}, "
+                "expected 3 channels in CHW format."
+            )
+            frame = frame.transpose(2, 1, 0)  # Convert HWC to CHW
 
         return frame
 
