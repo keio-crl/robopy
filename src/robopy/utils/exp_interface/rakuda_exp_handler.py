@@ -8,7 +8,8 @@ from robopy.config import RakudaConfig
 from robopy.config.robot_config.rakuda_config import RakudaObs, RakudaSensorParams
 from robopy.config.sensor_config import TactileParams
 from robopy.robots.rakuda.rakuda_robot import RakudaRobot
-from robopy.utils.animation_maker import visualize_rakuda_obs
+from robopy.utils import visualize_rakuda_obs
+from robopy.utils.blosc_handler import BLOSCHandler
 
 
 class RakudaExpHandler:
@@ -118,16 +119,11 @@ class RakudaExpHandler:
                         unique_save_dir = f"{save_dir}_{count}"
                         count += 1
                     os.makedirs(unique_save_dir)
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                        futures = executor.submit(
-                            visualize_rakuda_obs, obs, unique_save_dir, self.fps
-                        )
-                        try:
-                            futures.result()
-                            print(f"Data saved to {unique_save_dir}")
-                        except Exception as e:
-                            raise RuntimeError(f"Failed to save data: {e}")
-
+                    try:
+                        save_rakuda_obs(obs, unique_save_dir, self.fps)
+                        print(f"Data saved to {unique_save_dir}")
+                    except Exception as e:
+                        raise RuntimeError(f"Failed to save data: {e}")
                 # disconnect and exit
                 else:
                     print("Invalid input. Exiting...")
@@ -163,3 +159,63 @@ class RakudaExpHandler:
                 ]
             ),
         )
+
+
+def save_rakuda_obs(obs: RakudaObs, base_path: str, fps: int) -> None:
+    """save Rakuda observation data and visualize it
+
+    Args:
+        obs (RakudaObs): observation data from Rakuda robot
+    """
+    if not os.path.exists(base_path):
+        os.makedirs(base_path)
+
+    arms_obs = obs["arms"]
+    sensors_obs = obs["sensors"]
+    if sensors_obs is None:
+        raise ValueError("sensors_obs is None, cannot save tactile data")
+
+    leader_obs = arms_obs["leader"]
+    follower_obs = arms_obs["follower"]
+    visual_obs = sensors_obs["cameras"]
+    tactile_obs = sensors_obs["tactile"]
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        futures = []
+
+        futures.append(
+            executor.submit(
+                BLOSCHandler.save, leader_obs, os.path.join(base_path, "leader_obs.blosc2")
+            )
+        )
+        futures.append(
+            executor.submit(
+                BLOSCHandler.save, follower_obs, os.path.join(base_path, "follower_obs.blosc2")
+            )
+        )
+        for cam_name, cam_data in visual_obs.items():
+            if cam_data is not None:
+                futures.append(
+                    executor.submit(
+                        BLOSCHandler.save,
+                        cam_data,
+                        os.path.join(base_path, f"{cam_name}_obs.blosc2"),
+                    )
+                )
+        for tactile_name, tactile_data in tactile_obs.items():
+            if tactile_data is not None:
+                futures.append(
+                    executor.submit(
+                        BLOSCHandler.save,
+                        tactile_data,
+                        os.path.join(base_path, f"{tactile_name}_obs.blosc2"),
+                    )
+                )
+
+        futures.append(executor.submit(visualize_rakuda_obs, obs, base_path, fps))
+
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                print(f"Error occurred while saving data: {e}")

@@ -216,7 +216,7 @@ class RakudaRobot(ComposedRobot):
                             continue
 
                         # Get camera data
-                        camera_data = {}
+                        camera_data: Dict[str, NDArray | None] = {}
                         for cam_name, future in camera_futures.items():
                             try:
                                 camera_data[cam_name] = future.result(timeout=timeout / 2)
@@ -227,7 +227,7 @@ class RakudaRobot(ComposedRobot):
                                 camera_data[cam_name] = None
 
                         # Get tactile data
-                        tactile_data = {}
+                        tactile_data: Dict[str, NDArray | None] = {}
                         for tac_name, future in tactile_futures.items():
                             try:
                                 tactile_data[tac_name] = future.result(timeout=timeout / 2)
