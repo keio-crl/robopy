@@ -13,7 +13,7 @@ theme:
   palette:
     # ダークモード/ライトモードの切り替え
     - scheme: default
-      primary: blue
+      primary: indigo
       accent: blue
       toggle:
         icon: material/brightness-7
@@ -90,27 +90,27 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting Started:
-    - Install: getting-started/installation.md
-    - Quickstart: getting-started/quickstart.md
+      - Install: getting-started/installation.md
+      - Quickstart: getting-started/quickstart.md
   - Robot:
-    - Rakuda: robots/rakuda.md
-    - Koch: robots/koch.md
+      - Rakuda: robots/rakuda.md
+      - Koch: robots/koch.md
   - Sensor:
-    - Cameras: sensors/cameras.md
-    - Tactile: sensors/tactile.md
+      - Cameras: sensors/cameras.md
+      - Tactile: sensors/tactile.md
   - Experiments:
-    - Experiments handler: experiments/handlers.md
-    - Data collection: experiments/data-collection.md
+      - Experiments handler: experiments/handlers.md
+      - Data collection: experiments/data-collection.md
   - Utils:
-    - Animation: utils/animation.md
-    - Data handling: utils/data-handling.md
+      - Animation: utils/animation.md
+      - Data handling: utils/data-handling.md
   - API Reference:
-    - Robot: api/robots.md
-    - Sensor: api/sensors.md
-    - Setting: api/config.md
-    - Utils: api/utils.md
+      - Robot: api/robots.md
+      - Sensor: api/sensors.md
+      - Setting: api/config.md
+      - Utils: api/utils.md
   - Developer:
-    - Development Guide: developer/development.md
+      - Development Guide: developer/development.md
 # 追加CSS
 extra_css:
   - stylesheets/extra.css

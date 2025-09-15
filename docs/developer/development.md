@@ -13,7 +13,12 @@ git clone https://github.com/keio-crl/robopy.git
 
 ```bash
 cd robopy
-uv sync --all-groups
+# 開発用依存関係のインストール
+uv sync --group dev 
+# docs 用依存関係のインストール
+uv sync --group docs 
+# すべての依存関係のインストール
+uv sync --all-groups 
 ```
 
 ## コードスタイル

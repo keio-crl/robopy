@@ -120,24 +120,12 @@ handler.recode_save(
 ## :material-chart-line: データの可視化
 
 記録したデータをアニメーションで確認：
-
-```python
-from robopy.utils.animation_maker import visualize_rakuda_obs
-
-# 観測データからアニメーション生成
-visualize_rakuda_obs(
-    obs=obs,
-    save_dir="./animations",
-    fps=30
-)
-```
-
 ### 生成されるファイル
 
 - `rakuda_obs_animation.gif` - カメラ+タクタイルセンサーのアニメーション
 - `rakuda_arm_obs.png` - アーム関節角度のプロット
 
-## :material-camera: カメラ付きの設定例
+## :material-camera: カスタマイズ設定
 
 RealSenseカメラを使用する場合の設定：
 

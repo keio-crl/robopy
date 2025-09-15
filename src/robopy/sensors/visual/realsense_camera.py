@@ -13,7 +13,7 @@ from robopy.config.sensor_config.visual_config.camera_config import CameraLog, R
 from .camera import Camera
 
 try:
-    import pyrealsense2 as rs
+    import pyrealsense2 as rs  # type: ignore
 except ImportError:
     rs = None
 
@@ -555,4 +555,5 @@ class RealsenseCamera(Camera):
             if self._is_connected:
                 self.disconnect()
         except Exception as e:
+            logger.error(f"Error during cleanup of {self.name}: {e}")
             logger.error(f"Error during cleanup of {self.name}: {e}")

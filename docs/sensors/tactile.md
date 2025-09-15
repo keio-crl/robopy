@@ -2,7 +2,7 @@
 
 Robopyは、DIGIT触覚センサーを統合したタクタイル情報の取得をサポートしています。
 
-## :material-hand: DIGIT タクタイルセンサー
+## DIGIT タクタイルセンサー
 
 DIGITは、Meta Reality Labs（旧Facebook Reality Labs）が開発した視覚ベースの触覚センサーです。
 
@@ -28,7 +28,7 @@ sensor.connect()
 
 try:
     # タクタイル画像の取得
-    tactile_image = sensor.capture()
+    tactile_image = sensor.read()
     print(f"タクタイル画像サイズ: {tactile_image.shape}")
     
     # 接続状態確認
@@ -108,20 +108,20 @@ DIGITセンサーから取得される画像は以下の形式です：
 
 ```python
 # 単一フレーム
-tactile_image = sensor.capture()
-# 形状: (240, 320, 3) - Height x Width x RGB
+tactile_image = sensor.read()
+# 形状: (3, 240, 320) - C x H x W
 
 # 複数フレーム（記録データ）
 obs = robot.record_parallel(max_frame=100, fps=30)
 tactile_data = obs['sensors']['tactile']['left']
-# 形状: (100, 240, 320, 3) - Frames x Height x Width x RGB
+# 形状: (100,3,240, 320) - Frames x C x H x W
 ```
 
 ### 色情報
 
 - **RGB形式**: 各ピクセルが3チャンネル（赤、緑、青）
 - **値範囲**: 0-255の8bit整数
-- **データ型**: `numpy.uint8`
+- **データ型**: `numpy.float32`
 
 ## :material-eye: データの可視化
 
@@ -131,7 +131,7 @@ tactile_data = obs['sensors']['tactile']['left']
 import matplotlib.pyplot as plt
 
 # タクタイル画像の取得
-tactile_image = sensor.capture()
+tactile_image = sensor.read()
 
 # 表示
 plt.figure(figsize=(8, 6))
@@ -157,46 +157,6 @@ visualize_rakuda_obs(
 )
 ```
 
-### カスタム可視化
-
-```python
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-
-def create_tactile_animation(tactile_data, save_path="tactile.gif"):
-    """タクタイルデータのアニメーション作成"""
-    
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-    
-    def animate(frame):
-        ax1.clear()
-        ax2.clear()
-        
-        # 左右のタクタイルデータを表示
-        if 'left' in tactile_data:
-            ax1.imshow(tactile_data['left'][frame])
-            ax1.set_title(f"左手 - フレーム {frame}")
-            ax1.axis('off')
-        
-        if 'right' in tactile_data:
-            ax2.imshow(tactile_data['right'][frame])
-            ax2.set_title(f"右手 - フレーム {frame}")
-            ax2.axis('off')
-    
-    # アニメーション作成
-    frames = len(tactile_data['left']) if 'left' in tactile_data else len(tactile_data['right'])
-    anim = animation.FuncAnimation(fig, animate, frames=frames, interval=100)
-    
-    # 保存
-    anim.save(save_path, writer='pillow', fps=10)
-    plt.close()
-
-# 使用例
-tactile_data = obs['sensors']['tactile']
-create_tactile_animation(tactile_data)
-```
-
 ## :material-tune: 設定とパラメータ
 
 ### センサー設定
@@ -214,39 +174,6 @@ right_tactile = TactileParams(
     serial_num="D20537",
     name="right"
 )
-```
-
-### センサーの較正
-
-```python
-def calibrate_sensor(sensor):
-    """センサーの較正（基準画像の取得）"""
-    
-    print("センサーに何も触れずに5秒待機...")
-    time.sleep(5)
-    
-    # 基準画像の取得
-    baseline_images = []
-    for i in range(10):
-        image = sensor.capture()
-        baseline_images.append(image)
-        time.sleep(0.1)
-    
-    # 平均画像を計算
-    baseline = np.mean(baseline_images, axis=0).astype(np.uint8)
-    
-    return baseline
-
-# 使用例
-sensor = DigitSensor("left", "D20542")
-sensor.connect()
-
-try:
-    baseline = calibrate_sensor(sensor)
-    print(f"基準画像を取得: {baseline.shape}")
-    
-finally:
-    sensor.disconnect()
 ```
 
 ## :material-alert-circle: トラブルシューティング
