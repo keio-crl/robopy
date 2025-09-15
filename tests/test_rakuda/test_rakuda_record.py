@@ -7,7 +7,7 @@ from matplotlib.animation import ArtistAnimation
 from robopy.config.robot_config.rakuda_config import RakudaConfig, RakudaSensorParams
 from robopy.config.sensor_config.params_config import TactileParams
 from robopy.robots.rakuda.rakuda_robot import RakudaRobot
-from robopy.utils.blocs_handler import BLOSCHandler
+from robopy.utils.blosc_handler import BLOSCHandler
 
 config = RakudaConfig(
     leader_port="/dev/ttyUSB0",

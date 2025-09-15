@@ -7,7 +7,7 @@ from matplotlib.animation import ArtistAnimation
 
 from robopy.config import RakudaObs
 from robopy.config.robot_config.rakuda_config import RakudaArmObs, RakudaSensorObs
-from robopy.utils.blocs_handler import BLOSCHandler
+from robopy.utils.blosc_handler import BLOSCHandler
 
 logger = getLogger(__name__)
 

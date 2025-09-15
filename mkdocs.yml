@@ -1,0 +1,131 @@
+site_name: Robopy Documentation
+site_description: A Python interface for robot uses dynamixel motors.
+site_author: tetsugo
+site_url: https://keio-crl.github.io/robopy
+
+repo_name: keio-crl/robopy
+repo_url: https://github.com/keio-crl/robopy
+
+# テーマ設定
+theme:
+  name: material
+  language: ja
+  palette:
+    # ダークモード/ライトモードの切り替え
+    - scheme: default
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: ダークモードに切り替え
+    - scheme: slate
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: ライトモードに切り替え
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.path
+    - navigation.top
+    - search.highlight
+    - search.share
+    - search.suggest
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+
+  icon:
+    repo: fontawesome/brands/github
+
+# プラグイン
+plugins:
+  - search:
+      lang: ja
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_root_toc_entry: false
+            show_signature_annotations: true
+            signature_crossrefs: true
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: datetime
+      locale: ja
+
+# マークダウン拡張
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+      toc_depth: 3
+
+# ナビゲーション構造
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Install: getting-started/installation.md
+    - Quickstart: getting-started/quickstart.md
+  - Robot:
+    - Rakuda: robots/rakuda.md
+    - Koch: robots/koch.md
+  - Sensor:
+    - Cameras: sensors/cameras.md
+    - Tactile: sensors/tactile.md
+  - Experiments:
+    - Experiments handler: experiments/handlers.md
+    - Data collection: experiments/data-collection.md
+  - Utils:
+    - Animation: utils/animation.md
+    - Data handling: utils/data-handling.md
+  - API Reference:
+    - Robot: api/robots.md
+    - Sensor: api/sensors.md
+    - Setting: api/config.md
+    - Utils: api/utils.md
+  - Developer:
+    - Development Guide: developer/development.md
+# 追加CSS
+extra_css:
+  - stylesheets/extra.css
+
+# 追加JavaScript
+extra_javascript:
+  - javascripts/extra.js
+
+# その他の設定
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/keio-crl/robopy
+  version:
+    provider: mike
+
+# 著作権
+copyright: Copyright &copy; 2025 tetsugo
