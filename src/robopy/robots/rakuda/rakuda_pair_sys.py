@@ -3,6 +3,7 @@ import pickle
 import time
 
 import numpy as np
+from rich import print
 
 from robopy.config.robot_config.rakuda_config import (
     RAKUDA_MOTOR_MAPPING,
@@ -41,7 +42,7 @@ class RakudaPairSys(Robot):
             self._leader.connect()
             self._follower.connect()
             logger.info("Successfully connected to both leader and follower arms.")
-            print("Successfully connected to both leader and follower arms.")
+            print("[cyan]Successfully connected to both leader and follower arms.[/cyan]")
             self._is_connected = True
         except (OSError, IOError, PermissionError) as e:
             logger.error(f"Failed to connect to arms: {e}")

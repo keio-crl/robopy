@@ -6,6 +6,9 @@ from logging import getLogger
 from typing import Dict
 
 import matplotlib
+from rich.console import Console
+from rich.table import Table
+from tqdm import tqdm
 
 matplotlib.use("Agg")  # thread safe backend
 import matplotlib.pyplot as plt
@@ -20,6 +23,8 @@ from robopy.utils.blosc_handler import BLOSCHandler
 from .save_worker import SaveWorker
 
 logger = getLogger(__name__)
+
+consle = Console()
 
 
 class RakudaSaveWorker(SaveWorker):
@@ -85,38 +90,22 @@ class RakudaSaveWorker(SaveWorker):
         """Make animation from Rakuda sensor observation data and save to file.
 
         Args:
-            camera_data (np.ndarray): Camera data from Rakuda robot. Shape: (frames, H, W, C)
-            left_tactile_data (np.ndarray): Left tactile sensor data. Shape: (frames, H, W, C)
-            right_tactile_data (np.ndarray): Right tactile sensor data. Shape: (frames, H, W, C)
+            camera_data (np.ndarray): Camera data from Rakuda robot. Shape: (frames, C, H, W)
+            left_tactile_data (np.ndarray): Left tactile sensor data. Shape: (frames, C, H, W)
+            right_tactile_data (np.ndarray): Right tactile sensor data. Shape: (frames, C, H, W)
             save_dir (str): Directory to save the animation file.
             fps (int): Frames per second for the animation.
         """
-
-        def _ensure_hwc_batch(data: np.ndarray) -> np.ndarray:
-            """Ensure all frames are HWC format. Batch operation for efficiency."""
-            if data is None:
-                return data
-            if not isinstance(data, np.ndarray):
-                data = np.array(data)
-
-            if data.ndim == 4:  # (frames, H, W, C) or (frames, C, H, W)
-                # Check if CHW -> HWC conversion needed
-                if data.shape[1] in (1, 3) and data.shape[1] != data.shape[3]:
-                    return data.transpose(0, 2, 3, 1)  # (frames, C, H, W) -> (frames, H, W, C)
-                return data
-            elif data.ndim == 3:  # (frames, H, W) grayscale
-                return data[..., None]  # Add channel dimension
-            return data
 
         logger.info("Starting batch preprocessing of animation data...")
 
         processed_camera = {}
         for name, cam_data in camera_data.items():
-            cam_data = _ensure_hwc_batch(cam_data)
+            cam_data = cam_data.transpose(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
             processed_camera[name] = np.clip(cam_data / 255.0, 0, 1)
 
-        left_tactile_processed = np.clip(left_tactile_data / 255.0, 0, 1)
-        right_tactile_processed = np.clip(right_tactile_data / 255.0, 0, 1)
+        left_tactile_processed = np.clip(left_tactile_data.transpose(0, 2, 3, 1) / 255.0, 0, 1)
+        right_tactile_processed = np.clip(right_tactile_data.transpose(0, 2, 3, 1) / 255.0, 0, 1)
 
         num_frames = list(processed_camera.values())[0].shape[0]
 
@@ -208,8 +197,10 @@ class RakudaSaveWorker(SaveWorker):
         ]:
             if data is None:
                 continue
+            # C-contiguousに変換してから保存
+            data_c = np.ascontiguousarray(data)
             file_path = os.path.join(save_path, f"{name}_data.blosc")
-            BLOSCHandler.save(data, file_path)
+            BLOSCHandler.save(data_c, file_path)
             logger.info(f"Tactile data for {name} saved to {file_path}")
 
     def save_all_obs(self, obs: RakudaObs, save_path: str, save_gif: bool) -> None:
@@ -217,7 +208,17 @@ class RakudaSaveWorker(SaveWorker):
             self.prepare_rakuda_obs(obs, save_path)
         )
 
-        print(leader.shape, follower.shape)
+        table = Table(title="Rakuda Observation Save Summary")
+        table.add_column("Data name", style="cyan", no_wrap=True)
+        table.add_column("Shape", style="magenta")
+
+        table.add_row("Leader Arm Data", str(leader.shape))
+        table.add_row("Follower Arm Data", str(follower.shape))
+        for name, data in camera_data.items():
+            table.add_row(f"Camera: {name}", str(data.shape))
+        table.add_row("Left Tactile Sensor Data", str(left_tactile_data.shape))
+        table.add_row("Right Tactile Sensor Data", str(right_tactile_data.shape))
+
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
@@ -266,11 +267,13 @@ class RakudaSaveWorker(SaveWorker):
                     ),
                 )
 
-            for future in concurrent.futures.as_completed(futures):
+            for future in tqdm(concurrent.futures.as_completed(futures)):
                 try:
                     future.result()  # 例外があれば再発生
                 except Exception as e:
                     raise RuntimeError(f"Error in saving observation data: {e}")
+
+            consle.print(table)
 
     def save_datas(
         self, leader_obs: NDArray[np.float32], follower_obs: NDArray[np.float32], path: str

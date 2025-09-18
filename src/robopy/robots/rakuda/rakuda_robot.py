@@ -299,13 +299,12 @@ class RakudaRobot(ComposedRobot):
         tactile_obs_np: Dict[str, NDArray[np.float32] | None] = {}
         for tac_name, frames in tactile_obs.items():
             if frames and all(frame is not None for frame in frames):
-                tactile_obs_np[tac_name] = np.array(frames)
+                tactile_obs_np[tac_name] = np.array(frames).transpose(0, 3, 1, 2)
             else:
                 tactile_obs_np[tac_name] = None
-
         sensors_obs = RakudaSensorObs(cameras=camera_obs_np, tactile=tactile_obs_np)
         return RakudaObs(arms=arms, sensors=sensors_obs)
-
+        
     @override
     def get_observation(self) -> RakudaObs:
         """get_observation get the current observation from the robot system and sensors."""

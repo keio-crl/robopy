@@ -10,9 +10,29 @@ from robopy.utils.worker.rakuda_save_woker import RakudaSaveWorker
 
 
 class RakudaExpHandler:
-    """This class handles the experimental interface for the Rakuda robot.\n
-    **This Rakuda experiment handler hard codes the sensors type and configuration
-    to take tactile data**.
+    """This class handles the experimental interface for the Rakuda robot.
+
+    Sensors:
+    1x Realsense, 2x Digit,
+
+    Example:
+    ```python
+    from robopy.utils.exp_interface import RakudaExpHandler
+    handler = RakudaExpHandler(
+        leader_port="/dev/ttyUSB0",
+        follower_port="/dev/ttyUSB1",
+        left_digit_serial="D20542",
+        right_digit_serial="D20537",
+        fps=30,
+    )
+    handler.recode_save(max_frames=150, save_path="test_01", if_async=True)
+    ```
+    Args:
+        leader_port (str): Port for the leader arm.
+        follower_port (str): Port for the follower arm.
+        left_digit_serial (str): Serial number for the left tactile sensor.
+        right_digit_serial (str): Serial number for the right tactile sensor.
+        fps (int, optional): Frames per second for recording. Defaults to 10.
     """
 
     def __init__(
@@ -33,7 +53,6 @@ class RakudaExpHandler:
             raise ValueError("FPS must be between 1 and 30")
         else:
             self.fps = fps
-
         self.robot = RakudaRobot(config)
         self.save_worker = RakudaSaveWorker(config, worker_num=6, fps=self.fps)
         try:
@@ -64,14 +83,22 @@ class RakudaExpHandler:
         return obs
 
     def recode_save(
-        self, max_frames: int, save_path: str, if_async: bool = True, save_gif: bool = True
+        self,
+        max_frames: int,
+        save_path: str,
+        if_async: bool = True,
+        save_gif: bool = True,
+        warmup_time: int = 5,
     ) -> None:
         """record and save data from Rakuda robot
 
         Args:
             max_frames (int): maximum number of frames to record
-            save_path (str): path to save the recorded data
+            save_path (str): path to save the recorded data:
+            data will be saved to `data/{save_path}`
             if_async (bool, optional): if a . Defaults to True.
+            save_gif (bool, optional): if save gif. Defaults to True.
+            warmup_time (int, optional): warm up time before recording. Defaults to 5.
 
         Raises:
             RuntimeError: _failed to record from Rakuda robot
@@ -90,8 +117,8 @@ class RakudaExpHandler:
                     self.robot.disconnect()
                     sleep(0.5)
                     return
-                print("Warming up for 5 seconds...")
-                self.robot.teleoperation(5)
+                print(f"Warming up for default {warmup_time} seconds...")
+                self.robot.teleoperation(warmup_time)
                 print("Press 'Enter' to start recording...")
                 input_str = input()
                 print("Recording...")
@@ -115,7 +142,7 @@ class RakudaExpHandler:
                 elif input_str in [str(i) for i in range(1, 10)]:
                     save_dir = os.path.join("data", f"{save_path}", f"{input_str}")
                     count = 1
-                    unique_save_dir = save_dir + str(count)
+                    unique_save_dir = save_dir + f"_{count}"
                     while os.path.exists(unique_save_dir):
                         unique_save_dir = f"{save_dir}_{count}"
                         count += 1
