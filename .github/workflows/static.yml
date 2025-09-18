@@ -7,7 +7,6 @@ on:
     paths:
       - "docs/**"
       - "mkdocs.yml"
-      - "README.md"
 permissions:
   contents: write
 jobs:
