@@ -63,7 +63,9 @@ class RakudaExpHandler:
             raise RuntimeError(f"Failed to record from Rakuda robot: {e}")
         return obs
 
-    def recode_save(self, max_frames: int, save_path: str, if_async: bool = True) -> None:
+    def recode_save(
+        self, max_frames: int, save_path: str, if_async: bool = True, save_gif: bool = True
+    ) -> None:
         """record and save data from Rakuda robot
 
         Args:
@@ -118,7 +120,7 @@ class RakudaExpHandler:
                         unique_save_dir = f"{save_dir}_{count}"
                         count += 1
                     os.makedirs(unique_save_dir)
-                    self.save_worker.save_all_obs(obs, unique_save_dir, save_gif=False)
+                    self.save_worker.save_all_obs(obs, unique_save_dir, save_gif)
                 # disconnect and exit
                 else:
                     print("Invalid input. Exiting...")

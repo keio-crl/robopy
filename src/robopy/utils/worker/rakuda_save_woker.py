@@ -212,7 +212,7 @@ class RakudaSaveWorker(SaveWorker):
             BLOSCHandler.save(data, file_path)
             logger.info(f"Tactile data for {name} saved to {file_path}")
 
-    def save_all_obs(self, obs: RakudaObs, save_path: str, save_gif: bool = True) -> None:
+    def save_all_obs(self, obs: RakudaObs, save_path: str, save_gif: bool) -> None:
         camera_data, leader, follower, left_tactile_data, right_tactile_data = (
             self.prepare_rakuda_obs(obs, save_path)
         )

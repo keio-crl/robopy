@@ -15,5 +15,5 @@ class SaveWorker(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    def save_all_obs(self, obs: T, save_path: str) -> None:
+    def save_all_obs(self, obs: T, save_path: str, save_gif: bool) -> None:
         pass
