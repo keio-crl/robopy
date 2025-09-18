@@ -337,7 +337,7 @@ class RakudaRobot(ComposedRobot):
             for cam in self._sensors.cameras:
                 if cam.is_connected:
                     # Reduced timeout from 10ms to 5ms for 30Hz performance
-                    camera_data[cam.name] = cam.async_read(timeout_ms=5)
+                    camera_data[cam.name] = cam.async_read(timeout_ms=16)
                 else:
                     logger.warning(f"Camera {cam.name} is not connected.")
                     camera_data[cam.name] = None

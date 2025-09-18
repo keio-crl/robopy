@@ -107,7 +107,6 @@ class RakudaPairSys(Robot):
                     logger.info("Reached max_seconds; exiting teleoperate.")
                     break
 
-            self.follower.motors.torque_disabled()
             # TODO: add a better way to stop smoothly, eg. set a home position
         except KeyboardInterrupt:
             self.follower.motors.torque_disabled()
