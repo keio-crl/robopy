@@ -40,15 +40,15 @@ class RakudaExpHandler:
         """__init__ initialize Rakuda experimental handler
 
         Args:
-            leader_port (str): _leader serial port_
-            follower_port (str): _follower serial port_
-            left_digit_serial (str): _left digit serial number_
-            right_digit_serial (str): _right digit serial number_
-            fps (int, optional): The frequency to capture obs. Defaults to 10.
+            leader_port (str): leader serial port
+            follower_port (str): follower serial port
+            left_digit_serial (str): left digit serial number
+            right_digit_serial (str): right digit serial number
+            fps (int, optional): The frequency to capture obs. Defaults to 10
 
         Raises:
-            ValueError: _fps must be between 1 and 30_
-            RuntimeError: _failed to connect to Rakuda robot_
+            ValueError: fps must be between 1 and 30
+            RuntimeError: failed to connect to Rakuda robot
         """
 
         config = self._init_config(
@@ -76,7 +76,7 @@ class RakudaExpHandler:
             if_async (bool, optional): If use parallel. Defaults to True.
 
         Raises:
-            RuntimeError: _failed to record from Rakuda robot
+            RuntimeError: failed to record from Rakuda robot
 
         Returns:
             RakudaObs: recorded observation
@@ -109,8 +109,8 @@ class RakudaExpHandler:
             warmup_time (int, optional): warm up time before recording. Defaults to 5.
 
         Raises:
-            RuntimeError: _failed to record from Rakuda robot
-            RuntimeError: _failed to save data
+            RuntimeError: failed to record from Rakuda robot
+            RuntimeError: failed to save data
         """
         try:
             print("Starting recording...")
