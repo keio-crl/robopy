@@ -19,8 +19,9 @@
 
     ```bash
     # 基本パッケージのインストール
-    uv add robopy
-    uv add pyrealsense2  # RealSenseサポート（Linux）
+    uv add git+https://github.com/keio-crl/robopy.git --tag v0.1.0
+    # RealSenseサポート（Linux）
+    uv add pyrealsense2
     ```
 
 === "pip"

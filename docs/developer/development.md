@@ -24,6 +24,12 @@ uv sync --all-groups
 ## コードスタイル
 Robopyでは、コードの一貫性を保つために以下のスタイルガイドラインに従っています。
 
-- **Formatting**: `ruff`をlinterとformatterとして使用しています。コードのフォーマットには`ruff --fix .`を実行してください。
-- **Type Checking**: `mypy`を使用して型チェックを行っています。 型チェックには`mypy .`を実行してください。
-- **Testing**: `pytest`を使用してユニットテストを実行しています。 テストの実行には`pytest`を実行してください。
+- **Formatting**: `ruff`をlinterとformatterとして使用しています。
+- **Type Checking**: `mypy`を使用して型チェックを行っています。 
+- **Testing**: `pytest`を使用してユニットテストを実行しています。
+
+```bash
+# コードのフォーマットと型チェック
+ruff check src tests
+mypy src
+```

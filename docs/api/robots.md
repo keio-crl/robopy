@@ -6,8 +6,6 @@
 
 ::: robopy.robots.rakuda.rakuda_robot.RakudaRobot
     options:
-      show_root_heading: true
-      show_source: false
       members:
         - __init__
         - connect
@@ -16,19 +14,11 @@
         - record
         - record_parallel
 
-## :material-settings: RakudaConfig
-
 ::: robopy.config.robot_config.rakuda_config.RakudaConfig
-    options:
-      show_root_heading: true
-      show_source: false
 
-## :material-link: RakudaPairSys
 
 ::: robopy.robots.rakuda.rakuda_pair_sys.RakudaPairSys
     options:
-      show_root_heading: true
-      show_source: false
       members:
         - __init__
         - connect
@@ -36,7 +26,6 @@
         - teleoperation
         - get_obs
 
-## :material-arm-flex: RakudaLeader
 
 ::: robopy.robots.rakuda.rakuda_leader.RakudaLeader
     options:
@@ -48,8 +37,6 @@
         - disconnect
         - get_obs
 
-## :material-arm-flex-outline: RakudaFollower
-
 ::: robopy.robots.rakuda.rakuda_follower.RakudaFollower
     options:
       show_root_heading: true
@@ -60,8 +47,6 @@
         - disconnect
         - set_action
         - get_obs
-
-## :material-robot-outline: KochRobot
 
 ::: robopy.robots.koch.koch_robot.KochRobot
     options:

@@ -27,12 +27,6 @@ class RakudaExpHandler:
     )
     handler.recode_save(max_frames=150, save_path="test_01", if_async=True)
     ```
-    Args:
-        leader_port (str): Port for the leader arm.
-        follower_port (str): Port for the follower arm.
-        left_digit_serial (str): Serial number for the left tactile sensor.
-        right_digit_serial (str): Serial number for the right tactile sensor.
-        fps (int, optional): Frames per second for recording. Defaults to 10.
     """
 
     def __init__(
@@ -43,6 +37,20 @@ class RakudaExpHandler:
         right_digit_serial: str,
         fps: int = 10,
     ) -> None:
+        """__init__ initialize Rakuda experimental handler
+
+        Args:
+            leader_port (str): _leader serial port_
+            follower_port (str): _follower serial port_
+            left_digit_serial (str): _left digit serial number_
+            right_digit_serial (str): _right digit serial number_
+            fps (int, optional): The frequency to capture obs. Defaults to 10.
+
+        Raises:
+            ValueError: _fps must be between 1 and 30_
+            RuntimeError: _failed to connect to Rakuda robot_
+        """
+
         config = self._init_config(
             leader_port_num=leader_port,
             follower_port_num=follower_port,
@@ -65,13 +73,13 @@ class RakudaExpHandler:
 
         Args:
             max_frames (int): maximum number of frames to record
-            if_async (bool, optional): if a . Defaults to True.
+            if_async (bool, optional): If use parallel. Defaults to True.
 
         Raises:
             RuntimeError: _failed to record from Rakuda robot
 
         Returns:
-            RakudaObs: _observation data from Rakuda robot
+            RakudaObs: recorded observation
         """
         try:
             if if_async:

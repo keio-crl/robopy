@@ -2,72 +2,102 @@ site_name: Robopy Documentation
 site_description: A Python interface for robot uses dynamixel motors.
 site_author: tetsugo
 site_url: https://keio-crl.github.io/robopy
-
 repo_name: keio-crl/robopy
 repo_url: https://github.com/keio-crl/robopy
-
 # テーマ設定
 theme:
   name: material
   language: ja
+  icon:
+    logo: material/robot
+    repo: fontawesome/brands/github
   palette:
-    # ダークモード/ライトモードの切り替え
-    - scheme: default
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: ライトモードに切り替え
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
       primary: indigo
       accent: blue
       toggle:
-        icon: material/brightness-7
+        icon: material/weather-sunny
         name: ダークモードに切り替え
-    - scheme: slate
-      primary: blue
-      accent: blue
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: lime
       toggle:
-        icon: material/brightness-4
-        name: ライトモードに切り替え
+        icon: material/weather-night
+        name: システム設定に従う
   features:
-    - navigation.tabs
-    - navigation.sections
-    - navigation.expand
+    - announce.dismiss
+    - content.action.edit
+    - content.action.view
+    - content.code.annotate
+    - content.code.copy
+    - content.tooltips
+    - navigation.footer
+    - navigation.instant.preview
     - navigation.path
+    - navigation.sections
+    - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.top
     - search.highlight
-    - search.share
     - search.suggest
-    - content.code.copy
-    - content.code.annotate
-    - content.tabs.link
+    - toc.follow
 
-  icon:
-    repo: fontawesome/brands/github
+extra_css:
+  - stylesheets/mkdocstrings.css
 
 # プラグイン
 plugins:
   - search:
       lang: ja
+  - autorefs
+  - section-index
   - mkdocstrings:
       handlers:
         python:
           paths: [src]
           options:
+            # Griffe-typingdocスタイル
             docstring_style: google
-            show_source: true
+            docstring_section_style: spacy
+            filters: ["!^_"]
+            inherited_members: true
+            merge_init_into_class: true
+            separate_signature: true
             show_root_heading: true
-            show_root_toc_entry: false
+            show_root_full_path: false
+            show_root_toc_entry: true
             show_signature_annotations: true
+            show_source: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
             signature_crossrefs: true
+            summary: true
   - git-revision-date-localized:
       enable_creation_date: true
-      type: datetime
+      type: timeago
       locale: ja
 
 # マークダウン拡張
 markdown_extensions:
-  - pymdownx.highlight:
-      anchor_linenums: true
-      line_spans: __span
-      pygments_lang_class: true
-  - pymdownx.inlinehilite
-  - pymdownx.snippets
+  - attr_list
+  - admonition
+  - md_in_html
+  - def_list
+  - footnotes
+  - pymdownx.blocks.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.magiclink
+  - pymdownx.snippets:
+      base_path: [!relative $config_dir]
+      check_paths: true
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -75,49 +105,48 @@ markdown_extensions:
           format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
-  - pymdownx.details
-  - pymdownx.emoji:
-      emoji_index: !!python/name:material.extensions.emoji.twemoji
-      emoji_generator: !!python/name:material.extensions.emoji.to_svg
-  - admonition
-  - attr_list
-  - md_in_html
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
   - toc:
-      permalink: true
+      permalink: "¤"
       toc_depth: 3
 
 # ナビゲーション構造
 nav:
-  - Home: index.md
+  - Home:
+    - Overview: index.md
+    - Changelog: changelog.md
+    - License: license.md
   - Getting Started:
-      - Install: getting-started/installation.md
-      - Quickstart: getting-started/quickstart.md
+    - Install: getting-started/installation.md
+    - Quickstart: getting-started/quickstart.md
   - Robot:
-      - Rakuda: robots/rakuda.md
-      - Koch: robots/koch.md
+    - Rakuda: robots/rakuda.md
+    - Koch: robots/koch.md
   - Sensor:
-      - Cameras: sensors/cameras.md
-      - Tactile: sensors/tactile.md
+    - Cameras: sensors/cameras.md
+    - Tactile: sensors/tactile.md
   - Experiments:
-      - Experiments handler: experiments/handlers.md
-      - Data collection: experiments/data-collection.md
+    - Experiments handler: experiments/handlers.md
+    - Data collection: experiments/data-collection.md
   - Utils:
-      - Animation: utils/animation.md
-      - Data handling: utils/data-handling.md
+    - Animation: utils/animation.md
+    - Data handling: utils/data-handling.md
   - API Reference:
-      - Robot: api/robots.md
-      - Sensor: api/sensors.md
-      - Setting: api/config.md
-      - Utils: api/utils.md
+    - Robot: api/robots.md
+    - Sensor: api/sensors.md
+    - Setting: api/config.md
+    - Utils: api/utils.md
   - Developer:
-      - Development Guide: developer/development.md
-# 追加CSS
-extra_css:
-  - stylesheets/extra.css
-
-# 追加JavaScript
-extra_javascript:
-  - javascripts/extra.js
+    - Development Guide: developer/development.md
 
 # その他の設定
 extra:
