@@ -8,7 +8,7 @@
 ### Installation
 
 ```bash
-uv add git+https://github.com/keio-crl/robopy.git --tag v0.1.0
+uv add git+https://github.com/keio-crl/robopy.git --tag v0.1.1
 # RealSense support (Linux)
 uv add pyrealsense2
 ```
