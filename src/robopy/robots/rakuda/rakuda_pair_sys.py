@@ -164,6 +164,13 @@ class RakudaPairSys(Robot):
         )
         return leader_positions
 
+    def send_leader_action(self, action: dict) -> None:
+        """Send action to the leader arm only."""
+        if not self._is_connected:
+            raise ConnectionError("KochPairSys is not connected. Call connect() first.")
+
+        self._leader.motors.sync_write(XControlTable.GOAL_POSITION, action)
+
     def get_follower_action(self) -> dict:
         """Get the current action (positions) from the follower arm."""
         if not self._is_connected:

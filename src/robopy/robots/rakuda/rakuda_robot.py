@@ -5,6 +5,8 @@ from typing import DefaultDict, Dict, List, override
 
 import numpy as np
 from numpy.typing import NDArray
+from rich.console import Console
+from rich.table import Table
 
 from robopy.config.robot_config.rakuda_config import (
     RakudaArmObs,
@@ -304,7 +306,7 @@ class RakudaRobot(ComposedRobot):
                 tactile_obs_np[tac_name] = None
         sensors_obs = RakudaSensorObs(cameras=camera_obs_np, tactile=tactile_obs_np)
         return RakudaObs(arms=arms, sensors=sensors_obs)
-        
+
     @override
     def get_observation(self) -> RakudaObs:
         """get_observation get the current observation from the robot system and sensors."""
@@ -362,12 +364,64 @@ class RakudaRobot(ComposedRobot):
 
         return RakudaSensorObs(cameras=camera_data, tactile=tactile_data)
 
-    def send(self, leader_action: NDArray[np.float32]) -> None:
-        """Send action to the leader arm only."""
+    def send(self, max_frame: int, fps: int, leader_action: NDArray[np.float32]) -> None:
+        """Send action sequence to the follower as if the data is from leader.
+        スリープせず、できるだけスムーズに送信する（busy wait + フレームスキップ対応）。
+        """
+
         if not self.is_connected:
             raise ConnectionError("RakudaRobot is not connected. Call connect() first.")
 
-        leader_action_dict = {}
+        if max_frame <= 0:
+            raise ValueError("max_frame must be greater than 0.")
+
+        if len(leader_action) != max_frame:
+            raise ValueError("Length of leader_action must match max_frame.")
+
+        if leader_action.ndim != 2 or leader_action.shape[1] != 17:
+            raise ValueError("leader_action must be of shape (max_frame, 17).")
+
+        interval = 1.0 / fps
+        start_time = time.perf_counter()
+        next_frame_time = start_time
+        index = 0
+        skipped = 0
+
+        while index < max_frame:
+            now = time.perf_counter()
+            # 遅れていたらフレームスキップ
+            if now > next_frame_time + interval:
+                frames_behind = int((now - next_frame_time) // interval)
+                index += frames_behind
+                skipped += frames_behind
+                next_frame_time += frames_behind * interval
+
+            if index >= max_frame:
+                break
+
+            self.send_frame_action(leader_action[index])
+            index += 1
+            next_frame_time += interval
+
+            # busy waitで次のフレームまで待つ（sleepしない）
+            while time.perf_counter() < next_frame_time:
+                pass
+
+        total_time = time.perf_counter() - start_time
+
+        table = Table(title="Send Action Summary")
+        table.add_column("Metric", style="cyan", no_wrap=True)
+        table.add_column("Value", style="magenta")
+        table.add_row("Total Frames Sent", str(index))
+        table.add_row("Frames Skipped", str(skipped))
+        table.add_row("Total Time (s)", f"{total_time:.2f}")
+        table.add_row("Average FPS", f"{index / total_time:.2f}")
+        console = Console()
+        console.print(table)
+
+    def send_frame_action(self, leader_action: NDArray[np.float32]) -> None:
+        leader_action_dict: Dict[str, float] = {}
+
         leader_motor_names = list(self._pair_sys.leader.motors.motors.keys())
         if len(leader_action) != len(leader_motor_names):
             raise ValueError(

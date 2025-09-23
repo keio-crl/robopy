@@ -1,6 +1,10 @@
 import os
 from time import sleep
+from typing import override
 from venv import logger
+
+from numpy import float32
+from numpy.typing import NDArray
 
 from robopy.config import RakudaConfig
 from robopy.config.robot_config.rakuda_config import RakudaObs, RakudaSensorParams
@@ -8,8 +12,10 @@ from robopy.config.sensor_config import TactileParams
 from robopy.robots.rakuda.rakuda_robot import RakudaRobot
 from robopy.utils.worker.rakuda_save_woker import RakudaSaveWorker
 
+from .exp_handler import ExpHandler
 
-class RakudaExpHandler:
+
+class RakudaExpHandler(ExpHandler):
     """This class handles the experimental interface for the Rakuda robot.
 
     Sensors:
@@ -68,6 +74,7 @@ class RakudaExpHandler:
         except Exception as e:
             raise RuntimeError(f"Failed to connect to Rakuda robot: {e}")
 
+    @override
     def record(self, max_frames: int, if_async: bool = True) -> RakudaObs:
         """record data from Rakuda robot
 
@@ -90,6 +97,7 @@ class RakudaExpHandler:
             raise RuntimeError(f"Failed to record from Rakuda robot: {e}")
         return obs
 
+    @override
     def recode_save(
         self,
         max_frames: int,
@@ -192,3 +200,8 @@ class RakudaExpHandler:
                 ]
             ),
         )
+
+    @override
+    def send(self, max_frame: int, fps: int, leader_action: NDArray[float32]) -> None:
+        """send leader action to Rakuda robot"""
+        self.robot.send(max_frame, fps, leader_action)
