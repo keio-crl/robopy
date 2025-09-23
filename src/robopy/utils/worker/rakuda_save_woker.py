@@ -131,7 +131,19 @@ class RakudaSaveWorker(SaveWorker):
             axes[-1].set_title("Right Digit Tactile Sensor")
             axes[-1].axis("off")
 
-            frame_artists.extend([im_left_tactile, right_tactile_im])
+            # FPS情報を左上に表示
+            fps_text = axes[0].text(
+                0.02,
+                0.98,
+                f"FPS: {i}",
+                fontsize=12,
+                color="white",
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="black", alpha=0.7),
+                verticalalignment="top",
+                transform=fig.transFigure,
+            )
+
+            frame_artists.extend([im_left_tactile, right_tactile_im, fps_text])
             ims.append(frame_artists)
 
         logger.info("Saving animation...")
@@ -161,14 +173,15 @@ class RakudaSaveWorker(SaveWorker):
                 axes = [axes]
 
             for i in range(n):
-                axes[i].clear()  # 軸をクリア
-                axes[i].plot(reshaped_leader[i], label="leader", linewidth=1.5)
-                axes[i].plot(reshaped_follower[i], label="follower", linewidth=1.5)
+                axes[i].clear()
+                axes[i].plot(reshaped_leader[i], alpha=0.5)
+                axes[i].plot(reshaped_follower[i], alpha=0.5)
                 axes[i].set_title(f"Joint {i + 1}")
-                axes[i].legend()
                 axes[i].grid(True, alpha=0.3)
 
-            plt.tight_layout()
+            fig.legend(["Leader", "Follower"], loc="upper right")
+            fig.tight_layout()
+            plt.subplots_adjust(hspace=0.2, top=0.45)
             fig.savefig(save_path, dpi=150, bbox_inches="tight")
             plt.close(fig)
 
