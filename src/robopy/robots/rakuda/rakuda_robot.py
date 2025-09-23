@@ -152,7 +152,7 @@ class RakudaRobot(ComposedRobot):
             raise ValueError("max_frame must be greater than 0.")
 
         # arm_obsを高頻度で取得するためのキュー
-        arm_obs_queue = queue.Queue(maxsize=teleop_hz * 2)
+        arm_obs_queue: queue.Queue[RakudaArmObs] = queue.Queue(maxsize=teleop_hz * 2)
         stop_event = threading.Event()
 
         def teleop_worker():
