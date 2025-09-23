@@ -1,3 +1,5 @@
+import queue
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
@@ -133,20 +135,15 @@ class RakudaRobot(ComposedRobot):
         return RakudaObs(arms=arms, sensors=sensors_obs)
 
     def record_parallel(
-        self, max_frame: int, fps: int = 30, max_processing_time_ms: float = 25.0
+        self,
+        max_frame: int,
+        fps: int = 30,
+        teleop_hz: int = 100,
+        max_processing_time_ms: float = 25.0,
     ) -> RakudaObs:
-        """Record with parallel sensor data collection for improved performance.
-
-        This method uses concurrent processing to collect arm and sensor data simultaneously,
-        reducing total processing time to achieve higher frame rates like 30Hz.
-
-        Args:
-            max_frame: Maximum number of frames to record
-            fps: Target frames per second (default: 30 for 30Hz)
-            max_processing_time_ms: Maximum allowed processing time per frame in milliseconds
-
-        Returns:
-            RakudaObs: Recorded observations
+        """
+        teleoperate_stepをteleop_hzで回しつつ、fpsごとに最新のarm_obsを記録し、
+        センサデータは並列取得する高速記録。
         """
         if not self.is_connected:
             self.connect()
@@ -154,13 +151,29 @@ class RakudaRobot(ComposedRobot):
         if max_frame <= 0:
             raise ValueError("max_frame must be greater than 0.")
 
-        # Data storage
+        # arm_obsを高頻度で取得するためのキュー
+        arm_obs_queue = queue.Queue(maxsize=teleop_hz * 2)
+        stop_event = threading.Event()
+
+        def teleop_worker():
+            interval = 1.0 / teleop_hz
+            while not stop_event.is_set():
+                obs = self.robot_system.teleoperate_step()
+                try:
+                    arm_obs_queue.put(obs, timeout=interval)
+                except queue.Full:
+                    pass
+                time.sleep(interval)
+
+        teleop_thread = threading.Thread(target=teleop_worker, daemon=True)
+        teleop_thread.start()
+
         leader_obs = []
         follower_obs = []
         camera_obs: Dict[str, List] = DefaultDict(list)
         tactile_obs: Dict[str, List] = DefaultDict(list)
 
-        get_obs_interval = 1.0 / fps  # Target interval between frames
+        get_obs_interval = 1.0 / fps
         max_processing_time = max_processing_time_ms / 1000.0
         frame_count = 0
         skipped_frames = 0
@@ -176,20 +189,27 @@ class RakudaRobot(ComposedRobot):
             while frame_count < max_frame:
                 frame_start_time = time.perf_counter()
 
-                # Parallel data collection
+                # 最新のarm_obsを取得（バッファが空なら待つ）
+                try:
+                    while True:
+                        arm_obs = arm_obs_queue.get(timeout=get_obs_interval)
+                        while not arm_obs_queue.empty():
+                            arm_obs = arm_obs_queue.get_nowait()
+                        break
+                except queue.Empty:
+                    logger.warning("No arm_obs available in time.")
+                    continue
+
+                # センサデータは並列取得
                 try:
                     with ThreadPoolExecutor(max_workers=4) as executor:
-                        # Submit all data collection tasks
-                        arm_future = executor.submit(self.robot_system.teleoperate_step)
-
                         # Camera futures
                         camera_futures = {}
                         if self._sensors.cameras:
                             for cam in self._sensors.cameras:
                                 if cam.is_connected:
                                     camera_futures[cam.name] = executor.submit(
-                                        cam.async_read,
-                                        timeout_ms=5,  # Reduced timeout for 30Hz
+                                        cam.async_read, timeout_ms=5
                                     )
 
                         # Tactile futures
@@ -197,7 +217,6 @@ class RakudaRobot(ComposedRobot):
                         if self._sensors.tactile:
                             for tac in self._sensors.tactile:
                                 if tac.is_connected:
-                                    # Use async_read if available, fallback to read
                                     if hasattr(tac, "async_read"):
                                         tactile_futures[tac.name] = executor.submit(
                                             tac.async_read, timeout_ms=5
@@ -205,19 +224,8 @@ class RakudaRobot(ComposedRobot):
                                     else:
                                         tactile_futures[tac.name] = executor.submit(tac.read)
 
-                        # Collect results with timeouts
-                        timeout = (
-                            max_processing_time * 0.8
-                        )  # Use 80% of max time for individual operations
+                        timeout = max_processing_time * 0.8
 
-                        # Get arm observation
-                        try:
-                            arm_obs = arm_future.result(timeout=timeout)
-                        except Exception as e:
-                            logger.warning(f"Arm observation failed in frame {frame_count}: {e}")
-                            continue
-
-                        # Get camera data
                         camera_data: Dict[str, NDArray | None] = {}
                         for cam_name, future in camera_futures.items():
                             try:
@@ -228,7 +236,6 @@ class RakudaRobot(ComposedRobot):
                                 )
                                 camera_data[cam_name] = None
 
-                        # Get tactile data
                         tactile_data: Dict[str, NDArray | None] = {}
                         for tac_name, future in tactile_futures.items():
                             try:
@@ -239,19 +246,7 @@ class RakudaRobot(ComposedRobot):
                                 )
                                 tactile_data[tac_name] = None
 
-                    # Check processing time
-                    processing_time = time.perf_counter() - frame_start_time
-                    total_processing_time += processing_time
-
-                    if processing_time > max_processing_time:
-                        skipped_frames += 1
-                        logger.warning(
-                            f"""Frame {frame_count} took {processing_time * 1000:.1f}ms 
-                            (>{max_processing_time_ms}ms), skipping"""
-                        )
-                        continue
-
-                    # Store data
+                    # 記録
                     leader_obs.append(arm_obs["leader"])
                     follower_obs.append(arm_obs["follower"])
 
@@ -263,7 +258,17 @@ class RakudaRobot(ComposedRobot):
 
                     frame_count += 1
 
-                    # Precise timing control
+                    # タイミング調整
+                    processing_time = time.perf_counter() - frame_start_time
+                    total_processing_time += processing_time
+                    if processing_time > max_processing_time:
+                        skipped_frames += 1
+                        logger.warning(
+                            f"""Frame {frame_count} took {processing_time * 1000:.1f}ms 
+                            (>{max_processing_time_ms}ms), skipping"""
+                        )
+                        continue
+
                     elapsed = time.perf_counter() - frame_start_time
                     sleep_time = max(0, get_obs_interval - elapsed)
                     if sleep_time > 0:
@@ -278,18 +283,18 @@ class RakudaRobot(ComposedRobot):
         except Exception as e:
             logger.error(f"An error occurred during parallel recording: {e}")
             raise e
+        finally:
+            stop_event.set()
+            teleop_thread.join(timeout=1.0)
 
-        # Log performance statistics
         avg_processing_time = total_processing_time / max(1, frame_count) * 1000
         logger.info(f"Recording completed: {frame_count} frames, {skipped_frames} skipped")
         logger.info(f"Average processing time: {avg_processing_time:.1f}ms")
 
-        # Process observations to numpy arrays (same as original method)
         leader_obs_np = np.array(leader_obs)
         follower_obs_np = np.array(follower_obs)
         arms: RakudaArmObs = {"leader": leader_obs_np, "follower": follower_obs_np}
 
-        # Process camera observations
         camera_obs_np: Dict[str, NDArray[np.float32] | None] = {}
         for cam_name, frames in camera_obs.items():
             if frames and all(frame is not None for frame in frames):
@@ -297,7 +302,6 @@ class RakudaRobot(ComposedRobot):
             else:
                 camera_obs_np[cam_name] = None
 
-        # Process tactile observations
         tactile_obs_np: Dict[str, NDArray[np.float32] | None] = {}
         for tac_name, frames in tactile_obs.items():
             if frames and all(frame is not None for frame in frames):
