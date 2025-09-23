@@ -15,12 +15,12 @@ def test_rakuda_exp_send():
         follower_port="/dev/ttyUSB1",
         left_digit_serial="D20542",
         right_digit_serial="D20537",
-        fps=15,
+        fps=10,
     )
 
     try:
-        action = handler.record(max_frames=75, if_async=True)["arms"]["leader"]
-        handler.send(max_frame=75, fps=15, leader_action=action)
+        action = handler.record(max_frames=100, if_async=True)["arms"]["leader"]
+        handler.send(max_frame=100, fps=10, leader_action=action)
     except Exception as e:
         raise e
 

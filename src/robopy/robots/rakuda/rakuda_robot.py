@@ -368,11 +368,29 @@ class RakudaRobot(ComposedRobot):
 
         return RakudaSensorObs(cameras=camera_data, tactile=tactile_data)
 
-    def send(self, max_frame: int, fps: int, leader_action: NDArray[np.float32]) -> None:
-        """Send action sequence to the follower as if the data is from leader.
-        スリープせず、できるだけスムーズに送信する（busy wait + フレームスキップ対応）。
-        """
+    def send(
+        self,
+        max_frame: int,
+        fps: int,
+        leader_action: NDArray[np.float32],
+        teleop_hz: int = 100,
+    ) -> None:
+        """send
 
+        Args:
+            max_frame (int): max frame to send
+            fps (int): frame per second of leader_action
+            leader_action (NDArray[np.float32]): action array of shape (max_frame, 17)
+            teleop_hz (int, optional): The frequency to teleoperate
+            leader-follower. Defaults to 100.
+
+        Raises:
+            ConnectionError: RakudaRobot is not connected. Call connect() first.
+            ValueError: max_frame must be greater than 0.
+            ValueError: Length of leader_action must match max_frame.
+            ValueError: leader_action must be of shape (max_frame, 17).
+            ValueError: Leader action length does not match number of leader motors.
+        """
         if not self.is_connected:
             raise ConnectionError("RakudaRobot is not connected. Call connect() first.")
 
@@ -385,41 +403,45 @@ class RakudaRobot(ComposedRobot):
         if leader_action.ndim != 2 or leader_action.shape[1] != 17:
             raise ValueError("leader_action must be of shape (max_frame, 17).")
 
-        interval = 1.0 / fps
+        interval = 1.0 / teleop_hz
+        total_time = (max_frame - 1) / fps
         start_time = time.perf_counter()
-        next_frame_time = start_time
-        index = 0
-        skipped = 0
+        sent_count = 0
 
-        while index < max_frame:
+        while True:
             now = time.perf_counter()
-            # 遅れていたらフレームスキップ
-            if now > next_frame_time + interval:
-                frames_behind = int((now - next_frame_time) // interval)
-                index += frames_behind
-                skipped += frames_behind
-                next_frame_time += frames_behind * interval
-
-            if index >= max_frame:
+            t = now - start_time
+            if t > total_time:
                 break
 
-            self.send_frame_action(leader_action[index])
-            index += 1
-            next_frame_time += interval
+            # 現在時刻に対応するfpsインデックス
+            idx_float = t * fps
+            idx0 = int(np.floor(idx_float))
+            idx1 = min(idx0 + 1, max_frame - 1)
+            alpha = idx_float - idx0
 
-            # busy waitで次のフレームまで待つ（sleepしない）
-            while time.perf_counter() < next_frame_time:
+            # 線形補間
+            action = (1 - alpha) * leader_action[idx0] + alpha * leader_action[idx1]
+            self.send_frame_action(action)
+            sent_count += 1
+
+            # busy wait
+            next_time = start_time + sent_count * interval
+            while time.perf_counter() < next_time:
                 pass
 
-        total_time = time.perf_counter() - start_time
+        # 最後のフレームを念のため送信
+        self.send_frame_action(leader_action[-1])
 
+        elapsed = time.perf_counter() - start_time
         table = Table(title="Send Action Summary")
         table.add_column("Metric", style="cyan", no_wrap=True)
         table.add_column("Value", style="magenta")
-        table.add_row("Total Frames Sent", str(index))
-        table.add_row("Frames Skipped", str(skipped))
-        table.add_row("Total Time (s)", f"{total_time:.2f}")
-        table.add_row("Average FPS", f"{index / total_time:.2f}")
+        table.add_row("Original Frames (fps)", f"{max_frame} ({fps}Hz)")
+        table.add_row(
+            "Sent Frames (after interpolation)", f"{sent_count} ({sent_count / elapsed:.2f}Hz)"
+        )
+        table.add_row("Total Time (s)", f"{elapsed:.2f}")
         console = Console()
         console.print(table)
 
