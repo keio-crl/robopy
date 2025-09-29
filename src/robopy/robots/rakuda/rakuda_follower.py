@@ -1,7 +1,6 @@
 import logging
 
 from robopy.config.robot_config.rakuda_config import RakudaConfig
-from robopy.motor.control_table import XControlTable
 from robopy.motor.dynamixel_bus import DynamixelMotor
 
 from .rakuda_arm import RakudaArm
@@ -19,20 +18,20 @@ class RakudaFollower(RakudaArm):
         """Create motor configuration for the follower arm using xm430-w350 motors."""
         return {
             # head
-            "torso_yaw": DynamixelMotor(27, "torso_yaw", "xm430-w350"),
+            "torso_yaw": DynamixelMotor(27, "torso_yaw", "xm540-w270"),
             "head_yaw": DynamixelMotor(28, "head_yaw", "xm430-w350"),
             "head_pitch": DynamixelMotor(29, "head_pitch", "xm430-w350"),
             # right
-            "r_arm_sh_pitch1": DynamixelMotor(1, "r_arm_sh_pitch1", "xm430-w350"),
-            "r_arm_sh_roll": DynamixelMotor(3, "r_arm_sh_roll", "xm430-w350"),
+            "r_arm_sh_pitch1": DynamixelMotor(1, "r_arm_sh_pitch1", "xm540-w270"),
+            "r_arm_sh_roll": DynamixelMotor(3, "r_arm_sh_roll", "xm540-w270"),
             "r_arm_sh_pitch2": DynamixelMotor(5, "r_arm_sh_pitch2", "xm430-w350"),
             "r_arm_el_yaw": DynamixelMotor(7, "r_arm_el_yaw", "xm430-w350"),
             "r_arm_wr_roll": DynamixelMotor(9, "r_arm_wr_roll", "xm430-w350"),
             "r_arm_wr_yaw": DynamixelMotor(11, "r_arm_wr_yaw", "xm430-w350"),
             "r_arm_grip": DynamixelMotor(31, "r_arm_grip", "xm430-w350"),
             # left
-            "l_arm_sh_pitch1": DynamixelMotor(2, "l_arm_sh_pitch1", "xm430-w350"),
-            "l_arm_sh_roll": DynamixelMotor(4, "l_arm_sh_roll", "xm430-w350"),
+            "l_arm_sh_pitch1": DynamixelMotor(2, "l_arm_sh_pitch1", "xm540-w270"),
+            "l_arm_sh_roll": DynamixelMotor(4, "l_arm_sh_roll", "xm540-w270"),
             "l_arm_sh_pitch2": DynamixelMotor(6, "l_arm_sh_pitch2", "xm430-w350"),
             "l_arm_el_yaw": DynamixelMotor(8, "l_arm_el_yaw", "xm430-w350"),
             "l_arm_wr_roll": DynamixelMotor(10, "l_arm_wr_roll", "xm430-w350"),
@@ -45,21 +44,7 @@ class RakudaFollower(RakudaArm):
         # Set 2 gripper motors to Current-based position control mode: 5
         # details:https://emanual.robotis.com/docs/en/dxl/x/xm430-w350/#operating-mode
 
-        self.motors.write(XControlTable.OPERATING_MODE, "l_arm_grip", 5)
-        self.motors.write(XControlTable.OPERATING_MODE, "r_arm_grip", 5)
-
-        # Set PID gains for gripper motors
-        if self.config.slow_mode:
-            p, i, d = 128, 0, 512
-        else:
-            p, i, d = 512, 256, 128
-
-        self.motors.write(XControlTable.POSITION_P_GAIN, "l_arm_grip", p)
-        self.motors.write(XControlTable.POSITION_I_GAIN, "l_arm_grip", i)
-        self.motors.write(XControlTable.POSITION_D_GAIN, "l_arm_grip", d)
-        self.motors.write(XControlTable.POSITION_P_GAIN, "r_arm_grip", p)
-        self.motors.write(XControlTable.POSITION_I_GAIN, "r_arm_grip", i)
-        self.motors.write(XControlTable.POSITION_D_GAIN, "r_arm_grip", d)
+        return super()._init_control_mode()
 
     def connect(self) -> None:
         """Connect to the follower arm and enable torque."""

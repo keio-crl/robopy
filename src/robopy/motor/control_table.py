@@ -67,6 +67,7 @@ class XControlTable(Enum):
     POSITION_P_GAIN = ControlItem(84, 2, Dtype.UINT16, "R/W")
     POSITION_I_GAIN = ControlItem(82, 2, Dtype.UINT16, "R/W")
     POSITION_D_GAIN = ControlItem(80, 2, Dtype.UINT16, "R/W")
+    CURRENT_LIMIT = ControlItem(38, 2, Dtype.UINT16, "R/W")
 
 
 # --- Model Specific Definitions ---

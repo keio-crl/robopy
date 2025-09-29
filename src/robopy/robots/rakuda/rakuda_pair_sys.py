@@ -1,6 +1,7 @@
 import logging
 import pickle
 import time
+from typing import Dict
 
 import numpy as np
 from rich import print
@@ -99,7 +100,7 @@ class RakudaPairSys(Robot):
                 # Send positions to follower arm
                 try:
                     self.send_follower_action(follower_positions)
-                    logger.info("Sent follower action.")
+                    logger.info(f"Sent follower action: {follower_positions}")
                 except Exception:
                     logger.exception("Failed to send follower action; continuing loop.")
 
@@ -135,17 +136,16 @@ class RakudaPairSys(Robot):
 
         # Get current positions from leader arm
         leader_positions = self.get_leader_action()
-
         # Map leader positions to follower positions
-        follower_goal_positions = {}
+        follower_goal_positions: Dict[str, float] = {}
         for leader_name, position in leader_positions.items():
             follower_name = self._motor_mapping.get(leader_name)
             if follower_name:
                 follower_goal_positions[follower_name] = position
-
         # Send positions to follower arm
         try:
             self.send_follower_action(follower_goal_positions)
+            self.send_leader_action({"l_arm_grip": 2400, "r_arm_grip": 2400})
         except Exception:
             logger.exception("Failed to send follower action; continuing.")
 
@@ -153,7 +153,7 @@ class RakudaPairSys(Robot):
         follower_obs = np.array(list(follower_goal_positions.values()), dtype=np.float32)
         return RakudaArmObs(leader=leader_obs, follower=follower_obs)
 
-    def get_leader_action(self) -> dict:
+    def get_leader_action(self) -> Dict[str, float]:
         """Get the current action (positions) from the leader arm."""
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
@@ -164,14 +164,13 @@ class RakudaPairSys(Robot):
         )
         return leader_positions
 
-    def send_leader_action(self, action: dict) -> None:
+    def send_leader_action(self, action: Dict[str, float]) -> None:
         """Send action to the leader arm only."""
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
-
         self._leader.motors.sync_write(XControlTable.GOAL_POSITION, action)
 
-    def get_follower_action(self) -> dict:
+    def get_follower_action(self) -> Dict[str, float]:
         """Get the current action (positions) from the follower arm."""
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
@@ -182,7 +181,7 @@ class RakudaPairSys(Robot):
         )
         return follower_positions
 
-    def send_follower_action(self, action: dict) -> None:
+    def send_follower_action(self, action: Dict[str, float]) -> None:
         """Send action to the follower arm only."""
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")

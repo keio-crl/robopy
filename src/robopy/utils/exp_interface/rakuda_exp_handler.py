@@ -6,11 +6,9 @@ from venv import logger
 from numpy import float32
 from numpy.typing import NDArray
 
-from robopy.config import RakudaConfig
-from robopy.config.robot_config.rakuda_config import RakudaObs, RakudaSensorParams
-from robopy.config.sensor_config import TactileParams
-from robopy.robots.rakuda.rakuda_robot import RakudaRobot
-from robopy.utils.worker.rakuda_save_woker import RakudaSaveWorker
+from robopy.config import RakudaConfig, RakudaObs, RakudaSensorParams, TactileParams
+from robopy.robots import RakudaRobot
+from robopy.utils import RakudaSaveWorker
 
 from .exp_handler import ExpHandler
 
@@ -95,6 +93,11 @@ class RakudaExpHandler(ExpHandler):
                 obs = self.robot.record(max_frame=max_frames, fps=self.fps)
         except Exception as e:
             raise RuntimeError(f"Failed to record from Rakuda robot: {e}")
+        except KeyboardInterrupt:
+            logger.info("Recording stopped by user...")
+            sleep(0.5)
+            self.robot.disconnect()
+            raise RuntimeError("Recording stopped by user")
         return obs
 
     @override

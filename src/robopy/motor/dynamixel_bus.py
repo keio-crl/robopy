@@ -265,25 +265,38 @@ class DynamixelBus:
         """
         self.sync_write(item, {motor_name: value})
 
-    def torque_disabled(self):
-        """Context manager that temporarily disables torque for all motors.
+    def torque_disabled(self, specific_motor_names: List[str] | None = None) -> None:
+        """torque_disabled for multiple motors.
 
-        Returns:
-            TorqueDisabledContext: Context manager for torque control.
+        Args:
+            specific_motor_names (List[str] | None, optional): List of motor names to
+            disable torque. If None, disables torque for all motors. Defaults to None.
         """
-        motor_names = list(self.motors.keys())
+        motor_names: List[str]
+
+        if specific_motor_names is None:
+            motor_names = list(self.motors.keys())
+        else:
+            motor_names = specific_motor_names
         torque_off_values: Dict[str, int | float] = {name: 0 for name in motor_names}
 
         self.sync_write(XControlTable.TORQUE_ENABLE, torque_off_values)
 
+    def torque_enabled(self, specific_motor_names: List[str] | None = None) -> None:
+        """torque_enabled for multiple motors.
+
+        Args:
+            specific_motor_names (List[str] | None, optional): List of motor names to
+            enable torque. If None, enables torque for all motors. Defaults to None.
+        """
+        motor_names: List[str]
+        if specific_motor_names is None:
+            motor_names = list(self.motors.keys())
+        else:
+            motor_names = specific_motor_names
+        torque_on_values: Dict[str, int | float] = {name: 1 for name in motor_names}
+        self.sync_write(XControlTable.TORQUE_ENABLE, torque_on_values)
+
     def __repr__(self) -> str:
         motor_list = ", ".join(self.motors.keys())
         return f"DynamixelBus(port={self.port_handler.port_name}, motors=[{motor_list}])"
-
-    def torque_enabled(self) -> None:
-        """Context manager for temporarily enabling motor torque."""
-
-        motor_names = list(self.motors.keys())
-
-        torque_on_values: Dict[str, int | float] = {name: 1 for name in motor_names}
-        self.sync_write(XControlTable.TORQUE_ENABLE, torque_on_values)

@@ -1,6 +1,6 @@
 import logging
 
-from robopy.config.robot_config.rakuda_config import RakudaConfig
+from robopy.config import RakudaConfig
 from robopy.motor.dynamixel_bus import DynamixelMotor
 
 from .rakuda_arm import RakudaArm
@@ -41,6 +41,14 @@ class RakudaLeader(RakudaArm):
 
     def _init_control_mode(self) -> None:
         """Initialize control mode for leader arm (no special initialization needed)."""
-        # Leader arm typically doesn't need special control mode initialization
-        # since it's used for reading positions, not controlling
-        pass
+        return super()._init_control_mode()
+
+    def connect(self) -> None:
+        super().connect()
+        if self._is_connected:
+            self._motors.torque_enabled(specific_motor_names=["l_arm_grip", "r_arm_grip"])
+
+    def disconnect(self) -> None:
+        if self._is_connected:
+            self._motors.torque_disabled()
+        super().disconnect()

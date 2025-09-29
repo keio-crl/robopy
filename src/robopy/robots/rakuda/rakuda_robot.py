@@ -408,42 +408,49 @@ class RakudaRobot(ComposedRobot):
         start_time = time.perf_counter()
         sent_count = 0
 
-        while True:
-            now = time.perf_counter()
-            t = now - start_time
-            if t > total_time:
-                break
+        try:
+            while True:
+                now = time.perf_counter()
+                t = now - start_time
+                if t > total_time:
+                    break
 
-            # 現在時刻に対応するfpsインデックス
-            idx_float = t * fps
-            idx0 = int(np.floor(idx_float))
-            idx1 = min(idx0 + 1, max_frame - 1)
-            alpha = idx_float - idx0
+                # 現在時刻に対応するfpsインデックス
+                idx_float = t * fps
+                idx0 = int(np.floor(idx_float))
+                idx1 = min(idx0 + 1, max_frame - 1)
+                alpha = idx_float - idx0
 
-            # 線形補間
-            action = (1 - alpha) * leader_action[idx0] + alpha * leader_action[idx1]
-            self.send_frame_action(action)
-            sent_count += 1
+                # 線形補間
+                action = (1 - alpha) * leader_action[idx0] + alpha * leader_action[idx1]
+                self.send_frame_action(action)
+                sent_count += 1
 
-            # busy wait
-            next_time = start_time + sent_count * interval
-            while time.perf_counter() < next_time:
-                pass
+                # busy wait
+                next_time = start_time + sent_count * interval
+                while time.perf_counter() < next_time:
+                    pass
 
-        # 最後のフレームを念のため送信
-        self.send_frame_action(leader_action[-1])
+            # 最後のフレームを念のため送信
+            self.send_frame_action(leader_action[-1])
 
-        elapsed = time.perf_counter() - start_time
-        table = Table(title="Send Action Summary")
-        table.add_column("Metric", style="cyan", no_wrap=True)
-        table.add_column("Value", style="magenta")
-        table.add_row("Original Frames (fps)", f"{max_frame} ({fps}Hz)")
-        table.add_row(
-            "Sent Frames (after interpolation)", f"{sent_count} ({sent_count / elapsed:.2f}Hz)"
-        )
-        table.add_row("Total Time (s)", f"{elapsed:.2f}")
-        console = Console()
-        console.print(table)
+            elapsed = time.perf_counter() - start_time
+            table = Table(title="Send Action Summary")
+            table.add_column("Metric", style="cyan", no_wrap=True)
+            table.add_column("Value", style="magenta")
+            table.add_row("Original Frames (fps)", f"{max_frame} ({fps}Hz)")
+            table.add_row(
+                "Sent Frames (after interpolation)", f"{sent_count} ({sent_count / elapsed:.2f}Hz)"
+            )
+            table.add_row("Total Time (s)", f"{elapsed:.2f}")
+            console = Console()
+            console.print(table)
+        except KeyboardInterrupt:
+            logger.info("Send interrupted by user.")
+            self._pair_sys.disconnect()
+        except Exception as e:
+            logger.error(f"An error occurred during send: {e}")
+            raise e
 
     def send_frame_action(self, leader_action: NDArray[np.float32]) -> None:
         leader_action_dict: Dict[str, float] = {}

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, TypedDict
+from typing import Dict, List, Tuple, TypedDict
 
 import numpy as np
 from numpy.typing import NDArray
@@ -72,3 +72,19 @@ RAKUDA_MOTOR_MAPPING: Dict[str, str] = {
     "l_arm_wr_yaw": "l_arm_wr_yaw",
     "l_arm_grip": "l_arm_grip",
 }
+
+
+@dataclass
+class RAKUDA_CONTROLTABLE_VALUES:
+    GRIP_OPEN_POSITION: int = 2500  # Open position for gripper
+    GRIP_PID: Tuple[int, int, int] = (128, 32, 64)  # PID values for gripper control
+    GRIP_PID_SLOW: Tuple[int, int, int] = (
+        64,
+        16,
+        32,
+    )  # PID values for gripper control in slow mode
+    GRIP_GOAL_CURRENT: int = 30  # mA, goal current for gripper motors
+    GRIP_MAX_POSITION: int = 2600  # Maximum position for gripper
+    GRIP_OPERATING_MODE: int = (
+        5  # Operating mode for gripper motors (Current-based position control)
+    )
