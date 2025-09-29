@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-from robopy.config.robot_config.rakuda_config import RakudaConfig
+from robopy.config import RakudaConfig
 
 
 class TestRakudaRobotIntegration(unittest.TestCase):
