@@ -22,8 +22,8 @@ class RakudaConfig:
 
 @dataclass
 class RakudaSensorParams:
-    cameras: List[CameraParams] | None = field(default=None)
-    tactile: List[TactileParams] | None = field(default=None)
+    cameras: List[CameraParams] = field(default_factory=list)
+    tactile: List[TactileParams] = field(default_factory=list)
 
 
 @dataclass

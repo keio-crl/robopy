@@ -474,25 +474,19 @@ class RakudaRobot(ComposedRobot):
             camera_params = self.config.sensors.cameras
             camera_configs: List[RealsenseCameraConfig] = []
 
-            if camera_params is None:
-                camera_configs.append(RealsenseCameraConfig())
-            else:
-                for cam_param in camera_params:
-                    came_cfg = RealsenseCameraConfig()
-                    came_cfg.name = cam_param.name
-                    came_cfg.width = cam_param.width
-                    came_cfg.height = cam_param.height
-                    came_cfg.fps = cam_param.fps
+            for cam_param in camera_params:
+                came_cfg = RealsenseCameraConfig()
+                came_cfg.name = cam_param.name
+                came_cfg.width = cam_param.width
+                came_cfg.height = cam_param.height
+                came_cfg.fps = cam_param.fps
 
-                    camera_configs.append(came_cfg)
+                camera_configs.append(came_cfg)
 
             tactile_configs: List[TactileParams] = []
-            if self.config.sensors.tactile is None:
-                tactile_configs = []
-            else:
-                tactile_params = self.config.sensors.tactile
-                for tac_param in tactile_params:
-                    tactile_configs.append(tac_param)
+            tactile_params = self.config.sensors.tactile
+            for tac_param in tactile_params:
+                tactile_configs.append(tac_param)
         else:
             camera_configs = [RealsenseCameraConfig()]
             tactile_configs = []

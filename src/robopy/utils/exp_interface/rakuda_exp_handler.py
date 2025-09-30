@@ -1,12 +1,14 @@
 import os
 from time import sleep
-from typing import override
+from typing import List, override
 from venv import logger
 
 from numpy import float32
 from numpy.typing import NDArray
 
-from robopy.config import RakudaConfig, RakudaObs, RakudaSensorParams, TactileParams
+from robopy.config import RakudaConfig, RakudaObs
+from robopy.config.robot_config.rakuda_config import RakudaSensorParams
+from robopy.config.sensor_config.params_config import CameraParams
 from robopy.robots import RakudaRobot
 from robopy.utils.worker.rakuda_save_woker import RakudaSaveWorker
 
@@ -35,10 +37,7 @@ class RakudaExpHandler(ExpHandler):
 
     def __init__(
         self,
-        leader_port: str,
-        follower_port: str,
-        left_digit_serial: str | None = None,
-        right_digit_serial: str | None = None,
+        rakuda_config: RakudaConfig,
         fps: int = 10,
     ) -> None:
         """__init__ initialize Rakuda experimental handler
@@ -55,12 +54,7 @@ class RakudaExpHandler(ExpHandler):
             RuntimeError: failed to connect to Rakuda robot
         """
 
-        config = self._init_config(
-            leader_port_num=leader_port,
-            follower_port_num=follower_port,
-            left_digit_serial=left_digit_serial,
-            right_digit_serial=right_digit_serial,
-        )
+        config = self._init_config(rakuda_config)
         if 30 < fps or fps < 1:
             raise ValueError("FPS must be between 1 and 30")
         else:
@@ -180,31 +174,31 @@ class RakudaExpHandler(ExpHandler):
             sleep(0.5)
             self.robot.disconnect()
 
-    def _init_config(
-        self,
-        leader_port_num: str,
-        follower_port_num: str,
-        left_digit_serial: str | None,
-        right_digit_serial: str | None,
-    ) -> RakudaConfig:
-        return RakudaConfig(
-            leader_port=leader_port_num,
-            follower_port=follower_port_num,
-            sensors=RakudaSensorParams(
-                tactile=[
-                    TactileParams(
-                        serial_num=left_digit_serial,
-                        name="left_digit",
-                    ),
-                    TactileParams(
-                        serial_num=right_digit_serial,
-                        name="right_digit",
-                    ),
-                ]
-                if left_digit_serial and right_digit_serial
-                else [],
-            ),
-        )
+    def _init_config(self, rakuda_config: RakudaConfig) -> RakudaConfig:
+        leader_port_num = rakuda_config.leader_port
+        follower_port_num = rakuda_config.follower_port
+        config: RakudaConfig = rakuda_config
+        cameras: List[CameraParams] = [
+            CameraParams(
+                name="main",
+                width=640,
+                height=480,
+                fps=30,
+            )
+        ]
+        if config.sensors is None:
+            config = RakudaConfig(
+                leader_port=leader_port_num,
+                follower_port=follower_port_num,
+                sensors=RakudaSensorParams(cameras=cameras, tactile=[]),
+            )
+        else:
+            if len(config.sensors.cameras) == 0:
+                config.sensors.cameras = cameras  # default camera
+            if len(config.sensors.tactile) == 0:
+                config.sensors.tactile = []  # default no tactile
+
+        return config
 
     @override
     def send(self, max_frame: int, fps: int, leader_action: NDArray[float32]) -> None:
