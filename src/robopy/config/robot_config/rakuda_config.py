@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, TypedDict
+from typing import Dict, List, Tuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -32,17 +32,20 @@ class RakudaSensorConfigs:
     tactile: List[TactileParams]
 
 
-class RakudaArmObs(TypedDict):
+@dataclass
+class RakudaArmObs:
     leader: NDArray[np.float32]
     follower: NDArray[np.float32]
 
 
-class RakudaSensorObs(TypedDict):
+@dataclass
+class RakudaSensorObs:
     cameras: Dict[str, NDArray[np.float32] | None]
     tactile: Dict[str, NDArray[np.float32] | None]
 
 
-class RakudaObs(TypedDict):
+@dataclass
+class RakudaObs:
     """
     Overall observation structure for Rakuda robot.
     arms: Observations from the robot arms (leader and follower).

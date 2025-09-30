@@ -54,25 +54,25 @@ class RakudaSaveWorker(SaveWorker):
             os.makedirs(save_dir)
 
         try:
-            sensors_data = obs["sensors"]
+            sensors_data = obs.sensors
 
             if sensors_data is None:
                 raise ValueError("No sensor data available in the observation.")
 
             camera_data = {
-                name: data for name, data in sensors_data["cameras"].items() if data is not None
+                name: data for name, data in sensors_data.cameras.items() if data is not None
             }
 
-            left_tactile_data = sensors_data["tactile"]["left_digit"]  # shape: (frames, H, W, C)
-            right_tactile_data = sensors_data["tactile"]["right_digit"]  # shape: (frames, H, W, C)
+            left_tactile_data = sensors_data.tactile["left_digit"]  # shape: (frames, H, W, C)
+            right_tactile_data = sensors_data.tactile["right_digit"]  # shape: (frames, H, W, C)
 
             if left_tactile_data is None or right_tactile_data is None:
                 raise ValueError("Tactile data is missing.")
             if not camera_data:
                 raise ValueError("Camera data is missing.")
 
-            leader = obs["arms"]["leader"]
-            follower = obs["arms"]["follower"]
+            leader = obs.arms.leader
+            follower = obs.arms.follower
 
             return camera_data, leader, follower, left_tactile_data, right_tactile_data
 
@@ -110,7 +110,9 @@ class RakudaSaveWorker(SaveWorker):
         num_frames = list(processed_camera.values())[0].shape[0]
 
         # layout: 1 row, N columns (cameras + 2 tactile sensors)
-        fig, axes = plt.subplots(1, len(processed_camera) + 2, figsize=(15, 5))
+        fig, axes = plt.subplots(
+            1, len(processed_camera) + 2, figsize=(5 * (len(processed_camera) + 2), 5)
+        )
         ims = []
 
         logger.info(f"Generating animation frames for {num_frames} frames...")
@@ -134,9 +136,8 @@ class RakudaSaveWorker(SaveWorker):
             # FPS情報を左上に表示
             fps_text = axes[0].text(
                 0.02,
-                0.98,
+                0.75,
                 f"FPS: {i}",
-                fontsize=12,
                 color="white",
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="black", alpha=0.7),
                 verticalalignment="top",
@@ -145,7 +146,8 @@ class RakudaSaveWorker(SaveWorker):
 
             frame_artists.extend([im_left_tactile, right_tactile_im, fps_text])
             ims.append(frame_artists)
-
+        fig.tight_layout()
+        plt.subplots_adjust(wspace=0.1, top=0.85)
         logger.info("Saving animation...")
         ani = ArtistAnimation(fig, ims, interval=1000 / fps, blit=True)
         ani.save(save_dir, writer="pillow", fps=fps)
@@ -231,6 +233,7 @@ class RakudaSaveWorker(SaveWorker):
             table.add_row(f"Camera: {name}", str(data.shape))
         table.add_row("Left Tactile Sensor Data", str(left_tactile_data.shape))
         table.add_row("Right Tactile Sensor Data", str(right_tactile_data.shape))
+        consle.print(table)
 
         if not os.path.exists(save_path):
             os.makedirs(save_path)
@@ -285,8 +288,6 @@ class RakudaSaveWorker(SaveWorker):
                     future.result()  # 例外があれば再発生
                 except Exception as e:
                     raise RuntimeError(f"Error in saving observation data: {e}")
-
-            consle.print(table)
 
     def save_datas(
         self, leader_obs: NDArray[np.float32], follower_obs: NDArray[np.float32], path: str

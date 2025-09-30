@@ -8,7 +8,7 @@ from numpy.typing import NDArray
 
 from robopy.config import RakudaConfig, RakudaObs, RakudaSensorParams, TactileParams
 from robopy.robots import RakudaRobot
-from robopy.utils import RakudaSaveWorker
+from robopy.utils.worker.rakuda_save_woker import RakudaSaveWorker
 
 from .exp_handler import ExpHandler
 

@@ -88,12 +88,12 @@ class RakudaRobot(ComposedRobot):
                     continue
 
                 arm_obs = temp_arm_obs
-                leader_obs.append(arm_obs["leader"])
-                follower_obs.append(arm_obs["follower"])
+                leader_obs.append(arm_obs.leader)
+                follower_obs.append(arm_obs.follower)
 
                 sensor_data = self.sensors_observation()
-                camera_data = sensor_data["cameras"]
-                tactile_data = sensor_data["tactile"]
+                camera_data = sensor_data.cameras
+                tactile_data = sensor_data.tactile
 
                 for cam_name, cam_frame in camera_data.items():
                     camera_obs[cam_name].append(cam_frame)
@@ -113,8 +113,7 @@ class RakudaRobot(ComposedRobot):
         # proccess observations to numpy arrays
         leader_obs_np = np.array(leader_obs)
         follower_obs_np = np.array(follower_obs)
-        arms: RakudaArmObs = {"leader": leader_obs_np, "follower": follower_obs_np}
-
+        arms: RakudaArmObs = RakudaArmObs(leader=leader_obs_np, follower=follower_obs_np)
         # process camera observations
         camera_obs_np: Dict[str, NDArray[np.float32] | None] = {}
         for cam_name, frames in camera_obs.items():
@@ -247,8 +246,8 @@ class RakudaRobot(ComposedRobot):
                                 tactile_data[tac_name] = None
 
                     # 記録
-                    leader_obs.append(arm_obs["leader"])
-                    follower_obs.append(arm_obs["follower"])
+                    leader_obs.append(arm_obs.leader)
+                    follower_obs.append(arm_obs.follower)
 
                     for cam_name, cam_frame in camera_data.items():
                         camera_obs[cam_name].append(cam_frame)
@@ -293,7 +292,7 @@ class RakudaRobot(ComposedRobot):
 
         leader_obs_np = np.array(leader_obs)
         follower_obs_np = np.array(follower_obs)
-        arms: RakudaArmObs = {"leader": leader_obs_np, "follower": follower_obs_np}
+        arms: RakudaArmObs = RakudaArmObs(leader=leader_obs_np, follower=follower_obs_np)
 
         camera_obs_np: Dict[str, NDArray[np.float32] | None] = {}
         for cam_name, frames in camera_obs.items():
@@ -356,10 +355,10 @@ class RakudaRobot(ComposedRobot):
             for tac in self._sensors.tactile:
                 if tac.is_connected:
                     # Use async_read if available for better performance
-                    if hasattr(tac, "async_read"):
-                        tactile_data[tac.name] = tac.async_read(timeout_ms=50)  # Increased timeout
-                    else:
-                        tactile_data[tac.name] = tac.read()
+                    tac_data = tac.async_read(timeout_ms=50)
+                    if tac_data is not None and tac_data.ndim == 3 and tac_data.shape[2] == 3:
+                        tac_data = tac_data.transpose(2, 0, 1)  # HWC to CHW
+                    tactile_data[tac.name] = tac_data
                 else:
                     tactile_data[tac.name] = None
         else:

@@ -87,14 +87,10 @@ class TestRakudaRobotIntegration(unittest.TestCase):
 
         # Verify basic structure
         self.assertIsNotNone(obs)
-        self.assertIn("arms", obs)
-        self.assertIn("sensors", obs)
-        self.assertIn("leader", obs["arms"])
-        self.assertIn("follower", obs["arms"])
 
         # Verify we got the expected number of frames
-        self.assertEqual(len(obs["arms"]["leader"]), num_frames)
-        self.assertEqual(len(obs["arms"]["follower"]), num_frames)
+        self.assertEqual(len(obs.arms.leader), num_frames)
+        self.assertEqual(len(obs.arms.follower), num_frames)
 
         print(f"Integration test: {num_frames} frames in {duration:.3f}s at {target_fps}Hz")
 
