@@ -17,10 +17,10 @@ from robopy.config.robot_config.rakuda_config import (
     RakudaSensorConfigs,
     RakudaSensorObs,
 )
-from robopy.config.sensor_config.sensors import Sensors
-from robopy.config.sensor_config.visual_config.camera_config import RealsenseCameraConfig
-from robopy.sensors.tactile.digit_sensor import DigitSensor
-from robopy.sensors.visual.realsense_camera import RealsenseCamera
+from robopy.config.sensor_config import RealsenseCameraConfig, Sensors
+from robopy.config.sensor_config.params_config import TactileParams
+from robopy.sensors.tactile import DigitSensor
+from robopy.sensors.visual import RealsenseCamera
 
 from ..common.composed import ComposedRobot
 from .rakuda_pair_sys import RakudaPairSys
@@ -472,7 +472,7 @@ class RakudaRobot(ComposedRobot):
         # if sensors config is provided in RakudaConfig, use it
         if self.config.sensors is not None:
             camera_params = self.config.sensors.cameras
-            camera_configs = []
+            camera_configs: List[RealsenseCameraConfig] = []
 
             if camera_params is None:
                 camera_configs.append(RealsenseCameraConfig())
@@ -486,12 +486,13 @@ class RakudaRobot(ComposedRobot):
 
                     camera_configs.append(came_cfg)
 
-            tactile_configs = []
-            if self.config.sensors.tactile is not None:
+            tactile_configs: List[TactileParams] = []
+            if self.config.sensors.tactile is None:
+                tactile_configs = []
+            else:
                 tactile_params = self.config.sensors.tactile
                 for tac_param in tactile_params:
                     tactile_configs.append(tac_param)
-        # if no sensors config is provided, use default configs
         else:
             camera_configs = [RealsenseCameraConfig()]
             tactile_configs = []
@@ -503,20 +504,33 @@ class RakudaRobot(ComposedRobot):
         if self._sensor_configs is None:
             raise RuntimeError("Failed to initialize sensor configurations.")
 
-        cameras = []
+        cameras: List[RealsenseCamera] = []
         for cam_cfg in self._sensor_configs.cameras:
             cam = RealsenseCamera(cam_cfg)
             cam.connect()
             cameras.append(cam)
-        tactiles = []
 
-        for tac_cfg in self._sensor_configs.tactile:
-            digit = DigitSensor(tac_cfg)
-            digit.connect()
-            tactiles.append(digit)
+        tactiles: List[DigitSensor] = []
+        if self._sensor_configs.tactile is not None:
+            for tac_cfg in self._sensor_configs.tactile:
+                digit = DigitSensor(tac_cfg)
+                digit.connect()
+                tactiles.append(digit)
 
         sensors = Sensors(cameras=cameras, tactile=tactiles)
         self._sensors = sensors
+
+        table = Table(title="Initialized Sensors")
+        table.add_column("Type", style="cyan", no_wrap=True)
+        table.add_column("Name", style="magenta")
+        table.add_column("Details", style="green")
+        for cam in cameras:
+            table.add_row("Camera", cam.name, repr(cam))
+        for tac in tactiles:
+            table.add_row("Tactile", tac.name, repr(tac))
+        console = Console()
+        console.print(table)
+
         return sensors
 
     @property

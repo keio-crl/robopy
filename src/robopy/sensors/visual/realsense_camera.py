@@ -557,3 +557,8 @@ class RealsenseCamera(Camera):
         except Exception as e:
             logger.error(f"Error during cleanup of {self.name}: {e}")
             logger.error(f"Error during cleanup of {self.name}: {e}")
+
+    def __repr__(self) -> str:
+        return (
+            f"RealsenseCamera(name={self.name}, index={self.index}, connected={self._is_connected})"
+        )

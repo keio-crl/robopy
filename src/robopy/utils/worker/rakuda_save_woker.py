@@ -38,8 +38,7 @@ class RakudaSaveWorker(SaveWorker):
         self, obs: RakudaObs, save_dir: str
     ) -> tuple[
         Dict[str, NDArray[np.float32]],
-        NDArray[np.float32],
-        NDArray[np.float32],
+        Dict[str, NDArray[np.float32]],
         NDArray[np.float32],
         NDArray[np.float32],
     ]:
@@ -63,18 +62,16 @@ class RakudaSaveWorker(SaveWorker):
                 name: data for name, data in sensors_data.cameras.items() if data is not None
             }
 
-            left_tactile_data = sensors_data.tactile["left_digit"]  # shape: (frames, H, W, C)
-            right_tactile_data = sensors_data.tactile["right_digit"]  # shape: (frames, H, W, C)
-
-            if left_tactile_data is None or right_tactile_data is None:
-                raise ValueError("Tactile data is missing.")
+            tactile_data = {
+                name: data for name, data in sensors_data.tactile.items() if data is not None
+            }
             if not camera_data:
                 raise ValueError("Camera data is missing.")
 
             leader = obs.arms.leader
             follower = obs.arms.follower
 
-            return camera_data, leader, follower, left_tactile_data, right_tactile_data
+            return camera_data, tactile_data, leader, follower
 
         except Exception as e:
             raise RuntimeError(f"Failed to process Rakuda observation data: {e}")
@@ -82,8 +79,7 @@ class RakudaSaveWorker(SaveWorker):
     @staticmethod
     def make_rakuda_obs_animation(
         camera_data: Dict[str, NDArray[np.float32]],
-        left_tactile_data: np.ndarray,
-        right_tactile_data: np.ndarray,
+        tactile_data: Dict[str, NDArray[np.float32]],
         save_dir: str,
         fps: int,
     ) -> None:
@@ -104,15 +100,21 @@ class RakudaSaveWorker(SaveWorker):
             cam_data = cam_data.transpose(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
             processed_camera[name] = np.clip(cam_data / 255.0, 0, 1)
 
-        left_tactile_processed = np.clip(left_tactile_data.transpose(0, 2, 3, 1) / 255.0, 0, 1)
-        right_tactile_processed = np.clip(right_tactile_data.transpose(0, 2, 3, 1) / 255.0, 0, 1)
+        for name, data in tactile_data.items():
+            data = data.transpose(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
+            tactile_data[name] = np.clip(data / 255.0, 0, 1)
 
         num_frames = list(processed_camera.values())[0].shape[0]
 
+        all_fig_num = len(processed_camera) + len(tactile_data)
+        rows = all_fig_num // 3 + int(all_fig_num % 3 != 0)
+        cols = min(all_fig_num, 3)
+
         # layout: 1 row, N columns (cameras + 2 tactile sensors)
-        fig, axes = plt.subplots(
-            1, len(processed_camera) + 2, figsize=(5 * (len(processed_camera) + 2), 5)
-        )
+        fig = plt.figure(figsize=(5 * cols, 5 * rows))
+        axes = fig.subplots(rows, cols)
+        if rows == 1 and cols == 1:
+            axes = [axes]
         ims = []
 
         logger.info(f"Generating animation frames for {num_frames} frames...")
@@ -125,13 +127,12 @@ class RakudaSaveWorker(SaveWorker):
                 axes[index].axis("off")
                 frame_artists.append(im1)
 
-            im_left_tactile = axes[-2].imshow(left_tactile_processed[i], animated=True)
-            axes[-2].set_title("Left Digit Tactile Sensor")
-            axes[-2].axis("off")
-
-            right_tactile_im = axes[-1].imshow(right_tactile_processed[i], animated=True)
-            axes[-1].set_title("Right Digit Tactile Sensor")
-            axes[-1].axis("off")
+            for t_index, (name, tactile) in enumerate(tactile_data.items()):
+                idx = len(processed_camera) + t_index
+                im = axes[idx].imshow(tactile[i], animated=True)
+                axes[idx].set_title(f"Tactile Sensor: {name}")
+                axes[idx].axis("off")
+                frame_artists.append(im)
 
             # FPS情報を左上に表示
             fps_text = axes[0].text(
@@ -144,7 +145,8 @@ class RakudaSaveWorker(SaveWorker):
                 transform=fig.transFigure,
             )
 
-            frame_artists.extend([im_left_tactile, right_tactile_im, fps_text])
+            frame_artists.extend([fps_text])
+
             ims.append(frame_artists)
         fig.tight_layout()
         plt.subplots_adjust(wspace=0.1, top=0.85)
@@ -202,26 +204,19 @@ class RakudaSaveWorker(SaveWorker):
 
     def _save_tactile_data(
         self,
-        left_tactile_data: NDArray[np.float32],
-        right_tactile_data: NDArray[np.float32],
+        tactile_data: Dict[str, NDArray[np.float32]],
         save_path: str,
     ) -> None:
-        for name, data in [
-            ("left_tactile", left_tactile_data),
-            ("right_tactile", right_tactile_data),
-        ]:
+        for name, data in tactile_data.items():
             if data is None:
                 continue
-            # C-contiguousに変換してから保存
-            data_c = np.ascontiguousarray(data)
-            file_path = os.path.join(save_path, f"{name}_data.blosc")
-            BLOSCHandler.save(data_c, file_path)
+            # Save each tactile sensor's data using BLOSC compression
+            file_path = os.path.join(save_path, f"{name}_tactile_data.blosc")
+            BLOSCHandler.save(data, file_path)
             logger.info(f"Tactile data for {name} saved to {file_path}")
 
     def save_all_obs(self, obs: RakudaObs, save_path: str, save_gif: bool) -> None:
-        camera_data, leader, follower, left_tactile_data, right_tactile_data = (
-            self.prepare_rakuda_obs(obs, save_path)
-        )
+        camera_data, tactile_data, leader, follower = self.prepare_rakuda_obs(obs, save_path)
 
         table = Table(title="Rakuda Observation Save Summary")
         table.add_column("Data name", style="cyan", no_wrap=True)
@@ -231,8 +226,8 @@ class RakudaSaveWorker(SaveWorker):
         table.add_row("Follower Arm Data", str(follower.shape))
         for name, data in camera_data.items():
             table.add_row(f"Camera: {name}", str(data.shape))
-        table.add_row("Left Tactile Sensor Data", str(left_tactile_data.shape))
-        table.add_row("Right Tactile Sensor Data", str(right_tactile_data.shape))
+        for name, data in tactile_data.items():
+            table.add_row(f"Tactile Sensor: {name}", str(data.shape))
         consle.print(table)
 
         if not os.path.exists(save_path):
@@ -255,8 +250,7 @@ class RakudaSaveWorker(SaveWorker):
                     ),
                     executor.submit(
                         self._save_tactile_data,
-                        left_tactile_data,
-                        right_tactile_data,
+                        tactile_data,
                         os.path.join(save_path),
                     ),
                     executor.submit(
@@ -276,8 +270,7 @@ class RakudaSaveWorker(SaveWorker):
                     executor.submit(
                         self.make_rakuda_obs_animation,
                         camera_data,
-                        left_tactile_data,
-                        right_tactile_data,
+                        tactile_data,
                         os.path.join(save_path, "rakuda_obs_animation.gif"),
                         self.fps,
                     ),

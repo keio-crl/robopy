@@ -37,8 +37,8 @@ class RakudaExpHandler(ExpHandler):
         self,
         leader_port: str,
         follower_port: str,
-        left_digit_serial: str,
-        right_digit_serial: str,
+        left_digit_serial: str | None = None,
+        right_digit_serial: str | None = None,
         fps: int = 10,
     ) -> None:
         """__init__ initialize Rakuda experimental handler
@@ -184,8 +184,8 @@ class RakudaExpHandler(ExpHandler):
         self,
         leader_port_num: str,
         follower_port_num: str,
-        left_digit_serial: str,
-        right_digit_serial: str,
+        left_digit_serial: str | None,
+        right_digit_serial: str | None,
     ) -> RakudaConfig:
         return RakudaConfig(
             leader_port=leader_port_num,
@@ -201,6 +201,8 @@ class RakudaExpHandler(ExpHandler):
                         name="right_digit",
                     ),
                 ]
+                if left_digit_serial and right_digit_serial
+                else [],
             ),
         )
 

@@ -176,3 +176,9 @@ class DigitSensor(Sensor):
     @property
     def is_connected(self) -> bool:
         return self._is_connected
+
+    def __repr__(self) -> str:
+        return (
+            f"DigitSensor(name={self.name}, serial_num={self.serial_num}, "
+            f"fps={self.fps}, connected={self._is_connected})"
+        )
