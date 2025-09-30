@@ -17,23 +17,26 @@ uv add pyrealsense2
 ### 基本的な使用例
 
 ```python
-from robopy.utils.exp_interface import RakudaExpHandler
+    from robopy.config import RakudaConfig, RakudaSensorParams, TactileParams
+    from robopy.utils import RakudaExpHandler
 
-# 実験ハンドラーの作成
-handler = RakudaExpHandler(
-    leader_port="/dev/ttyUSB0",      # Leaderアームのポート
-    follower_port="/dev/ttyUSB1",    # Followerアームのポート
-    left_digit_serial="D20542",      # 左タクタイルセンサーのシリアル番号
-    right_digit_serial="D20537",     # 右タクタイルセンサーのシリアル番号
-    fps=30                           # 記録周波数
-)
 
-# インタラクティブな記録・保存
-handler.record_save(
-    max_frames=1000,                 # 記録フレーム数
-    save_path="experiment_001",      # 保存先: data/experiment_001/...
-    if_async=True                    # 高速並列記録
-)
+
+    config=RakudaConfig(
+        leader_port="/dev/ttyUSB0",
+        follower_port="/dev/ttyUSB1",
+    )
+
+    handler = RakudaExpHandler(
+        rakuda_config=config,
+        fps=10 # データを収集するフレームレート (max 30)
+    )
+
+    # データ記録と保存
+    handler.record_save(
+        max_frames=150, # 収集するフレーム数
+        save_path="experiment_001", # 保存先ディレクトリ: data/experiment_001/...
+    )
 ```
 
 ## 🤖 主な特徴
@@ -81,24 +84,8 @@ try:
     # テレオペレーション（5秒間）
     robot.teleoperation(duration=5)
     
-    # データ記録（30Hz、1000フレーム）
-    obs = robot.record_parallel(max_frame=1000, fps=30)
-    
 finally:
     robot.disconnect()
-```
-
-### 3. データの可視化
-
-```python
-from robopy.utils.animation_maker import visualize_rakuda_obs
-
-# アニメーション生成
-visualize_rakuda_obs(
-    obs=obs,
-    save_dir="./animations",
-    fps=30
-)
 ```
 
 ## 📊 記録データ構造

@@ -48,23 +48,26 @@ handler = RakudaExpHandler(
 ### 1. Configuration Setup
 
 ```python
-from robopy import RakudaConfig, RakudaSensorParams, TactileParams
+    from robopy.config import RakudaConfig, RakudaSensorParams, TactileParams
+    from robopy.utils import RakudaExpHandler
 
-config = RakudaConfig(
-    leader_port="/dev/ttyUSB0",
-    follower_port="/dev/ttyUSB1",
-    # RealSense camera configuration (optional), if not set, one camera with name="main" is used automatically
-    cameras=[
-        CameraParams(name="main",width=640,height=480,fps=30),
-        ...
-    ],
-    sensors=RakudaSensorParams(
-        tactile=[
-            TactileParams(serial_num="D20542", name="left"),
-            TactileParams(serial_num="D20537", name="right"),
-        ],
-    ),
-)
+
+
+    config=RakudaConfig(
+        leader_port="/dev/ttyUSB0",
+        follower_port="/dev/ttyUSB1",
+    )
+
+    handler = RakudaExpHandler(
+        rakuda_config=config,
+        fps=10 # Data collection frame rate (max 30)
+    )
+
+    # データ記録と保存
+    handler.record_save(
+        max_frames=150, # The number of frames to collect
+        save_path="experiment_001", # Save directory: data/experiment_001/...
+    )
 ```
 
 ### 2. Robot Control
@@ -80,25 +83,10 @@ try:
     # Teleoperation (5 seconds)
     robot.teleoperation(duration=5)
     
-    # Data recording (30Hz, 1000 frames)
-    obs = robot.record_parallel(max_frame=1000, fps=30)
-    
 finally:
     robot.disconnect()
 ```
 
-### 3. Data Visualization
-
-```python
-from robopy.utils.animation_maker import visualize_rakuda_obs
-
-# Generate animation
-visualize_rakuda_obs(
-    obs=obs,
-    save_dir="./animations",
-    fps=30
-)
-```
 
 ## 📊 Recorded Data Structure
 
