@@ -2,14 +2,14 @@
 
 [ENG](README_EN.md) | 日本語
 
-**Robopy**は、ロボット制御のためのPython interfaceです。Rakuda と Koch robot(実装中))に対応し、カメラと触覚センサーを統合したデータ収集をサポートします。
+**Robopy**は、ロボット制御のためのPython interfaceです。Rakuda と Koch robot（実装中）に対応し、カメラと触覚センサーを統合したデータ収集をサポートします。
 
 ## 🚀 Quick Start
 
 ### インストール
 
 ```bash
-uv add git+https://github.com/keio-crl/robopy.git --tag v0.1.1
+uv add git+https://github.com/keio-crl/robopy.git --tag v0.2.0
 # RealSenseサポート（Linux）
 uv add pyrealsense2
 ```

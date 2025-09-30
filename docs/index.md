@@ -19,7 +19,7 @@
 
     ```bash
     # 基本パッケージのインストール
-    uv add git+https://github.com/keio-crl/robopy.git --tag v0.1.0
+    uv add git+https://github.com/keio-crl/robopy.git --tag v0.2.0
     # RealSenseサポート（Linux）
     uv add pyrealsense2
     ```
