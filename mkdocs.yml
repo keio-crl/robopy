@@ -7,7 +7,7 @@ repo_url: https://github.com/keio-crl/robopy
 # テーマ設定
 theme:
   name: material
-  language: ja
+  language: en
   icon:
     logo: material/robot
     repo: fontawesome/brands/github

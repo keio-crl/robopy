@@ -24,7 +24,7 @@
         - connect
         - disconnect
         - teleoperation
-        - get_obs
+        - get_observation
 
 
 ::: robopy.robots.rakuda.rakuda_leader.RakudaLeader
@@ -35,7 +35,7 @@
         - __init__
         - connect
         - disconnect
-        - get_obs
+        - get_observation
 
 ::: robopy.robots.rakuda.rakuda_follower.RakudaFollower
     options:
@@ -46,7 +46,7 @@
         - connect
         - disconnect
         - set_action
-        - get_obs
+        - get_observation
 
 ::: robopy.robots.koch.koch_robot.KochRobot
     options:

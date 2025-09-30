@@ -31,7 +31,7 @@ class RakudaExpHandler(ExpHandler):
         right_digit_serial="D20537",
         fps=30,
     )
-    handler.recode_save(max_frames=150, save_path="test_01", if_async=True)
+    handler.record_save(max_frames=150, save_path="test_01", if_async=True)
     ```
     """
 
@@ -173,6 +173,18 @@ class RakudaExpHandler(ExpHandler):
             logger.info("Recording stopped by user...")
             sleep(0.5)
             self.robot.disconnect()
+
+    # Backwards-compatible alias: new name delegates to old implementation
+    def record_save(
+        self,
+        max_frames: int,
+        save_path: str,
+        if_async: bool = True,
+        save_gif: bool = True,
+        warmup_time: int = 5,
+    ) -> None:
+        """Alias for recode_save kept for backward compatibility."""
+        return self.recode_save(max_frames, save_path, if_async, save_gif, warmup_time)
 
     def _init_config(self, rakuda_config: RakudaConfig) -> RakudaConfig:
         leader_port_num = rakuda_config.leader_port

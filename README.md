@@ -29,7 +29,7 @@ handler = RakudaExpHandler(
 )
 
 # インタラクティブな記録・保存
-handler.recode_save(
+handler.record_save(
     max_frames=1000,                 # 記録フレーム数
     save_path="experiment_001",      # 保存先: data/experiment_001/...
     if_async=True                    # 高速並列記録

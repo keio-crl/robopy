@@ -115,8 +115,8 @@ handler = RakudaExpHandler(
 )
 
 # インタラクティブな記録・保存
-handler.recode_save(
-    max_frames=1000,
+handler.record_save(
+       max_frames=1000,
     save_path="experiment_001",
     if_async=True
 )
@@ -131,7 +131,7 @@ handler.recode_save(
 ```python
 # 最大25msの処理時間制限で30Hz記録
 obs = robot.record_parallel(
-    max_frame=1000,
+       max_frame=1000,
     fps=30,
     max_processing_time_ms=25.0
 )

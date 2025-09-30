@@ -28,7 +28,7 @@ handler = RakudaExpHandler(
 )
 
 # Interactive recording and saving
-handler.recode_save(
+    handler.record_save(
     max_frames=1000,                 # Number of frames to record
     save_path="experiment_001",      # Save path: data/experiment_001/...
     if_async=True                    # High-speed parallel recording

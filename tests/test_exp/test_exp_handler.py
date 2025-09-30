@@ -1,6 +1,5 @@
-from robopy.config.robot_config.rakuda_config import RakudaConfig, RakudaSensorParams
-from robopy.config.sensor_config.params_config import TactileParams
-from robopy.utils.exp_interface import RakudaExpHandler
+from robopy.config import RakudaConfig, RakudaSensorParams, TactileParams
+from robopy.utils import RakudaExpHandler
 
 
 def test_exp_handler_import():
@@ -28,7 +27,7 @@ def test_rakuda_exp_send():
 
 
 if __name__ == "__main__":
-    hander = RakudaExpHandler(
+    handler = RakudaExpHandler(
         rakuda_config=RakudaConfig(
             leader_port="/dev/ttyUSB0",
             follower_port="/dev/ttyUSB1",
@@ -41,4 +40,4 @@ if __name__ == "__main__":
         ),
         fps=10,
     )
-    hander.recode_save(max_frames=20, save_path="test_01", if_async=False)
+    handler.record_save(max_frames=20, save_path="test_01", if_async=False)

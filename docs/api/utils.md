@@ -1,8 +1,6 @@
-# ユーティリティAPI
+# Utils API
 
-このページでは、Robopyのユーティリティ機能に関連するAPIを説明します。
-
-## :material-flask: 実験インターフェース
+## :material-flask: ExpHandler
 
 ### RakudaExpHandler
 

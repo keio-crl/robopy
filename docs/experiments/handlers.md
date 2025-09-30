@@ -17,19 +17,62 @@ Robopyの実験ハンドラーは、ロボットの制御とデータ収集を�
 
 ### ハンドラーの作成
 Rakudaロボット用の基本的な実験ハンドラーの作成方法：
+=== "Default"
 
-```python
-from robopy.utils.exp_interface import RakudaExpHandler
+    ```python
+        from robopy.config import RakudaConfig, RakudaSensorParams, TactileParams
+        from robopy.utils import RakudaExpHandler
 
-# 実験ハンドラーの作成
-handler = RakudaExpHandler(
-    leader_port="/dev/ttyUSB0",
-    follower_port="/dev/ttyUSB1",
-    left_digit_serial="D20542",
-    right_digit_serial="D20537",
-    fps=30
-)
-```
+
+        # RealSenseカメラ設定（オプション）, 設定しない場合は自動的に name = "main"として1つのカメラが使用されます
+        # tactileセンサーはデフォルトでは使用されない
+        config=RakudaConfig(
+            leader_port="/dev/ttyUSB0",
+            follower_port="/dev/ttyUSB1",
+        )
+
+        handler = RakudaExpHandler(
+            rakuda_config=config,
+            fps=10 # データを収集するフレームレート (max 30)
+        )
+
+        # データ記録と保存
+        handler.record_save(
+            max_frames=150, # 収集するフレーム数
+            save_path="experiment_001", # 保存先ディレクトリ: data/experiment_001/...
+        )
+    ```
+=== "Custom"
+    ```python
+        from robopy.config import RakudaConfig, RakudaSensorParams, TactileParams
+        from robopy.utils import RakudaExpHandler
+
+        config=RakudaConfig(
+            leader_port="/dev/ttyUSB0",
+            follower_port="/dev/ttyUSB1",
+            sensors=RakudaSensorParams(
+                camera=[
+                    CameraParams(name="main",width=640,height=480,fps=30),
+                    ...
+                ],
+                tactile=[
+                    TactileParams(serial_num="D20542", name="left_digit", fps=30),
+                    TactileParams(serial_num="D20537", name="right_digit", fps=30),
+                ],
+            ),
+        )
+
+        handler = RakudaExpHandler(
+            rakuda_config=config,
+            fps=10 # データを収集するフレームレート (max 30)
+        )
+
+        # データ記録と保存
+        handler.record_save(
+            max_frames=150, # 収集するフレーム数
+            save_path="experiment_001", # 保存先ディレクトリ: data/experiment_001/...
+        )
+    ```
 ここで、cameraを宣言しない場合、デフォルトのRealsenseカメラ設定が使用されます。
 
 
@@ -37,7 +80,7 @@ handler = RakudaExpHandler(
 
 ```python
 # インタラクティブな実験実行
-handler.recode_save(
+handler.record_save(
     max_frames=1000,
     save_path="experiment_001",
     if_async=True
@@ -50,7 +93,7 @@ handler.recode_save(
 
 ### パフォーマンス考慮
 
-- **高フレームレート**: 60Hz以上では処理能力に注意
+- **高フレームレート**: 30Hz以上では処理能力に注意
 - **センサー数**: 多数のセンサーは処理負荷を増加
 - **記録時間**: 長時間記録はメモリ使用量に注意
 
@@ -58,7 +101,7 @@ handler.recode_save(
 
 ```python
 try:
-    handler.recode_save(
+    handler.record_save(
         max_frames=1000,
         save_path="experiment_001",
         if_async=True

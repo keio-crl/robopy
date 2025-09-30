@@ -1,4 +1,4 @@
-# インストール
+# Installation
 
 ## :material-check-circle: 前提条件
 

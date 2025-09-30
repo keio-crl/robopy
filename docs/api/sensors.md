@@ -2,7 +2,7 @@
 
 このページでは、Robopyのセンサー制御に関連するAPIを説明します。
 
-## :material-camera: カメラセンサー
+## :material-camera: カメラ
 
 ### RealsenseCamera
 
@@ -43,7 +43,7 @@
       show_root_heading: true
       show_source: false
 
-## :material-hand: タクタイルセンサー
+## 触覚センサー
 
 ### DigitSensor
 
