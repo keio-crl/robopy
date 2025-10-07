@@ -7,7 +7,7 @@ def test_rakuda_teleoperate():
     from robopy.config.robot_config.rakuda_config import RakudaConfig
     from robopy.robots.rakuda.rakuda_robot import RakudaRobot
 
-    config = RakudaConfig(leader_port="/dev/ttyUSB0", follower_port="/dev/ttyUSB1")
+    config = RakudaConfig(leader_port="/dev/ttyUSB1", follower_port="/dev/ttyUSB0")
     rakuda = RakudaRobot(config)
     try:
         rakuda.connect()

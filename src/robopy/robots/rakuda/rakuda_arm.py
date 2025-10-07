@@ -35,12 +35,6 @@ class RakudaArm(Arm):
                 motor_name,
                 RAKUDA_CONTROLTABLE_VALUES.GRIP_OPERATING_MODE,
             )
-            # Set goal current for gripper motors to limit gripping force
-            self.motors.write(
-                XControlTable.GOAL_CURRENT,
-                motor_name,
-                RAKUDA_CONTROLTABLE_VALUES.GRIP_GOAL_CURRENT,
-            )
             # Set PID gains for gripper motors
             # Use slower PID gains if in slow mode
             map(

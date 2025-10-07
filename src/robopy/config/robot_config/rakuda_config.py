@@ -82,11 +82,16 @@ class RAKUDA_CONTROLTABLE_VALUES:
     GRIP_OPEN_POSITION: int = 2500  # Open position for gripper
     GRIP_PID: Tuple[int, int, int] = (128, 32, 64)  # PID values for gripper control
     GRIP_PID_SLOW: Tuple[int, int, int] = (
+        512,
         64,
-        16,
-        32,
+        1024,
     )  # PID values for gripper control in slow mode
-    GRIP_GOAL_CURRENT: int = 30  # mA, goal current for gripper motors
+    FOLLOWER_GRIP_GOAL_CURRENT: int = 128  # mA, goal current for follower gripper
+    FOLLOWER_GRIP_CURRENT_LIMIT: int = 128  # mA, current limit for follower gripper
+
+    LEADER_GRIP_GOAL_CURRENT: int = 30  # mA, goal current for leader gripper
+    LEADER_GRIP_CURRENT_LIMIT: int = 30  # mA, current limit for leader gripper
+
     GRIP_MAX_POSITION: int = 2600  # Maximum position for gripper
     GRIP_OPERATING_MODE: int = (
         5  # Operating mode for gripper motors (Current-based position control)

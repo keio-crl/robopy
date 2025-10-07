@@ -1,6 +1,7 @@
 import logging
 
-from robopy.config.robot_config.rakuda_config import RakudaConfig
+from robopy.config.robot_config import RAKUDA_CONTROLTABLE_VALUES, RakudaConfig
+from robopy.motor.control_table import XControlTable
 from robopy.motor.dynamixel_bus import DynamixelMotor
 
 from .rakuda_arm import RakudaArm
@@ -44,7 +45,19 @@ class RakudaFollower(RakudaArm):
         # Set 2 gripper motors to Current-based position control mode: 5
         # details:https://emanual.robotis.com/docs/en/dxl/x/xm430-w350/#operating-mode
 
-        return super()._init_control_mode()
+        super()._init_control_mode()
+        for motor_name in ["l_arm_grip", "r_arm_grip"]:
+            # Set goal current for gripper motors to limit gripping force
+            self.motors.write(
+                XControlTable.CURRENT_LIMIT,
+                motor_name,
+                RAKUDA_CONTROLTABLE_VALUES.FOLLOWER_GRIP_CURRENT_LIMIT,
+            )
+            self.motors.write(
+                XControlTable.GOAL_CURRENT,
+                motor_name,
+                RAKUDA_CONTROLTABLE_VALUES.FOLLOWER_GRIP_GOAL_CURRENT,
+            )
 
     def connect(self) -> None:
         """Connect to the follower arm and enable torque."""
