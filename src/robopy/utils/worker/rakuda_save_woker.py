@@ -199,6 +199,9 @@ class RakudaSaveWorker(SaveWorker):
                 continue
             # Save each camera's data using BLOSC compression
             file_path = os.path.join(save_path, f"{name}_camera_data.blosc")
+            # Ensure array is C-contiguous before saving
+            if not data.flags.c_contiguous:
+                data = np.ascontiguousarray(data)
             BLOSCHandler.save(data, file_path)
             logger.info(f"Camera data for {name} saved to {file_path}")
 
@@ -212,8 +215,18 @@ class RakudaSaveWorker(SaveWorker):
                 continue
             # Save each tactile sensor's data using BLOSC compression
             file_path = os.path.join(save_path, f"{name}_tactile_data.blosc")
+            logger.info(f"tactile data shape: {data.shape}")
+            # Ensure array is C-contiguous before saving
+            if not data.flags.c_contiguous:
+                data = np.ascontiguousarray(data)
             BLOSCHandler.save(data, file_path)
             logger.info(f"Tactile data for {name} saved to {file_path}")
+
+    def _save_array_safe(self, data: NDArray[np.float32], file_path: str) -> None:
+        """Safely save array with BLOSC, ensuring C-contiguous memory layout."""
+        if not data.flags.c_contiguous:
+            data = np.ascontiguousarray(data)
+        BLOSCHandler.save(data, file_path)
 
     def save_all_obs(self, obs: RakudaObs, save_path: str, save_gif: bool) -> None:
         camera_data, tactile_data, leader, follower = self.prepare_rakuda_obs(obs, save_path)
@@ -254,12 +267,12 @@ class RakudaSaveWorker(SaveWorker):
                         os.path.join(save_path),
                     ),
                     executor.submit(
-                        BLOSCHandler.save,
+                        self._save_array_safe,
                         leader,
                         os.path.join(save_path, "leader_obs.blosc"),
                     ),
                     executor.submit(
-                        BLOSCHandler.save,
+                        self._save_array_safe,
                         follower,
                         os.path.join(save_path, "follower_obs.blosc"),
                     ),
@@ -287,5 +300,12 @@ class RakudaSaveWorker(SaveWorker):
     ) -> None:
         if not os.path.exists(path):
             os.makedirs(path)
+
+        # Ensure arrays are C-contiguous before saving
+        if not leader_obs.flags.c_contiguous:
+            leader_obs = np.ascontiguousarray(leader_obs)
+        if not follower_obs.flags.c_contiguous:
+            follower_obs = np.ascontiguousarray(follower_obs)
+
         BLOSCHandler.save(leader_obs, os.path.join(path, "leader_obs.blosc"))
         BLOSCHandler.save(follower_obs, os.path.join(path, "follower_obs.blosc"))

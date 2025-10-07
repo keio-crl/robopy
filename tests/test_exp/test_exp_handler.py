@@ -1,5 +1,11 @@
+from logging import INFO, basicConfig
+
 from robopy.config import RakudaConfig
+from robopy.config.robot_config import RakudaSensorParams
+from robopy.config.sensor_config.params_config import TactileParams
 from robopy.utils import RakudaExpHandler
+
+basicConfig(level=INFO)
 
 
 def test_exp_handler_import():
@@ -29,4 +35,17 @@ def test_rakuda_exp_send():
 
 
 if __name__ == "__main__":
-    test_rakuda_exp_send()
+    handler = RakudaExpHandler(
+        rakuda_config=RakudaConfig(
+            leader_port="/dev/ttyUSB1",
+            follower_port="/dev/ttyUSB0",
+            sensors=RakudaSensorParams(
+                tactile=[
+                    TactileParams(serial_num="D20542", name="left"),
+                    TactileParams(serial_num="D20537", name="right"),
+                ],
+            ),
+        ),
+        fps=15,
+    )
+    handler.recode_save(max_frames=150, save_path="test_01")
