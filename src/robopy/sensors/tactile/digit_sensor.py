@@ -70,6 +70,7 @@ class DigitSensor(Sensor):
         frame = self.digit.get_frame().astype(np.float32)
         return frame
 
+    @override
     def async_read(self, timeout_ms: float = 100) -> NDArray[np.float32]:
         """Read the latest frame asynchronously (non-blocking)."""
         if not self.is_connected:
@@ -111,10 +112,6 @@ class DigitSensor(Sensor):
             raise RuntimeError(f"No frame available from Digit sensor {self.name}.")
 
         return frame_copy
-
-    def record(self) -> None:
-        """record function for Digit sensor. Not implemented."""
-        pass
 
     def _start_capture_thread(self) -> None:
         if self.thread is not None and self.thread.is_alive():

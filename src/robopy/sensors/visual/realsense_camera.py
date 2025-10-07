@@ -200,6 +200,7 @@ class RealsenseCamera(Camera):
 
         return color_image
 
+    @override
     def async_read(self, timeout_ms: float = 16) -> NDArray[np.float32]:
         """Read the latest available frame asynchronously (non-blocking).
 

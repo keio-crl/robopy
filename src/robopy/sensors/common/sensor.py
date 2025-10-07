@@ -27,3 +27,8 @@ class Sensor(ABC, Generic[T]):
     def read(self) -> T:
         """Get the current observation from the sensor."""
         ...
+
+    @abstractmethod
+    def async_read(self) -> T:
+        """Asynchronously get the current observation from the sensor."""
+        ...
