@@ -169,7 +169,7 @@ class RakudaSaveWorker(SaveWorker):
             raise ValueError("Arm data must be 2-dimensional (joints x frames).")
 
         with plt.ioff():
-            fig = plt.figure(figsize=(6, 18))
+            fig = plt.figure(figsize=(8, 24))
             axes = fig.subplots(n, 1)
 
             # 単一軸の場合の処理
@@ -178,15 +178,15 @@ class RakudaSaveWorker(SaveWorker):
 
             for i in range(n):
                 axes[i].clear()
-                axes[i].plot(reshaped_leader[i], alpha=0.5)
-                axes[i].plot(reshaped_follower[i], alpha=0.5)
+                axes[i].plot(reshaped_leader[i], alpha=0.8, linestyle="-")
+                axes[i].plot(reshaped_follower[i], alpha=0.8, linestyle="-.")
                 axes[i].set_title(f"Joint {i + 1}")
                 axes[i].grid(True, alpha=0.3)
 
             fig.legend(["Leader", "Follower"], loc="upper right")
             fig.tight_layout()
-            plt.subplots_adjust(hspace=0.2, top=0.45)
-            fig.savefig(save_path, dpi=150, bbox_inches="tight")
+            fig.subplots_adjust(hspace=0.5, top=0.95)
+            fig.savefig(save_path, dpi=150)
             plt.close(fig)
 
         logger.info(f"Arm observation plot saved to {save_path}")

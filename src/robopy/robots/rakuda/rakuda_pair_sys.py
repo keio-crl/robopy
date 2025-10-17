@@ -149,8 +149,10 @@ class RakudaPairSys(Robot):
         except Exception:
             logger.exception("Failed to send follower action; continuing.")
 
+        follower_observations = self.get_follower_action()
+
         leader_obs = np.array(list(leader_positions.values()), dtype=np.float32)
-        follower_obs = np.array(list(follower_goal_positions.values()), dtype=np.float32)
+        follower_obs = np.array(list(follower_observations.values()), dtype=np.float32)
         return RakudaArmObs(leader=leader_obs, follower=follower_obs)
 
     def get_leader_action(self) -> Dict[str, float]:

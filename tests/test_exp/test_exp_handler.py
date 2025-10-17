@@ -37,8 +37,8 @@ def test_rakuda_exp_send():
 if __name__ == "__main__":
     handler = RakudaExpHandler(
         rakuda_config=RakudaConfig(
-            leader_port="/dev/ttyUSB1",
-            follower_port="/dev/ttyUSB0",
+            leader_port="/dev/ttyUSB0",
+            follower_port="/dev/ttyUSB1",
             sensors=RakudaSensorParams(
                 tactile=[
                     TactileParams(serial_num="D20542", name="left"),
@@ -48,4 +48,4 @@ if __name__ == "__main__":
         ),
         fps=15,
     )
-    handler.recode_save(max_frames=150, save_path="test_01")
+    handler.recode_save(max_frames=15, save_path="test_01")
