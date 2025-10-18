@@ -3,7 +3,7 @@ from logging import INFO, basicConfig
 from robopy.config import RakudaConfig
 from robopy.config.robot_config import RakudaSensorParams
 from robopy.config.sensor_config.params_config import TactileParams
-from robopy.utils import RakudaExpHandler
+from robopy.utils import MetaDataConfig, RakudaExpHandler
 
 basicConfig(level=INFO)
 
@@ -23,6 +23,11 @@ def test_rakuda_exp_send():
             follower_port="/dev/ttyUSB0",
         ),
         fps=10,
+        metadata_config=MetaDataConfig(
+            task_name="test_task",
+            description="This is a test task",
+            date="2024-06-01",
+        ),
     )
 
     try:
@@ -46,6 +51,11 @@ if __name__ == "__main__":
                 ],
             ),
         ),
+        metadata_config=MetaDataConfig(
+            task_name="test_task",
+            description="This is a test task",
+            date="2024-06-01",
+        ),
         fps=10,
     )
-    handler.recode_save(max_frames=100, save_path="test_01")
+    handler.record_save(max_frames=100, save_path="test_01")

@@ -13,17 +13,6 @@ class ExpHandler(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    def recode_save(
-        self,
-        max_frames: int,
-        save_path: str,
-        if_async: bool = True,
-        save_gif: bool = True,
-        warmup_time: int = 5,
-    ) -> None:
-        """Backward-compatible abstract method (old name: recode_save)."""
-        pass
-
     def record_save(
         self,
         max_frames: int,
@@ -37,8 +26,12 @@ class ExpHandler(ABC, Generic[T]):
         Subclasses may implement `recode_save` (old name) or override this
         method if they prefer the new name.
         """
-        return self.recode_save(max_frames, save_path, if_async, save_gif, warmup_time)
+        return self.record_save(max_frames, save_path, if_async, save_gif, warmup_time)
 
     @abstractmethod
     def send(self, max_frame: int, fps: int, leader_action: NDArray[np.float32]) -> None:
+        pass
+
+    @abstractmethod
+    def save_metadata(self, save_path: str) -> None:
         pass
