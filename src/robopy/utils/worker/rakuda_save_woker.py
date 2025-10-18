@@ -33,7 +33,7 @@ consle = Console()
 class SaveTask(NamedTuple):
     """Data class representing a save task"""
 
-    task_type: Literal["camera", "tactile", "arm_obs", "arm", "animation"]
+    task_type: Literal["camera", "tactile", "arm_obs", "arm", "animation", "metadata"]
     data: (
         tuple[Dict[str, NDArray[np.float32]], Dict[str, NDArray[np.float32]]]
         | tuple[NDArray[np.float32], NDArray[np.float32]]
@@ -120,7 +120,7 @@ class RakudaSaveWorker(SaveWorker):
                         arm_data = cast(tuple[NDArray[np.float32], NDArray[np.float32]], task.data)
                         logger.debug(f"Processing arm save task to {task.save_path}")
                         future = self._executor.submit(
-                            self.save_datas,
+                            self.save_arm_datas,
                             arm_data[0],  # leader
                             arm_data[1],  # follower
                             task.save_path,
@@ -373,7 +373,9 @@ class RakudaSaveWorker(SaveWorker):
             if data is None:
                 continue
             # Save each camera's data using BLOSC compression
-            file_path = os.path.join(save_path, f"{name}_camera_data.blosc")
+            file_path = os.path.join(save_path, "camera", name, f"{name}_camera_data.blosc")
+            if not os.path.exists(os.path.dirname(file_path)):
+                os.makedirs(os.path.dirname(file_path))
             # Ensure array is C-contiguous before saving
             if not data.flags.c_contiguous:
                 data = np.ascontiguousarray(data)
@@ -395,7 +397,9 @@ class RakudaSaveWorker(SaveWorker):
             if data is None:
                 continue
             # Save each tactile sensor's data using BLOSC compression
-            file_path = os.path.join(save_path, f"{name}_tactile_data.blosc")
+            file_path = os.path.join(save_path, "tactile", name, f"{name}_tactile_data.blosc")
+            if not os.path.exists(os.path.dirname(file_path)):
+                os.makedirs(os.path.dirname(file_path))
             logger.info(f"tactile data shape: {data.shape}")
             # Ensure array is C-contiguous before saving
             if not data.flags.c_contiguous:
@@ -423,7 +427,6 @@ class RakudaSaveWorker(SaveWorker):
             save_gif (bool): Whether to generate GIF animation.
         """
         camera_data, tactile_data, leader, follower = self.prepare_rakuda_obs(obs, save_path)
-
         table = Table(title="Rakuda Observation Save Summary")
         table.add_column("Data name", style="cyan", no_wrap=True)
         table.add_column("Shape", style="magenta")
@@ -474,7 +477,6 @@ class RakudaSaveWorker(SaveWorker):
                 save_path=save_path,
             )
         )
-
         # Generate GIF (optional)
         if save_gif:
             self.enqueue_save_task(
@@ -488,7 +490,7 @@ class RakudaSaveWorker(SaveWorker):
 
         logger.info(f"Queued all save tasks for {save_path}. Processing in background...")
 
-    def save_datas(
+    def save_arm_datas(
         self, leader_obs: NDArray[np.float32], follower_obs: NDArray[np.float32], path: str
     ) -> None:
         """Save arm observation data as BLOSC compressed files.
@@ -506,6 +508,12 @@ class RakudaSaveWorker(SaveWorker):
             leader_obs = np.ascontiguousarray(leader_obs)
         if not follower_obs.flags.c_contiguous:
             follower_obs = np.ascontiguousarray(follower_obs)
+        leader_save_path = os.path.join(path, "arm", "leader", "leader_arm_data.blosc")
+        follower_save_path = os.path.join(path, "arm", "follower", "follower_arm_data.blosc")
+        if not os.path.exists(os.path.dirname(leader_save_path)):
+            os.makedirs(os.path.dirname(leader_save_path))
+        if not os.path.exists(os.path.dirname(follower_save_path)):
+            os.makedirs(os.path.dirname(follower_save_path))
 
-        BLOSCHandler.save(leader_obs, os.path.join(path, "leader_obs.blosc"))
-        BLOSCHandler.save(follower_obs, os.path.join(path, "follower_obs.blosc"))
+        BLOSCHandler.save(leader_obs, leader_save_path)
+        BLOSCHandler.save(follower_obs, follower_save_path)

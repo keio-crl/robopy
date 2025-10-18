@@ -9,7 +9,7 @@ T = TypeVar("T")
 
 class SaveWorker(ABC, Generic[T]):
     @abstractmethod
-    def save_datas(
+    def save_arm_datas(
         self, leader_obs: NDArray[np.float32], follower_obs: NDArray[np.float32], path: str
     ) -> None:
         pass

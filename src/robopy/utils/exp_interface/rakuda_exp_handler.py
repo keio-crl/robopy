@@ -1,6 +1,7 @@
+import json
 import os
 from time import sleep
-from typing import List, override
+from typing import Dict, List, override
 from venv import logger
 
 from numpy import float32
@@ -13,6 +14,7 @@ from robopy.robots import RakudaRobot
 from robopy.utils.worker.rakuda_save_woker import RakudaSaveWorker
 
 from .exp_handler import ExpHandler
+from .meta_data_config import MetaDataConfig
 
 
 class RakudaExpHandler(ExpHandler):
@@ -38,6 +40,7 @@ class RakudaExpHandler(ExpHandler):
     def __init__(
         self,
         rakuda_config: RakudaConfig,
+        metadata_config: MetaDataConfig,
         fps: int = 10,
     ) -> None:
         """__init__ initialize Rakuda experimental handler
@@ -61,10 +64,143 @@ class RakudaExpHandler(ExpHandler):
             self.fps = fps
         self.robot = RakudaRobot(config)
         self.save_worker = RakudaSaveWorker(config, worker_num=6, fps=self.fps)
+        self.metadata_config = metadata_config
         try:
             self.robot.connect()
         except Exception as e:
             raise RuntimeError(f"Failed to connect to Rakuda robot: {e}")
+
+    @override
+    def save_metadata(self, save_path: str, data_shape: Dict) -> None:
+        """Save metadata to JSON file with custom serialization for non-JSON objects.
+
+        Handles serialization of numpy arrays and dataclass objects by converting
+        them to JSON-serializable formats (lists for arrays, dicts for dataclasses).
+        """
+        metadata = {}
+        metadata["task_details"] = self.metadata_config.__dict__
+        metadata["data_shape"] = data_shape
+        metadata["robot_config"] = self._serialize_config(self.robot.config)
+
+        with open(os.path.join(save_path, "metadata.json"), "w") as f:
+            json.dump(
+                metadata,
+                f,
+                indent=2,
+                default=self._json_serializer,
+            )
+
+    @staticmethod
+    def _serialize_config(config_obj: object) -> dict | str:
+        """Convert config object to JSON-serializable dictionary.
+
+        Args:
+            config_obj: Configuration object to serialize.
+
+        Returns:
+            dict | str: Serialized configuration as dictionary or string.
+        """
+        if not hasattr(config_obj, "__dict__"):
+            return str(config_obj)
+
+        result = {}
+        for key, value in config_obj.__dict__.items():
+            if value is None:
+                result[key] = None
+            elif hasattr(value, "__dict__"):
+                # Recursively serialize nested dataclass objects
+                result[key] = RakudaExpHandler._serialize_config(value)
+            elif isinstance(value, (list, tuple)):
+                # Handle lists and tuples that may contain dataclass objects
+                result[key] = [
+                    RakudaExpHandler._serialize_config(item) if hasattr(item, "__dict__") else item
+                    for item in value
+                ]
+            elif isinstance(value, dict):
+                # Handle dictionaries that may contain dataclass objects
+                result[key] = {
+                    k: RakudaExpHandler._serialize_config(v) if hasattr(v, "__dict__") else v
+                    for k, v in value.items()
+                }
+            else:
+                result[key] = value
+        return result
+
+    @staticmethod
+    def _json_serializer(obj: object) -> object:
+        """JSON serializer for objects not serializable by default json code.
+
+        Handles:
+        - numpy arrays -> convert to list
+        - numpy scalars -> convert to Python native types
+        - Unknown objects -> convert to string representation
+
+        Args:
+            obj: Object to serialize.
+
+        Returns:
+            Serializable representation of the object.
+        """
+        import numpy as np
+
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, (np.integer, np.floating)):
+            return obj.item()
+        elif hasattr(obj, "__dict__"):
+            return obj.__dict__
+        else:
+            return str(obj)
+
+    def _extract_data_shapes(self, obs: RakudaObs) -> dict:
+        """Extract data shapes from observation for metadata.
+
+        Collects shapes from:
+        - Arm positions (leader, follower)
+        - Camera images
+        - Tactile sensor readings
+
+        Args:
+            obs: Recorded observation containing arms and sensors data.
+
+        Returns:
+            Dictionary with nested structure:
+            {
+                "arms": {"leader": shape, "follower": shape},
+                "sensors": {
+                    "cameras": {"camera_name": shape, ...},
+                    "tactile": {"sensor_name": shape, ...}
+                }
+            }
+        """
+        data_shape = {}
+
+        # Extract arm data shapes
+        if obs.arms is not None:
+            data_shape["arms"] = {}
+            for arm_name, arm_data in obs.arms.__dict__.items():
+                if arm_data is not None:
+                    data_shape["arms"][arm_name] = list(arm_data.shape)
+
+        # Extract sensor data shapes
+        if obs.sensors is not None:
+            data_shape["sensors"] = {}
+
+            # Extract camera shapes
+            if obs.sensors.cameras is not None:
+                data_shape["sensors"]["cameras"] = {}
+                for camera_name, camera_data in obs.sensors.cameras.items():
+                    if camera_data is not None:
+                        data_shape["sensors"]["cameras"][camera_name] = list(camera_data.shape)
+
+            # Extract tactile sensor shapes
+            if obs.sensors.tactile is not None:
+                data_shape["sensors"]["tactile"] = {}
+                for tactile_name, tactile_data in obs.sensors.tactile.items():
+                    if tactile_data is not None:
+                        data_shape["sensors"]["tactile"][tactile_name] = list(tactile_data.shape)
+
+        return data_shape
 
     @override
     def record(self, max_frames: int) -> RakudaObs:
@@ -92,7 +228,7 @@ class RakudaExpHandler(ExpHandler):
         return obs
 
     @override
-    def recode_save(
+    def record_save(
         self,
         max_frames: int,
         save_path: str,
@@ -155,6 +291,11 @@ class RakudaExpHandler(ExpHandler):
                         count += 1
                     os.makedirs(unique_save_dir)
                     self.save_worker.save_all_obs(obs, unique_save_dir, save_gif)
+
+                    # Collect data shapes for metadata
+                    data_shape = self._extract_data_shapes(obs)
+
+                    self.save_metadata(unique_save_dir, data_shape)
                 # disconnect and exit
                 else:
                     print("Invalid input. Exiting...")
@@ -167,17 +308,6 @@ class RakudaExpHandler(ExpHandler):
             logger.info("Recording stopped by user...")
             sleep(0.5)
             self.robot.disconnect()
-
-    # Backwards-compatible alias: new name delegates to old implementation
-    def record_save(
-        self,
-        max_frames: int,
-        save_path: str,
-        save_gif: bool = True,
-        warmup_time: int = 5,
-    ) -> None:
-        """Alias for recode_save kept for backward compatibility."""
-        return self.recode_save(max_frames, save_path, save_gif, warmup_time)
 
     def _init_config(self, rakuda_config: RakudaConfig) -> RakudaConfig:
         leader_port_num = rakuda_config.leader_port

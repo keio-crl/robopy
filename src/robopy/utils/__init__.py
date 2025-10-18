@@ -1,4 +1,5 @@
 from .blosc_handler import BLOSCHandler
+from .exp_interface.meta_data_config import MetaDataConfig
 from .exp_interface.rakuda_exp_handler import RakudaExpHandler
 from .find_usb_port import find_port
 from .worker.rakuda_save_woker import RakudaSaveWorker
@@ -10,4 +11,5 @@ __all__ = [
     "SaveWorker",
     "RakudaSaveWorker",
     "RakudaExpHandler",
+    "MetaDataConfig",
 ]
