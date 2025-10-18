@@ -1,16 +1,19 @@
 import concurrent
 import concurrent.futures
 import os
+import queue
+import threading
 from concurrent.futures import Future
 from logging import getLogger
-from typing import Dict
+from typing import Dict, NamedTuple, cast
 
 import matplotlib
 from rich.console import Console
 from rich.table import Table
-from tqdm import tqdm
 
 matplotlib.use("Agg")  # thread safe backend
+from typing import Literal
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import ArtistAnimation
@@ -27,12 +30,162 @@ logger = getLogger(__name__)
 consle = Console()
 
 
+class SaveTask(NamedTuple):
+    """Data class representing a save task"""
+
+    task_type: Literal["camera", "tactile", "arm_obs", "arm", "animation"]
+    data: (
+        tuple[Dict[str, NDArray[np.float32]], Dict[str, NDArray[np.float32]]]
+        | tuple[NDArray[np.float32], NDArray[np.float32]]
+        | Dict[str, NDArray[np.float32]]
+    )  # type: ignore
+    save_path: str = ""
+    fps: int | None = None
+
+
 class RakudaSaveWorker(SaveWorker):
     def __init__(self, cfg: RakudaConfig, worker_num: int, fps: int) -> None:
         super().__init__()
         self.worker_num = worker_num
         self.cfg = cfg
         self.fps = fps
+
+        # Background save queue and executor setup
+        self._save_queue: queue.Queue[SaveTask | None] = queue.Queue()
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=worker_num)
+        # Use non-daemon thread to ensure tasks complete before shutdown
+        self._background_thread = threading.Thread(target=self._background_saver, daemon=False)
+        self._background_thread.start()
+        self._stop_event = threading.Event()
+        self._futures: list[Future] = []
+
+    def _background_saver(self) -> None:
+        """Background worker thread that processes save tasks from the queue"""
+        logger.info("Background saver thread started")
+
+        while True:
+            try:
+                task = self._save_queue.get(timeout=1.0)
+
+                if task is None:  # Finish signal
+                    break
+
+                match task.task_type:
+                    case "camera":
+                        camera_data = cast(Dict[str, NDArray[np.float32]], task.data)
+                        logger.debug(f"Processing camera save task to {task.save_path}")
+                        future = self._executor.submit(
+                            self._save_camera_data, camera_data, task.save_path
+                        )
+                    case "tactile":
+                        tactile_data = cast(Dict[str, NDArray[np.float32]], task.data)
+                        logger.debug(f"Processing tactile save task to {task.save_path}")
+                        future = self._executor.submit(
+                            self._save_tactile_data, tactile_data, task.save_path
+                        )
+                    case "arm_obs":
+                        arm_data = cast(tuple[NDArray[np.float32], NDArray[np.float32]], task.data)
+                        logger.debug(f"Processing arm_obs save task to {task.save_path}")
+                        future = self._executor.submit(
+                            self.make_rakuda_arm_obs,
+                            arm_data[0],  # leader
+                            arm_data[1],  # follower
+                            task.save_path,
+                        )
+                    case "animation":
+                        data = cast(
+                            tuple[Dict[str, NDArray[np.float32]], Dict[str, NDArray[np.float32]]],
+                            task.data,
+                        )
+                        camera_data, tactile_data = data
+                        logger.debug(f"Processing animation save task to {task.save_path}")
+                        if (
+                            camera_data is not None
+                            and tactile_data is not None
+                            and task.fps is not None
+                        ):
+                            future = self._executor.submit(
+                                self.make_rakuda_obs_animation,
+                                camera_data,
+                                tactile_data,
+                                task.save_path,
+                                task.fps,
+                            )
+                        else:
+                            logger.warning("Animation task missing required data")
+                            self._save_queue.task_done()
+                            continue
+
+                    case "arm":
+                        arm_data = cast(tuple[NDArray[np.float32], NDArray[np.float32]], task.data)
+                        logger.debug(f"Processing arm save task to {task.save_path}")
+                        future = self._executor.submit(
+                            self.save_datas,
+                            arm_data[0],  # leader
+                            arm_data[1],  # follower
+                            task.save_path,
+                        )
+
+                    case _:
+                        logger.warning(f"Unknown task type: {task.task_type}")
+                        self._save_queue.task_done()
+                        continue
+
+                self._futures.append(future)
+                self._save_queue.task_done()
+                logger.debug(f"Task queued, remaining: {self._save_queue.qsize()}")
+
+            except queue.Empty:
+                continue
+            except Exception as e:
+                logger.error(f"Error in background saver: {e}", exc_info=True)
+
+        # Wait for all tasks to complete
+        logger.info(f"Waiting for {len(self._futures)} tasks to complete...")
+        for i, future in enumerate(concurrent.futures.as_completed(self._futures)):
+            try:
+                future.result()
+                logger.debug(f"Task {i + 1}/{len(self._futures)} completed")
+            except Exception as e:
+                logger.error(f"Error in background save task {i + 1}: {e}", exc_info=True)
+
+        logger.info("Background saver thread finished successfully")
+
+    def enqueue_save_task(self, task: SaveTask) -> None:
+        """Add a save task to the queue (non-blocking)"""
+        self._save_queue.put(task)
+
+    def wait_all_saved(self) -> None:
+        """Wait for all save tasks to complete"""
+        logger.info("Waiting for all queued tasks to complete...")
+        self._save_queue.join()
+        logger.info("All queued tasks marked as done")
+
+    def shutdown(self) -> None:
+        """Shutdown the save worker"""
+        logger.info("Shutting down save worker...")
+
+        # Wait for all tasks in the queue to complete
+        self.wait_all_saved()
+
+        # Send shutdown signal to background thread
+        logger.info("Sending shutdown signal to background thread...")
+        self._stop_event.set()
+        self._save_queue.put(None)  # Shutdown signal
+
+        # Wait for background thread to finish (timeout: 60 seconds)
+        logger.info("Waiting for background thread to finish...")
+        self._background_thread.join(timeout=60)
+
+        if self._background_thread.is_alive():
+            logger.warning("Background thread did not finish in time")
+        else:
+            logger.info("Background thread finished")
+
+        # Shutdown ThreadPoolExecutor
+        logger.info("Shutting down thread pool executor...")
+        self._executor.shutdown(wait=True)
+        logger.info("Save worker shutdown complete")
 
     def prepare_rakuda_obs(
         self, obs: RakudaObs, save_dir: str
@@ -42,12 +195,17 @@ class RakudaSaveWorker(SaveWorker):
         NDArray[np.float32],
         NDArray[np.float32],
     ]:
-        """Make animation from Rakuda sensor observation data and save to file.
+        """Extract and prepare Rakuda sensor observation data for saving.
 
         Args:
             obs (RakudaObs): Observation data from Rakuda robot.
-            save_dir (str): Directory to save the animation file.
-            fps (int): Frames per second for the animation.
+            save_dir (str): Directory to save the data.
+
+        Returns:
+            tuple: (camera_data, tactile_data, leader, follower)
+
+        Raises:
+            RuntimeError: If failed to process observation data.
         """
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -83,12 +241,13 @@ class RakudaSaveWorker(SaveWorker):
         save_dir: str,
         fps: int,
     ) -> None:
-        """Make animation from Rakuda sensor observation data and save to file.
+        """Generate and save animation from camera and tactile sensor data.
 
         Args:
-            camera_data (np.ndarray): Camera data from Rakuda robot. Shape: (frames, C, H, W)
-            left_tactile_data (np.ndarray): Left tactile sensor data. Shape: (frames, C, H, W)
-            right_tactile_data (np.ndarray): Right tactile sensor data. Shape: (frames, C, H, W)
+            camera_data (Dict[str, NDArray[np.float32]]): Camera data.
+                Shape: (frames, C, H, W)
+            tactile_data (Dict[str, NDArray[np.float32]]): Tactile sensor data.
+                Shape: (frames, C, H, W)
             save_dir (str): Directory to save the animation file.
             fps (int): Frames per second for the animation.
         """
@@ -110,7 +269,7 @@ class RakudaSaveWorker(SaveWorker):
         rows = all_fig_num // 3 + int(all_fig_num % 3 != 0)
         cols = min(all_fig_num, 3)
 
-        # layout: 1 row, N columns (cameras + 2 tactile sensors)
+        # Layout: multiple columns for cameras and tactile sensors
         fig = plt.figure(figsize=(5 * cols, 5 * rows))
         axes = fig.subplots(rows, cols)
         if rows == 1 and cols == 1:
@@ -134,7 +293,7 @@ class RakudaSaveWorker(SaveWorker):
                 axes[idx].axis("off")
                 frame_artists.append(im)
 
-            # FPS情報を左上に表示
+            # Display FPS information in upper left
             fps_text = axes[0].text(
                 0.02,
                 0.75,
@@ -158,6 +317,16 @@ class RakudaSaveWorker(SaveWorker):
 
     @staticmethod
     def make_rakuda_arm_obs(leader: np.ndarray, follower: np.ndarray, save_path: str) -> None:
+        """Save arm observation data as a plot image.
+
+        Args:
+            leader (np.ndarray): Leader arm positions. Shape: (frames, joints)
+            follower (np.ndarray): Follower arm positions. Shape: (frames, joints)
+            save_path (str): Path to save the plot image.
+
+        Raises:
+            ValueError: If data dimensions are invalid.
+        """
         if leader.shape[0] != follower.shape[0]:
             raise ValueError("Mismatch in number of frames between leader and follower arm data.")
 
@@ -172,7 +341,7 @@ class RakudaSaveWorker(SaveWorker):
             fig = plt.figure(figsize=(8, 24))
             axes = fig.subplots(n, 1)
 
-            # 単一軸の場合の処理
+            # Handle single axis case
             if n == 1:
                 axes = [axes]
 
@@ -194,6 +363,12 @@ class RakudaSaveWorker(SaveWorker):
     def _save_camera_data(
         self, camera_data: Dict[str, NDArray[np.float32]], save_path: str
     ) -> None:
+        """Save camera data using BLOSC compression.
+
+        Args:
+            camera_data (Dict[str, NDArray[np.float32]]): Camera data by name.
+            save_path (str): Base path to save the camera data files.
+        """
         for name, data in camera_data.items():
             if data is None:
                 continue
@@ -210,6 +385,12 @@ class RakudaSaveWorker(SaveWorker):
         tactile_data: Dict[str, NDArray[np.float32]],
         save_path: str,
     ) -> None:
+        """Save tactile sensor data using BLOSC compression.
+
+        Args:
+            tactile_data (Dict[str, NDArray[np.float32]]): Tactile sensor data by name.
+            save_path (str): Base path to save the tactile data files.
+        """
         for name, data in tactile_data.items():
             if data is None:
                 continue
@@ -223,12 +404,24 @@ class RakudaSaveWorker(SaveWorker):
             logger.info(f"Tactile data for {name} saved to {file_path}")
 
     def _save_array_safe(self, data: NDArray[np.float32], file_path: str) -> None:
-        """Safely save array with BLOSC, ensuring C-contiguous memory layout."""
+        """Safely save array with BLOSC, ensuring C-contiguous memory layout.
+
+        Args:
+            data (NDArray[np.float32]): Array to save.
+            file_path (str): Path to save the array file.
+        """
         if not data.flags.c_contiguous:
             data = np.ascontiguousarray(data)
         BLOSCHandler.save(data, file_path)
 
     def save_all_obs(self, obs: RakudaObs, save_path: str, save_gif: bool) -> None:
+        """Queue observation data for background saving.
+
+        Args:
+            obs (RakudaObs): Observation data to save.
+            save_path (str): Directory path to save the data.
+            save_gif (bool): Whether to generate GIF animation.
+        """
         camera_data, tactile_data, leader, follower = self.prepare_rakuda_obs(obs, save_path)
 
         table = Table(title="Rakuda Observation Save Summary")
@@ -246,58 +439,65 @@ class RakudaSaveWorker(SaveWorker):
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.worker_num) as executor:
-            futures: list[Future] = []
-            futures.extend(
-                [
-                    executor.submit(
-                        self.make_rakuda_arm_obs,
-                        leader,
-                        follower,
-                        os.path.join(save_path, "arm_obs.png"),
-                    ),
-                    executor.submit(
-                        self._save_camera_data,
-                        camera_data,
-                        os.path.join(save_path),
-                    ),
-                    executor.submit(
-                        self._save_tactile_data,
-                        tactile_data,
-                        os.path.join(save_path),
-                    ),
-                    executor.submit(
-                        self._save_array_safe,
-                        leader,
-                        os.path.join(save_path, "leader_obs.blosc"),
-                    ),
-                    executor.submit(
-                        self._save_array_safe,
-                        follower,
-                        os.path.join(save_path, "follower_obs.blosc"),
-                    ),
-                ]
+        # Queue save tasks (non-blocking)
+        # Save arm observations　visualization
+        self.enqueue_save_task(
+            SaveTask(
+                task_type="arm_obs",
+                data=(leader, follower),
+                save_path=os.path.join(save_path, "arm_obs.png"),
             )
-            if save_gif:
-                futures.append(
-                    executor.submit(
-                        self.make_rakuda_obs_animation,
-                        camera_data,
-                        tactile_data,
-                        os.path.join(save_path, "rakuda_obs_animation.gif"),
-                        self.fps,
-                    ),
-                )
+        )
 
-            for future in tqdm(concurrent.futures.as_completed(futures)):
-                try:
-                    future.result()  # 例外があれば再発生
-                except Exception as e:
-                    raise RuntimeError(f"Error in saving observation data: {e}")
+        self.enqueue_save_task(
+            SaveTask(
+                task_type="arm",
+                data=(leader, follower),
+                save_path=save_path,
+            )
+        )
+
+        # Save camera data
+        self.enqueue_save_task(
+            SaveTask(
+                task_type="camera",
+                data=camera_data,
+                save_path=save_path,
+            )
+        )
+
+        # Save tactile data
+        self.enqueue_save_task(
+            SaveTask(
+                task_type="tactile",
+                data=tactile_data,
+                save_path=save_path,
+            )
+        )
+
+        # Generate GIF (optional)
+        if save_gif:
+            self.enqueue_save_task(
+                SaveTask(
+                    task_type="animation",
+                    data=(camera_data, tactile_data),
+                    save_path=os.path.join(save_path, "rakuda_obs_animation.gif"),
+                    fps=self.fps,
+                )
+            )
+
+        logger.info(f"Queued all save tasks for {save_path}. Processing in background...")
 
     def save_datas(
         self, leader_obs: NDArray[np.float32], follower_obs: NDArray[np.float32], path: str
     ) -> None:
+        """Save arm observation data as BLOSC compressed files.
+
+        Args:
+            leader_obs (NDArray[np.float32]): Leader arm positions. Shape: (frames, joints)
+            follower_obs (NDArray[np.float32]): Follower arm positions. Shape: (frames, joints)
+            path (str): Directory path to save the data.
+        """
         if not os.path.exists(path):
             os.makedirs(path)
 
