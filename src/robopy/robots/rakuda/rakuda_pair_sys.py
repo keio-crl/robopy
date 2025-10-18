@@ -32,6 +32,8 @@ class RakudaPairSys(Robot):
         self._motor_mapping = (
             RAKUDA_MOTOR_MAPPING  # key: leader motor name, value: follower motor name
         )
+        self._leader_motor_names = list(self._leader.motors.motors.keys())
+        self._follower_motor_names = list(self._follower.motors.motors.keys())
 
     def connect(self) -> None:
         """Connect to both leader and follower arms."""
@@ -62,8 +64,8 @@ class RakudaPairSys(Robot):
         if not self.is_connected:
             raise ConnectionError("RakudaPairSys is not connected. Call connect() first.")
 
-        leader_motor_names = list(self._leader.motors.motors.keys())
-        follower_motor_names = list(self._follower.motors.motors.keys())
+        leader_motor_names = self._leader_motor_names
+        follower_motor_names = self._follower_motor_names
         leader_obs = self._leader.motors.sync_read(
             XControlTable.PRESENT_POSITION, leader_motor_names
         )
@@ -118,18 +120,18 @@ class RakudaPairSys(Robot):
             raise
 
     def teleoperate_step(self) -> RakudaArmObs:
-        """teleoperate_step performs one iteration of teleoperation.
+        """
+        Legacy teleoperate_step (deprecated).
 
-        Args:
-            if_record (bool, optional): _description_. Defaults to True.
+        Performs one iteration of teleoperation with full observation.
+        This method is SLOW (40ms) due to 4 Dynamixel communications.
 
-        Raises:
-            ConnectionError: if not connected.
+        Use control_step() for high-frequency control instead.
 
         Returns:
-            RakudaArmObs | None: Current observation if if_record is True, else None.
-                            - leader: np.ndarray of leader arm positions
-                            - follower: np.ndarray of follower arm positions
+            RakudaArmObs: Current observation
+                - leader: np.ndarray of leader arm positions
+                - follower: np.ndarray of follower arm positions
         """
         if not self.is_connected:
             raise ConnectionError("RakudaPairSys is not connected. Call connect() first.")
@@ -150,9 +152,65 @@ class RakudaPairSys(Robot):
             logger.exception("Failed to send follower action; continuing.")
 
         follower_observations = self.get_follower_action()
-
         leader_obs = np.array(list(leader_positions.values()), dtype=np.float32)
         follower_obs = np.array(list(follower_observations.values()), dtype=np.float32)
+        return RakudaArmObs(leader=leader_obs, follower=follower_obs)
+
+    def control_step(self) -> Dict[str, float]:
+        """
+        LeRobot-style high-frequency control step.
+
+        Performs minimal necessary operations for teleoperation:
+        1. Read leader positions
+        2. Map to follower
+        3. Send to follower
+
+        This is FAST (~10-16ms) and suitable for 60Hz control loops.
+
+        Returns:
+            Dict[str, float]: Leader positions that were sent to follower
+        """
+        if not self.is_connected:
+            raise ConnectionError("RakudaPairSys is not connected. Call connect() first.")
+
+        # Read leader positions
+        leader_positions = self.get_leader_action()
+
+        # Map leader positions to follower goal positions
+        follower_goal_positions: Dict[str, float] = {}
+        for leader_name, position in leader_positions.items():
+            follower_name = self._motor_mapping.get(leader_name)
+            if follower_name:
+                follower_goal_positions[follower_name] = position
+
+        # Send to follower
+        self.send_follower_action(follower_goal_positions)
+
+        return leader_positions
+
+    def get_observation_with_leader(self, leader_positions: Dict[str, float]) -> RakudaArmObs:
+        """
+        Get observation using pre-read leader positions.
+
+        This is useful when you already have leader positions from control_step()
+        and want to avoid redundant communication.
+
+        Args:
+            leader_positions: Pre-read leader positions
+
+        Returns:
+            RakudaArmObs: Current arm observation
+        """
+        if not self.is_connected:
+            raise ConnectionError("RakudaPairSys is not connected. Call connect() first.")
+
+        # Read follower positions
+        follower_positions = self.get_follower_action()
+
+        # Convert to arrays
+        leader_obs = np.array(list(leader_positions.values()), dtype=np.float32)
+        follower_obs = np.array(list(follower_positions.values()), dtype=np.float32)
+
         return RakudaArmObs(leader=leader_obs, follower=follower_obs)
 
     def get_leader_action(self) -> Dict[str, float]:
@@ -177,7 +235,8 @@ class RakudaPairSys(Robot):
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
 
-        follower_motor_names = list(self._follower.motors.motors.keys())
+        follower_motor_names = self._follower_motor_names
+
         follower_positions = self._follower.motors.sync_read(
             XControlTable.PRESENT_POSITION, follower_motor_names
         )

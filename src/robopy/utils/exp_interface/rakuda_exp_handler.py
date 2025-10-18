@@ -67,7 +67,7 @@ class RakudaExpHandler(ExpHandler):
             raise RuntimeError(f"Failed to connect to Rakuda robot: {e}")
 
     @override
-    def record(self, max_frames: int, if_async: bool = True) -> RakudaObs:
+    def record(self, max_frames: int) -> RakudaObs:
         """record data from Rakuda robot
 
         Args:
@@ -81,10 +81,7 @@ class RakudaExpHandler(ExpHandler):
             RakudaObs: recorded observation
         """
         try:
-            if if_async:
-                obs = self.robot.record_parallel(max_frame=max_frames, fps=self.fps)
-            else:
-                obs = self.robot.record(max_frame=max_frames, fps=self.fps)
+            obs = self.robot.record_parallel(max_frame=max_frames, fps=self.fps)
         except Exception as e:
             raise RuntimeError(f"Failed to record from Rakuda robot: {e}")
         except KeyboardInterrupt:
@@ -99,7 +96,6 @@ class RakudaExpHandler(ExpHandler):
         self,
         max_frames: int,
         save_path: str,
-        if_async: bool = True,
         save_gif: bool = True,
         warmup_time: int = 5,
     ) -> None:
@@ -134,13 +130,11 @@ class RakudaExpHandler(ExpHandler):
                 self.robot.teleoperation(warmup_time)
                 print("Press 'Enter' to start recording...")
                 input_str = input()
-                print("Recording...")
+                print("Recpording...")
 
-                if if_async:
-                    print("Using asynchronous recording...")
-                    obs = self.robot.record_parallel(max_frame=max_frames, fps=self.fps)
-                else:
-                    obs = self.robot.record(max_frame=max_frames, fps=self.fps)
+                print("Using asynchronous recording...")
+                obs = self.robot.record_parallel(max_frame=max_frames, fps=self.fps)
+
                 print(
                     "Recording finished. print 1~9 to save data,",
                     " or 'e' to record again",
@@ -179,12 +173,11 @@ class RakudaExpHandler(ExpHandler):
         self,
         max_frames: int,
         save_path: str,
-        if_async: bool = True,
         save_gif: bool = True,
         warmup_time: int = 5,
     ) -> None:
         """Alias for recode_save kept for backward compatibility."""
-        return self.recode_save(max_frames, save_path, if_async, save_gif, warmup_time)
+        return self.recode_save(max_frames, save_path, save_gif, warmup_time)
 
     def _init_config(self, rakuda_config: RakudaConfig) -> RakudaConfig:
         leader_port_num = rakuda_config.leader_port

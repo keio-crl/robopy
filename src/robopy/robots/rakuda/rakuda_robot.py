@@ -136,9 +136,9 @@ class RakudaRobot(ComposedRobot):
     def record_parallel(
         self,
         max_frame: int,
-        fps: int = 30,
-        teleop_hz: int = 100,
-        max_processing_time_ms: float = 25.0,
+        fps: int = 20,
+        teleop_hz: int = 25,
+        max_processing_time_ms: float = 40,
     ) -> RakudaObs:
         """
         teleoperate_stepをteleop_hzで回しつつ、fpsごとに最新のarm_obsを記録し、
@@ -157,12 +157,16 @@ class RakudaRobot(ComposedRobot):
         def teleop_worker():
             interval = 1.0 / teleop_hz
             while not stop_event.is_set():
+                start_time = time.perf_counter()
                 obs = self.robot_system.teleoperate_step()
+
                 try:
                     arm_obs_queue.put(obs, timeout=interval)
                 except queue.Full:
                     pass
-                time.sleep(interval)
+                elapsed = time.perf_counter() - start_time
+                sleep_time = max(0, interval - elapsed)
+                time.sleep(sleep_time)
 
         teleop_thread = threading.Thread(target=teleop_worker, daemon=True)
         teleop_thread.start()
@@ -216,14 +220,11 @@ class RakudaRobot(ComposedRobot):
                         if self._sensors.tactile:
                             for tac in self._sensors.tactile:
                                 if tac.is_connected:
-                                    if hasattr(tac, "async_read"):
-                                        tactile_futures[tac.name] = executor.submit(
-                                            tac.async_read, timeout_ms=5
-                                        )
-                                    else:
-                                        tactile_futures[tac.name] = executor.submit(tac.read)
+                                    tactile_futures[tac.name] = executor.submit(
+                                        tac.async_read, timeout_ms=5
+                                    )
 
-                        timeout = max_processing_time * 0.8
+                        timeout = max_processing_time * 0.5
 
                         camera_data: Dict[str, NDArray | None] = {}
                         for cam_name, future in camera_futures.items():
@@ -260,6 +261,7 @@ class RakudaRobot(ComposedRobot):
                     # タイミング調整
                     processing_time = time.perf_counter() - frame_start_time
                     total_processing_time += processing_time
+
                     if processing_time > max_processing_time:
                         skipped_frames += 1
                         logger.warning(

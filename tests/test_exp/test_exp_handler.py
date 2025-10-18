@@ -19,14 +19,14 @@ def test_exp_handler_import():
 def test_rakuda_exp_send():
     handler = RakudaExpHandler(
         rakuda_config=RakudaConfig(
-            leader_port="/dev/ttyUSB0",
-            follower_port="/dev/ttyUSB1",
+            leader_port="/dev/ttyUSB1",
+            follower_port="/dev/ttyUSB0",
         ),
         fps=10,
     )
 
     try:
-        action = handler.record(max_frames=200, if_async=True).arms.leader
+        action = handler.record(max_frames=200).arms.leader
         handler.send(max_frame=200, fps=10, leader_action=action)
     except Exception as e:
         raise e
@@ -46,6 +46,6 @@ if __name__ == "__main__":
                 ],
             ),
         ),
-        fps=15,
+        fps=10,
     )
-    handler.recode_save(max_frames=15, save_path="test_01")
+    handler.recode_save(max_frames=100, save_path="test_01")
