@@ -5,14 +5,13 @@ import queue
 import threading
 from concurrent.futures import Future
 from logging import getLogger
-from typing import Dict, NamedTuple, cast
+from typing import Dict, Literal, NamedTuple, cast
 
 import matplotlib
 from rich.console import Console
 from rich.table import Table
 
 matplotlib.use("Agg")  # thread safe backend
-from typing import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -22,6 +21,7 @@ from numpy.typing import NDArray
 from robopy.config import RakudaConfig
 from robopy.config.robot_config.rakuda_config import RakudaObs
 from robopy.utils.blosc_handler import BLOSCHandler
+from robopy.utils.h5_handler import H5Handler
 
 from .save_worker import SaveWorker
 
@@ -33,11 +33,14 @@ consle = Console()
 class SaveTask(NamedTuple):
     """Data class representing a save task"""
 
-    task_type: Literal["camera", "tactile", "arm_obs", "arm", "animation", "metadata"]
+    task_type: Literal[
+        "camera", "tactile", "arm_obs", "arm", "animation", "metadata", "hierarchical"
+    ]
     data: (
         tuple[Dict[str, NDArray[np.float32]], Dict[str, NDArray[np.float32]]]
         | tuple[NDArray[np.float32], NDArray[np.float32]]
         | Dict[str, NDArray[np.float32]]
+        | Dict[str, dict]
     )  # type: ignore
     save_path: str = ""
     fps: int | None = None
@@ -123,6 +126,15 @@ class RakudaSaveWorker(SaveWorker):
                             self.save_arm_datas,
                             arm_data[0],  # leader
                             arm_data[1],  # follower
+                            task.save_path,
+                        )
+
+                    case "hierarchical":
+                        hierarchical_data = cast(Dict[str, dict], task.data)
+                        logger.debug(f"Processing hierarchical save task to {task.save_path}")
+                        future = self._executor.submit(
+                            self._save_hierarchical_h5,
+                            hierarchical_data,
                             task.save_path,
                         )
 
@@ -418,8 +430,59 @@ class RakudaSaveWorker(SaveWorker):
             data = np.ascontiguousarray(data)
         BLOSCHandler.save(data, file_path)
 
+    def _save_hierarchical_h5(self, data_dict: Dict[str, dict], file_path: str) -> None:
+        """Save hierarchical data structure to HDF5 file.
+
+        Args:
+            data_dict (Dict[str, dict]): Hierarchical dictionary of data.
+            file_path (str): Path to save the HDF5 file.
+        """
+        H5Handler.save_hierarchical(data_dict, file_path, compress=True)
+        logger.info(f"Hierarchical data saved to {file_path}")
+
+    def _build_hierarchical_data(
+        self,
+        camera_data: Dict[str, NDArray[np.float32]],
+        tactile_data: Dict[str, NDArray[np.float32]],
+        leader: NDArray[np.float32],
+        follower: NDArray[np.float32],
+    ) -> Dict[str, dict]:
+        """Build hierarchical data structure for HDF5 storage.
+
+        Args:
+            camera_data (Dict[str, NDArray[np.float32]]): Camera data by name.
+            tactile_data (Dict[str, NDArray[np.float32]]): Tactile sensor data by name.
+            leader (NDArray[np.float32]): Leader arm positions.
+            follower (NDArray[np.float32]): Follower arm positions.
+
+        Returns:
+            Dict[str, dict]: Hierarchical data structure.
+        """
+        hierarchical_data: Dict[str, dict] = {
+            "camera": {},
+            "tactile": {},
+            "arm": {
+                "leader": leader,
+                "follower": follower,
+            },
+        }
+
+        # Add camera data to hierarchy
+        for name, data in camera_data.items():
+            if data is not None:
+                hierarchical_data["camera"][name] = data
+
+        # Add tactile data to hierarchy
+        for name, data in tactile_data.items():
+            if data is not None:
+                hierarchical_data["tactile"][name] = data
+
+        return hierarchical_data
+
     def save_all_obs(self, obs: RakudaObs, save_path: str, save_gif: bool) -> None:
         """Queue observation data for background saving.
+
+        Supports both BLOSC (hierarchical file structure) and HDF5 (single file) formats.
 
         Args:
             obs (RakudaObs): Observation data to save.
@@ -442,8 +505,23 @@ class RakudaSaveWorker(SaveWorker):
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
+        # Build hierarchical data structure for HDF5 format
+        hierarchical_data = self._build_hierarchical_data(
+            camera_data, tactile_data, leader, follower
+        )
+
+        # Save as single HDF5 file (unified format)
+        h5_file_path = os.path.join(save_path, "rakuda_observations.h5")
+        self.enqueue_save_task(
+            SaveTask(
+                task_type="hierarchical",
+                data=hierarchical_data,
+                save_path=h5_file_path,
+            )
+        )
+
         # Queue save tasks (non-blocking)
-        # Save arm observations　visualization
+        # Save arm observations visualization
         self.enqueue_save_task(
             SaveTask(
                 task_type="arm_obs",
@@ -452,31 +530,6 @@ class RakudaSaveWorker(SaveWorker):
             )
         )
 
-        self.enqueue_save_task(
-            SaveTask(
-                task_type="arm",
-                data=(leader, follower),
-                save_path=save_path,
-            )
-        )
-
-        # Save camera data
-        self.enqueue_save_task(
-            SaveTask(
-                task_type="camera",
-                data=camera_data,
-                save_path=save_path,
-            )
-        )
-
-        # Save tactile data
-        self.enqueue_save_task(
-            SaveTask(
-                task_type="tactile",
-                data=tactile_data,
-                save_path=save_path,
-            )
-        )
         # Generate GIF (optional)
         if save_gif:
             self.enqueue_save_task(

@@ -1,8 +1,6 @@
 from logging import INFO, basicConfig
 
 from robopy.config import RakudaConfig
-from robopy.config.robot_config import RakudaSensorParams
-from robopy.config.sensor_config.params_config import TactileParams
 from robopy.utils import MetaDataConfig, RakudaExpHandler
 
 basicConfig(level=INFO)
@@ -44,16 +42,16 @@ if __name__ == "__main__":
         rakuda_config=RakudaConfig(
             leader_port="/dev/ttyUSB0",
             follower_port="/dev/ttyUSB1",
-            sensors=RakudaSensorParams(
-                tactile=[
-                    TactileParams(serial_num="D20542", name="left"),
-                    TactileParams(serial_num="D20537", name="right"),
-                ],
-            ),
+            # sensors=RakudaSensorParams(
+            #    tactile=[
+            #        TactileParams(serial_num="D20542", name="left"),
+            #        TactileParams(serial_num="D20537", name="right"),
+            #    ],
+            # ),
         ),
         metadata_config=MetaDataConfig(
             task_name="test_task",
-            description="This is a test task",
+            description="This is a test task of no tactile sensors",
             date="2024-06-01",
         ),
         fps=10,
