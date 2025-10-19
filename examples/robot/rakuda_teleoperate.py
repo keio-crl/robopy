@@ -3,7 +3,7 @@ from logging import INFO, basicConfig
 basicConfig(level=INFO)
 
 
-def test_rakuda_teleoperate():
+def rakuda_teleoperate():
     from robopy.config.robot_config.rakuda_config import RakudaConfig
     from robopy.robots.rakuda.rakuda_robot import RakudaRobot
 
@@ -21,4 +21,4 @@ def test_rakuda_teleoperate():
 
 
 if __name__ == "__main__":
-    test_rakuda_teleoperate()
+    rakuda_teleoperate()
