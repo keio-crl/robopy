@@ -40,7 +40,6 @@
     データ収集の実行方法
 
     [:octicons-arrow-right-24: 実験ハンドラー](experiments/handlers.md)
-    [:octicons-arrow-right-24: データ収集](experiments/data-collection.md)
 
 -   :material-api: **API リファレンス**
 
