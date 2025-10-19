@@ -13,7 +13,7 @@
 
     ```bash
     # 基本パッケージのインストール
-    uv add git+https://github.com/keio-crl/robopy.git --tag v0.2.0
+    uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.0
     # RealSenseサポート（Linux）
     uv add pyrealsense2
     ```
@@ -49,7 +49,7 @@
 
         handler = RakudaExpHandler(
             rakuda_config=config,
-            fps=10 # データを収集するフレームレート (max 30)
+            fps=10 # データを収集するフレームレート (max 20)
         )
 
         # データ記録と保存

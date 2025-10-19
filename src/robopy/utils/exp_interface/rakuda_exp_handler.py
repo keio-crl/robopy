@@ -31,7 +31,7 @@ class RakudaExpHandler(ExpHandler):
         follower_port="/dev/ttyUSB1",
         left_digit_serial="D20542",
         right_digit_serial="D20537",
-        fps=30,
+        fps=20,
     )
     handler.record_save(max_frames=150, save_path="test_01", if_async=True)
     ```
@@ -53,18 +53,19 @@ class RakudaExpHandler(ExpHandler):
             fps (int, optional): The frequency to capture obs. Defaults to 10
 
         Raises:
-            ValueError: fps must be between 1 and 30
+            ValueError: fps must be between 1 and 20
             RuntimeError: failed to connect to Rakuda robot
         """
 
         config = self._init_config(rakuda_config)
-        if 30 < fps or fps < 1:
-            raise ValueError("FPS must be between 1 and 30")
+        if 20 < fps or fps < 1:
+            raise ValueError("FPS must be between 1 and 20")
         else:
             self.fps = fps
         self.robot = RakudaRobot(config)
         self.save_worker = RakudaSaveWorker(config, worker_num=6, fps=self.fps)
         self.metadata_config = metadata_config
+        self.metadata_config.record_fps = self.fps
         try:
             self.robot.connect()
         except Exception as e:
@@ -241,7 +242,6 @@ class RakudaExpHandler(ExpHandler):
             max_frames (int): maximum number of frames to record
             save_path (str): path to save the recorded data:
             data will be saved to `data/{save_path}`
-            if_async (bool, optional): if a . Defaults to True.
             save_gif (bool, optional): if save gif. Defaults to True.
             warmup_time (int, optional): warm up time before recording. Defaults to 5.
 

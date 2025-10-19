@@ -40,7 +40,7 @@ config = KochConfig(
     follower_port="/dev/ttyUSB1",
     camera_config=WebCameraConfig(
         device_id=0,
-        fps=30,
+        fps=20,
         width=640,
         height=480
     )

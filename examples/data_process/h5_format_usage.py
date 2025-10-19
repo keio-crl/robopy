@@ -80,9 +80,9 @@ def example_rakuda_save_worker() -> None:
 
     # RakudaConfigを設定（実際の使用時）
     # config = RakudaConfig(...)
-    # worker = RakudaSaveWorker(config, worker_num=4, fps=30)
+    # worker = RakudaSaveWorker(config, worker_num=4, fps=20)
 
-    # obs = robot.record(max_frame=100, fps=30)
+    # obs = robot.record(max_frame=100, fps=20)
     # worker.save_all_obs(obs, save_path="data/experiment_01", save_gif=True)
 
     # 実行後、以下のファイルが生成される:

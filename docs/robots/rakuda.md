@@ -72,7 +72,7 @@ obs = robot.record(max_frame=100, fps=5)
 # 並列記録（高fps対応）
 obs = robot.record_parallel(
     max_frame=1000, 
-    fps=30,
+    fps=20,
     max_processing_time_ms=25.0
 )
 ```
@@ -169,7 +169,7 @@ if robot.sensors.tactile:
 
 ```python
 # フレームスキップ確認
-obs = robot.record_parallel(max_frame=100, fps=30)
+obs = robot.record_parallel(max_frame=100, fps=20)
 # ログでスキップされたフレーム数を確認
 ```
 

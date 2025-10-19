@@ -80,7 +80,7 @@ try:
     robot.teleoperation(duration=10)
     
     # データ記録
-    obs = robot.record_parallel(max_frame=1000, fps=30)
+    obs = robot.record_parallel(max_frame=1000,20)
     
 finally:
     robot.disconnect()

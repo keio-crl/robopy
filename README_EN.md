@@ -8,7 +8,7 @@
 ### Installation
 
 ```bash
-uv add git+https://github.com/keio-crl/robopy.git --tag v0.2.0
+uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.0
 # RealSense support (Linux)
 uv add pyrealsense2
 ```
@@ -24,7 +24,7 @@ handler = RakudaExpHandler(
     follower_port="/dev/ttyUSB1",    # Follower arm port
     left_digit_serial="D20542",      # Left tactile sensor serial number
     right_digit_serial="D20537",     # Right tactile sensor serial number
-    fps=30                           # Recording frequency
+    fps=20                           # Recording frequency
 )
 
 # Interactive recording and saving

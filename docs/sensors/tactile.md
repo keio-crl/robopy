@@ -89,7 +89,7 @@ robot.connect()
 
 try:
     # データ記録（タクタイルセンサー含む）
-    obs = robot.record_parallel(max_frame=100, fps=30)
+    obs = robot.record_parallel(max_frame=100, fps=20)
     
     # タクタイルデータの確認
     if obs['sensors']['tactile']:
@@ -112,7 +112,7 @@ tactile_image = sensor.read()
 # 形状: (3, 240, 320) - C x H x W
 
 # 複数フレーム（記録データ）
-obs = robot.record_parallel(max_frame=100, fps=30)
+obs = robot.record_parallel(max_frame=100, fps=20)
 tactile_data = obs['sensors']['tactile']['left']
 # 形状: (100,3,240, 320) - Frames x C x H x W
 ```
@@ -147,13 +147,13 @@ plt.show()
 from robopy.utils.animation_maker import visualize_rakuda_obs
 
 # 記録データからアニメーション生成
-obs = robot.record_parallel(max_frame=100, fps=30)
+obs = robot.record_parallel(max_frame=100, fps=20)
 
 # タクタイルセンサーを含むアニメーション生成
 visualize_rakuda_obs(
     obs=obs,
     save_dir="./tactile_animation",
-    fps=30
+    fps=20
 )
 ```
 
