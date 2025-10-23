@@ -17,6 +17,13 @@ class TactileParams:
 
 
 @dataclass
+class AudioParams:
+    name: str = "main"
+    fps: int | None = 30
+
+
+@dataclass
 class SensorsParams:
     cameras: list[CameraParams] | None = None
     tactile: list[TactileParams] | None = None
+    audio: list[AudioParams] | None = None
