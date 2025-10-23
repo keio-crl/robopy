@@ -18,8 +18,9 @@ from robopy.config.robot_config.rakuda_config import (
     RakudaSensorObs,
 )
 from robopy.config.sensor_config import RealsenseCameraConfig, Sensors
-from robopy.config.sensor_config.params_config import TactileParams
+from robopy.config.sensor_config.params_config import TactileParams, AudioParams
 from robopy.sensors.tactile import DigitSensor
+from robopy.sensors.audio import AudioSensor
 from robopy.sensors.visual import RealsenseCamera
 
 from ..common.composed import ComposedRobot
@@ -53,6 +54,9 @@ class RakudaRobot(ComposedRobot):
         for tac in self._sensors.tactile or []:
             tac.disconnect()
 
+        for audio in self._sensors.audio or []:
+            audio.disconnect()
+
     @override
     def teleoperation(self, max_seconds: float | None = None) -> None:
         """Start teleoperation for Rakuda robot."""
@@ -75,6 +79,7 @@ class RakudaRobot(ComposedRobot):
         follower_obs = []
         camera_obs: Dict[str, List] = DefaultDict(list)
         tactile_obs: Dict[str, List] = DefaultDict(list)
+        audio_obs: Dict[str, List] = DefaultDict(list)
 
         get_obs_interval = 1.0 / fps
         frame_count = 0
@@ -94,12 +99,16 @@ class RakudaRobot(ComposedRobot):
                 sensor_data = self.sensors_observation()
                 camera_data = sensor_data.cameras
                 tactile_data = sensor_data.tactile
+                audio_data = sensor_data.audio
 
                 for cam_name, cam_frame in camera_data.items():
                     camera_obs[cam_name].append(cam_frame)
 
                 for tac_name, tac_frame in tactile_data.items():
                     tactile_obs[tac_name].append(tac_frame)
+
+                for audio_name, audio_frame in audio_data.items():
+                    audio_obs[audio_name].append(audio_frame)
 
                 frame_count += 1
                 interval_start = time.time()
@@ -130,7 +139,15 @@ class RakudaRobot(ComposedRobot):
             else:
                 tactile_obs_np[tac_name] = None
 
-        sensors_obs = RakudaSensorObs(cameras=camera_obs_np, tactile=tactile_obs_np)
+        # process audio observations
+        audio_obs_np: Dict[str, NDArray[np.float32] | None] = {}
+        for audio_name, frames in audio_obs.items():
+            if frames:
+                audio_obs_np[audio_name] = np.array(frames)
+            else:
+                audio_obs_np[audio_name] = None
+
+        sensors_obs = RakudaSensorObs(cameras=camera_obs_np, tactile=tactile_obs_np, audio=audio_obs_np)
         return RakudaObs(arms=arms, sensors=sensors_obs)
 
     def record_parallel(
@@ -175,6 +192,7 @@ class RakudaRobot(ComposedRobot):
         follower_obs = []
         camera_obs: Dict[str, List] = DefaultDict(list)
         tactile_obs: Dict[str, List] = DefaultDict(list)
+        audio_obs: Dict[str, List] = DefaultDict(list)
 
         get_obs_interval = 1.0 / fps
         max_processing_time = max_processing_time_ms / 1000.0
@@ -224,6 +242,15 @@ class RakudaRobot(ComposedRobot):
                                         tac.async_read, timeout_ms=5
                                     )
 
+                        # Audio futures
+                        audio_futures = {}
+                        if self._sensors.audio:
+                            for audio in self._sensors.audio:
+                                if audio.is_connected:
+                                    audio_futures[audio.name] = executor.submit(
+                                        audio.async_read, timeout_ms=5
+                                    )
+
                         timeout = max_processing_time * 0.5
 
                         camera_data: Dict[str, NDArray | None] = {}
@@ -246,6 +273,16 @@ class RakudaRobot(ComposedRobot):
                                 )
                                 tactile_data[tac_name] = None
 
+                        audio_data: Dict[str, NDArray | None] = {}
+                        for audio_name, future in audio_futures.items():
+                            try:
+                                audio_data[audio_name] = future.result(timeout=timeout / 2)
+                            except Exception as e:
+                                logger.warning(
+                                    f"Audio {audio_name} failed in frame {frame_count}: {e}"
+                                )
+                                audio_data[audio_name] = None
+
                     # 記録
                     leader_obs.append(arm_obs.leader)
                     follower_obs.append(arm_obs.follower)
@@ -255,6 +292,9 @@ class RakudaRobot(ComposedRobot):
 
                     for tac_name, tac_frame in tactile_data.items():
                         tactile_obs[tac_name].append(tac_frame)
+
+                    for audio_name, audio_frame in audio_data.items():
+                        audio_obs[audio_name].append(audio_frame)
 
                     frame_count += 1
 
@@ -309,7 +349,15 @@ class RakudaRobot(ComposedRobot):
                 tactile_obs_np[tac_name] = np.array(frames).transpose(0, 3, 1, 2)
             else:
                 tactile_obs_np[tac_name] = None
-        sensors_obs = RakudaSensorObs(cameras=camera_obs_np, tactile=tactile_obs_np)
+
+        audio_obs_np: Dict[str, NDArray[np.float32] | None] = {}
+        for audio_name, frames in audio_obs.items():
+            if frames and all(frame is not None for frame in frames):
+                audio_obs_np[audio_name] = np.array(frames)
+            else:
+                audio_obs_np[audio_name] = None
+
+        sensors_obs = RakudaSensorObs(cameras=camera_obs_np, tactile=tactile_obs_np, audio=audio_obs_np)
         return RakudaObs(arms=arms, sensors=sensors_obs)
 
     @override
@@ -367,7 +415,23 @@ class RakudaRobot(ComposedRobot):
             logger.warning("No tactile sensors are initialized in sensors.")
             tactile_data = {}
 
-        return RakudaSensorObs(cameras=camera_data, tactile=tactile_data)
+        # Get audio data using async_read when available
+        audio_data: Dict[str, NDArray[np.float32] | None] = {}
+        if self._sensors.audio is not None:
+            for audio in self._sensors.audio:
+                if audio.is_connected:
+                    # Use async_read if available for better performance
+                    audio_data = audio.async_read(timeout_ms=50)
+                    if audio_data is not None and audio_data.ndim == 2:
+                        audio_data = audio_data.transpose(1, 0)  # CHW to HWC
+                    audio_data[audio.name] = audio_data
+                else:
+                    audio_data[audio.name] = None
+        else:
+            logger.warning("No audio sensors are initialized in sensors.")
+            audio_data = {}
+
+        return RakudaSensorObs(cameras=camera_data, tactile=tactile_data, audio=audio_data)
 
     def send(
         self,
@@ -489,11 +553,17 @@ class RakudaRobot(ComposedRobot):
             tactile_params = self.config.sensors.tactile
             for tac_param in tactile_params:
                 tactile_configs.append(tac_param)
+
+            audio_configs: List[AudioParams] = []
+            audio_params = self.config.sensors.audio
+            for audio_param in audio_params:
+                audio_configs.append(audio_param)
         else:
             camera_configs = [RealsenseCameraConfig()]
             tactile_configs = []
+            audio_configs = []
 
-        sensor_configs = RakudaSensorConfigs(cameras=camera_configs, tactile=tactile_configs)
+        sensor_configs = RakudaSensorConfigs(cameras=camera_configs, tactile=tactile_configs, audio=audio_configs)
         return sensor_configs
 
     def _init_sensors(self) -> Sensors:
@@ -507,13 +577,20 @@ class RakudaRobot(ComposedRobot):
             cameras.append(cam)
 
         tactiles: List[DigitSensor] = []
+        audios: List[AudioSensor] = []
         if self._sensor_configs.tactile is not None:
             for tac_cfg in self._sensor_configs.tactile:
                 digit = DigitSensor(tac_cfg)
                 digit.connect()
                 tactiles.append(digit)
 
-        sensors = Sensors(cameras=cameras, tactile=tactiles)
+        if self._sensor_configs.audio is not None:
+            for audio_cfg in self._sensor_configs.audio:
+                audio = AudioSensor(audio_cfg)
+                audio.connect()
+                audios.append(audio)
+
+        sensors = Sensors(cameras=cameras, tactile=tactiles, audio=audios)
         self._sensors = sensors
 
         table = Table(title="Initialized Sensors")
@@ -524,6 +601,8 @@ class RakudaRobot(ComposedRobot):
             table.add_row("Camera", cam.name, repr(cam))
         for tac in tactiles:
             table.add_row("Tactile", tac.name, repr(tac))
+        for audio in audios:
+            table.add_row("Audio", audio.name, repr(audio))
         console = Console()
         console.print(table)
 
