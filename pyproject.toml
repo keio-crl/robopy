@@ -16,6 +16,7 @@ dependencies = [
     "numpy>=2.2.6",
     "opencv-python>=4.12.0.88",
     "pyaudio>=0.2.14",
+    "pyrealsense2>=2.56.5.9235",
     "rich>=14.1.0",
     "tqdm>=4.67.1",
 ]
