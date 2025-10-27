@@ -7,6 +7,7 @@ class CameraParams:
     width: int
     height: int
     fps: int
+    index: int = 0  # Add index attribute for RealSense camera
 
 
 @dataclass
