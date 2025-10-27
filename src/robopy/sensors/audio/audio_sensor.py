@@ -31,13 +31,13 @@ class AudioSensor(Sensor):
         self.latest_frame: NDArray | None = None
         self.frame_ready = False  # Flag to track if initial frame is ready
 
-        # Audio parameters
-        self.sample_rate = 44100
-        self.chunk_size = 1100
-        self.n_mels = 64
-        self.n_fft = 2048
-        self.hop_length = 690
-        self.fmax = 15000
+        # Audio parameters (from config)
+        self.sample_rate = config.sample_rate
+        self.chunk_size = 1100  # Calculated based on fps
+        self.n_mels = config.n_mels
+        self.n_fft = config.n_fft
+        self.hop_length = config.hop_length
+        self.fmax = config.fmax
 
         self.pyaudio_instance = None
         self.stream = None
@@ -46,10 +46,14 @@ class AudioSensor(Sensor):
         self.audio_buffer = queue.Queue(maxsize=2)
         self.buffer_data = np.zeros(self.sample_rate, dtype=np.float32)  # 1秒分のバッファ
         self.buffer_lock = Lock()
+        self.callback_active = True  # Flag to control audio callback
 
     def connect(self) -> None:
-        if self.pyaudio_instance is None:
-            raise RuntimeError(f"Failed to initialize Audio sensor: {self.name}")
+        # Initialize PyAudio instance
+        self.pyaudio_instance = pyaudio.PyAudio()
+
+        # Find available input device
+        input_device_index = self._find_input_device()
 
         # Open audio stream
         self.stream = self.pyaudio_instance.open(
@@ -59,12 +63,11 @@ class AudioSensor(Sensor):
             input=True,
             frames_per_buffer=self.sample_rate // self.fps,
             stream_callback=self._audio_callback,
+            input_device_index=input_device_index,
         )
 
         self._is_connected = True
-
-        if self.fps is not None:
-            self.stream.set_sample_rate(self.sample_rate)
+        self.callback_active = True
 
         # Start capture thread and wait for initial frame
         self._start_capture_thread()
@@ -89,6 +92,7 @@ class AudioSensor(Sensor):
 
         self._is_connected = False
         self.frame_ready = False  # Reset frame ready flag
+        self.callback_active = False  # Stop callback
 
         # Terminate PyAudio instance
         if self.pyaudio_instance is not None:
@@ -97,18 +101,63 @@ class AudioSensor(Sensor):
 
         logger.info(f"Audio sensor {self.name} disconnected")
 
+    def _find_input_device(self) -> int | None:
+        """Find an available input device."""
+        if self.pyaudio_instance is None:
+            return None
+
+        logger.info(f"Searching for input devices for Audio sensor {self.name}...")
+
+        # List available devices
+        device_count = self.pyaudio_instance.get_device_count()
+        logger.info(f"Found {device_count} audio devices")
+
+        for i in range(device_count):
+            try:
+                device_info = self.pyaudio_instance.get_device_info_by_index(i)
+                device_name = device_info["name"]
+                max_input_channels = device_info["maxInputChannels"]
+
+                logger.info(f"Device {i}: {device_name} (max input channels: {max_input_channels})")
+
+                # Use the first device with input capability
+                if max_input_channels > 0:
+                    logger.info(f"Using input device {i}: {device_name}")
+                    return i
+
+            except Exception as e:
+                logger.warning(f"Error getting info for device {i}: {e}")
+                continue
+
+        # Fallback to default input device
+        try:
+            default_device = self.pyaudio_instance.get_default_input_device_info()
+            logger.info(f"Using default input device: {default_device['name']}")
+            return default_device["index"]
+        except Exception as e:
+            logger.warning(f"Could not get default input device: {e}")
+            return None
+
     @override
     def read(self) -> NDArray[np.float32]:
         if not self.is_connected:
             raise RuntimeError(f"Audio sensor {self.name} is not connected")
-        frame = self.latest_frame.copy()
-        return frame
+
+        with self.frame_lock:
+            if self.latest_frame is not None and self.frame_ready:
+                return self.latest_frame.copy()
+
+        # If no frame is available, return a dummy frame
+        logger.warning(f"No audio frame available for {self.name}, returning dummy frame")
+        return np.zeros((self.n_mels, self.n_mels), dtype=np.float32)
 
     @override
     def async_read(self, timeout_ms: float = 100) -> NDArray[np.float32]:
         """Read the latest frame asynchronously (non-blocking)."""
         if not self.is_connected:
             logger.warning(f"Audio sensor {self.name} is not connected")
+            # Return a dummy frame if not connected
+            return np.zeros((self.n_mels, self.n_mels), dtype=np.float32)
 
         if self.thread is None or not self.thread.is_alive():
             self._start_capture_thread()
@@ -129,6 +178,12 @@ class AudioSensor(Sensor):
                     logger.debug(f"Using cached frame for {self.name} after timeout")
                     return self.latest_frame.copy()
 
+            # If no frame is available and thread is alive, return a dummy frame
+            # This handles cases where audio device is not available
+            if thread_alive:
+                logger.warning(f"No audio frame available for {self.name}, returning dummy frame")
+                return np.zeros((self.n_mels, self.n_mels), dtype=np.float32)
+
             raise TimeoutError(
                 f"Timeout waiting for new frame from Audio sensor {self.name}. "
                 f"Thread alive: {thread_alive}"
@@ -143,13 +198,17 @@ class AudioSensor(Sensor):
                 frame_copy = None
 
         if frame_copy is None:
-            raise RuntimeError(f"No frame available from Audio sensor {self.name}.")
+            # Return a dummy frame instead of raising an error
+            logger.warning(
+                f"No frame available from Audio sensor {self.name}, returning dummy frame"
+            )
+            return np.zeros((self.n_mels, self.n_mels), dtype=np.float32)
 
         return frame_copy
 
     def _audio_callback(self, in_data, frame_count, time_info, status):
         """Audio stream callback function"""
-        if not self._is_connected:
+        if not self._is_connected or not self.callback_active:
             return (in_data, pyaudio.paComplete)
 
         try:
@@ -198,22 +257,49 @@ class AudioSensor(Sensor):
 
         while not self.stop_event.is_set():
             try:
-                frame = self.audio_buffer.get(timeout=0.1)
+                # Get new audio data from buffer
+                new_data = self.audio_buffer.get(timeout=0.1)
 
-                if frame is not None:
+                if new_data is not None:
+                    # Update buffer data (sliding window approach like in reference/saver.py)
+                    with self.buffer_lock:
+                        # Shift buffer and add new data
+                        self.buffer_data = np.concatenate(
+                            (self.buffer_data[len(new_data) :], new_data)
+                        )
+
+                        # Generate mel spectrogram from buffer data
+                        mel_spectrogram = librosa.feature.melspectrogram(
+                            y=self.buffer_data,
+                            sr=self.sample_rate,
+                            n_fft=self.n_fft,
+                            hop_length=self.hop_length,
+                            n_mels=self.n_mels,
+                            fmax=self.fmax,
+                        )
+
+                        # Convert to log scale and flip vertically (like in reference/saver.py)
+                        log_mel_spectrogram = librosa.power_to_db(mel_spectrogram, ref=np.max)
+                        processed_frame = np.flipud(log_mel_spectrogram)
+
                     with self.frame_lock:
-                        self.latest_frame = frame
+                        self.latest_frame = processed_frame
                         if not self.frame_ready:
                             self.frame_ready = True
 
-                self.new_frame_event.set()
-                frame_count += 1
+                    self.new_frame_event.set()
+                    frame_count += 1
 
-                if frame_count % 100 == 0:
-                    logger.debug(f"Audio sensor {self.name} captured {frame_count} frames")
+                    logger.debug(
+                        f"Audio sensor {self.name} captured frame {frame_count}, "
+                        f"shape: {processed_frame.shape}"
+                    )
                 else:
                     logger.warning(f"Audio sensor {self.name} returned None frame")
 
+            except queue.Empty:
+                # No data available, continue
+                continue
             except Exception as e:
                 if self._is_connected:
                     logger.error(f"Error in capture loop for Audio sensor {self.name}: {e}")
