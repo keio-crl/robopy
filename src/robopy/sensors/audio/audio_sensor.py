@@ -278,8 +278,10 @@ class AudioSensor(Sensor):
                             fmax=self.fmax,
                         )
 
-                        # Convert to log scale and flip vertically (like in reference/saver.py)
-                        log_mel_spectrogram = librosa.power_to_db(mel_spectrogram, ref=np.max)
+                        # Convert to log scale using fixed reference (not per-frame max)
+                        # This prevents background from gradually brightening
+                        # Using ref=1.0 provides stable amplitude scaling across frames
+                        log_mel_spectrogram = librosa.power_to_db(mel_spectrogram, ref=1.0)
                         processed_frame = np.flipud(log_mel_spectrogram)
 
                     with self.frame_lock:

@@ -98,6 +98,10 @@ def create_sensor_gif_visualization(obs, save_path: str, fps: int = 20):
     tactile_im = None
     tactile_im2 = None
 
+    # Global variables for audio visualization
+    audio_vmin = None
+    audio_vmax = None
+
     # Set up camera plot (top-left)
     if camera_data is not None:
         # Convert from (frames, channels, height, width) to (height, width, channels) for display
@@ -127,12 +131,20 @@ def create_sensor_gif_visualization(obs, save_path: str, fps: int = 20):
         freq_min = mel_freqs[0]
         freq_max = mel_freqs[-1]
 
+        # Calculate global statistics for consistent color scaling
+        # Use percentile-based scaling to avoid outliers while maintaining contrast
+        all_audio_data = np.concatenate([audio_data[i] for i in range(len(audio_data))], axis=0)
+        audio_vmin = np.percentile(all_audio_data, 1.0)  # Use 1st percentile for minimum
+        audio_vmax = np.percentile(all_audio_data, 99.0)  # Use 99th percentile for maximum
+
         audio_im = axes[0, 1].imshow(
             audio_data[0],
             cmap="magma",
             aspect="auto",
             extent=[0, 1.0, freq_min, freq_max],
             origin="upper",
+            vmin=audio_vmin,
+            vmax=audio_vmax,
         )
         axes[0, 1].set_title("Mel Spectrogram")
         axes[0, 1].set_xlabel("Time (s)")
@@ -177,6 +189,15 @@ def create_sensor_gif_visualization(obs, save_path: str, fps: int = 20):
 
     # Animation function
     def animate(frame):
+        nonlocal audio_vmin, audio_vmax
+        # Calculate time information
+        current_time = frame / fps
+        total_time = num_frames / fps
+
+        # Update figure title with time information
+        time_str = f"Time: {current_time:.2f}s / {total_time:.2f}s ({frame}/{num_frames})"
+        fig.suptitle(f"Sensor Data Visualization - {time_str}", fontsize=16)
+
         # Update camera image
         if camera_data is not None and camera_im is not None and frame < len(camera_data):
             camera_frame = np.transpose(camera_data[frame], (1, 2, 0))
@@ -188,6 +209,9 @@ def create_sensor_gif_visualization(obs, save_path: str, fps: int = 20):
         # Update audio spectrogram
         if audio_data is not None and audio_im is not None and frame < len(audio_data):
             audio_im.set_array(audio_data[frame])
+            # Ensure vmin/vmax are maintained during animation
+            if audio_vmin is not None and audio_vmax is not None:
+                audio_im.set_clim(vmin=audio_vmin, vmax=audio_vmax)
 
         # Update tactile images
         if (
