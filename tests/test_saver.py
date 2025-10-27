@@ -3,6 +3,7 @@ import os
 import time
 from datetime import datetime
 
+import librosa
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation
@@ -115,10 +116,27 @@ def create_sensor_gif_visualization(obs, save_path: str, fps: int = 20):
 
     # Set up audio plot (top-right)
     if audio_data is not None:
-        audio_im = axes[0, 1].imshow(audio_data[0], cmap="magma", aspect="auto")
+        # Set proper frequency axis in Hz using mel frequency mapping
+        # Get default audio params to calculate mel frequencies
+        audio_params = AudioParams()
+        mel_freqs = librosa.mel_frequencies(
+            n_mels=audio_data[0].shape[0], fmin=0, fmax=audio_params.fmax, htk=False
+        )
+
+        # Use actual mel frequencies for y-axis (in Hz)
+        freq_min = mel_freqs[0]
+        freq_max = mel_freqs[-1]
+
+        audio_im = axes[0, 1].imshow(
+            audio_data[0],
+            cmap="magma",
+            aspect="auto",
+            extent=[0, 1.0, freq_min, freq_max],
+            origin="upper",
+        )
         axes[0, 1].set_title("Mel Spectrogram")
-        axes[0, 1].set_xlabel("Time")
-        axes[0, 1].set_ylabel("Frequency")
+        axes[0, 1].set_xlabel("Time (s)")
+        axes[0, 1].set_ylabel("Frequency (Hz)")
         plt.colorbar(audio_im, ax=axes[0, 1])
     else:
         axes[0, 1].text(
