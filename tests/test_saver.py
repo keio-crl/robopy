@@ -16,18 +16,22 @@ from robopy.utils.worker.rakuda_save_worker import RakudaSaveWorker
 def create_test_config():
     """Create configuration for real robot test."""
 
-    # Camera configuration (RealSense) - use available 30fps instead of 20fps
+    # Camera configuration (RealSense) - 30fps (RealSense D435 supports this)
     camera_params = CameraParams(name="main", width=640, height=480, fps=30, index=0)
 
-    # Audio sensor configuration
-    audio_params = AudioParams(name="main", fps=30)
+    # Audio sensor configuration - 20fps (audio processing rate)
+    audio_params = AudioParams(name="main", fps=20)
 
-    # Tactile sensor configuration (Digit) - try D20537 first
-    tactile_params = TactileParams(serial_num="D20537", name="main", fps=30)
+    # Tactile sensor configuration (Digit) - 30fps
+    # Try using 2 different serial numbers if available
+    tactile_params_left = TactileParams(serial_num="D20542", name="left", fps=30)
+    tactile_params_right = TactileParams(serial_num="D20537", name="right", fps=30)
 
     # Sensor parameters (camera, tactile, and audio)
     sensor_params = RakudaSensorParams(
-        cameras=[camera_params], tactile=[tactile_params], audio=[audio_params]
+        cameras=[camera_params],
+        tactile=[tactile_params_left, tactile_params_right],
+        audio=[audio_params],
     )
 
     # Robot configuration with real USB ports
@@ -38,17 +42,25 @@ def create_test_config():
 
 
 def create_sensor_gif_visualization(obs, save_path: str, fps: int = 20):
-    """Create GIF visualization with 4 sensor animations: Camera, Audio, Left Tactile, Right Tactile."""
-    print(f"\n🎬 Creating Sensor GIF visualization...")
+    """Create GIF visualization with 4 sensor animations."""
+    print("\n🎬 Creating Sensor GIF visualization...")
 
-    # Create visualization directory
-    viz_dir = os.path.join(save_path, "visualization")
-    os.makedirs(viz_dir, exist_ok=True)
+    # Ensure save_path exists
+    os.makedirs(save_path, exist_ok=True)
 
     # Extract sensor data
     camera_data = obs.sensors.cameras.get("main") if obs.sensors.cameras else None
     audio_data = obs.sensors.audio.get("main") if obs.sensors.audio else None
-    tactile_data = obs.sensors.tactile.get("main") if obs.sensors.tactile else None
+
+    # Extract left and right tactile data
+    tactile_data_left = obs.sensors.tactile.get("left") if obs.sensors.tactile else None
+    tactile_data_right = obs.sensors.tactile.get("right") if obs.sensors.tactile else None
+
+    # Fallback to "main" if left/right don't exist
+    if tactile_data_left is None and obs.sensors.tactile:
+        tactile_data_left = obs.sensors.tactile.get("main")
+    if tactile_data_right is None and obs.sensors.tactile and tactile_data_left is None:
+        tactile_data_right = obs.sensors.tactile.get("main")
 
     # Get number of frames from any available data
     num_frames = 0
@@ -56,24 +68,28 @@ def create_sensor_gif_visualization(obs, save_path: str, fps: int = 20):
         num_frames = len(camera_data)
     elif audio_data is not None:
         num_frames = len(audio_data)
-    elif tactile_data is not None:
-        num_frames = len(tactile_data)
+    elif tactile_data_left is not None:
+        num_frames = len(tactile_data_left)
+    elif tactile_data_right is not None:
+        num_frames = len(tactile_data_right)
     else:
         print("❌ No sensor data available for visualization")
         return False
 
-    print(f"📊 Data for visualization:")
+    print("📊 Data for visualization:")
     print(f"   - Frames: {num_frames}")
     if camera_data is not None:
         print(f"   - Camera: {camera_data.shape}")
     if audio_data is not None:
         print(f"   - Audio: {audio_data.shape}")
-    if tactile_data is not None:
-        print(f"   - Tactile: {tactile_data.shape}")
+    if tactile_data_left is not None:
+        print(f"   - Tactile Left: {tactile_data_left.shape}")
+    if tactile_data_right is not None:
+        print(f"   - Tactile Right: {tactile_data_right.shape}")
 
     # Create figure with 2x2 subplots for 4 sensors
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    fig.suptitle("Real Robot Sensor Data Visualization", fontsize=16)
+    fig.suptitle("Sensor Data Visualization", fontsize=16)
 
     # Initialize image displays
     camera_im = None
@@ -89,18 +105,18 @@ def create_sensor_gif_visualization(obs, save_path: str, fps: int = 20):
         if camera_frame.max() > 1.0:
             camera_frame = camera_frame / 255.0
         camera_im = axes[0, 0].imshow(camera_frame, aspect="auto", vmin=0, vmax=1)
-        axes[0, 0].set_title("Camera Image")
+        axes[0, 0].set_title("Camera")
         axes[0, 0].axis("off")
     else:
         axes[0, 0].text(
             0.5, 0.5, "No Camera Data", ha="center", va="center", transform=axes[0, 0].transAxes
         )
-        axes[0, 0].set_title("Camera Image")
+        axes[0, 0].set_title("Camera")
 
     # Set up audio plot (top-right)
     if audio_data is not None:
         audio_im = axes[0, 1].imshow(audio_data[0], cmap="magma", aspect="auto")
-        axes[0, 1].set_title("Audio Spectrogram")
+        axes[0, 1].set_title("Mel Spectrogram")
         axes[0, 1].set_xlabel("Time")
         axes[0, 1].set_ylabel("Frequency")
         plt.colorbar(audio_im, ax=axes[0, 1])
@@ -111,25 +127,31 @@ def create_sensor_gif_visualization(obs, save_path: str, fps: int = 20):
         axes[0, 1].set_title("Audio Spectrogram")
 
     # Set up tactile plots (bottom row)
-    if tactile_data is not None:
-        # Convert from (frames, channels, height, width) to (height, width, channels) for display
-        tactile_frame = np.transpose(tactile_data[0], (1, 2, 0))
+    # Left tactile sensor
+    if tactile_data_left is not None:
+        tactile_frame_left = np.transpose(tactile_data_left[0], (1, 2, 0))
         # Normalize to 0-1 range if the data is in 0-255 range
-        if tactile_frame.max() > 1.0:
-            tactile_frame = tactile_frame / 255.0
-        tactile_im = axes[1, 0].imshow(tactile_frame, aspect="auto", vmin=0, vmax=1)
+        if tactile_frame_left.max() > 1.0:
+            tactile_frame_left = tactile_frame_left / 255.0
+        tactile_im = axes[1, 0].imshow(tactile_frame_left, aspect="auto", vmin=0, vmax=1)
         axes[1, 0].set_title("Tactile Sensor (Left)")
         axes[1, 0].axis("off")
-
-        # For now, show the same tactile data in both bottom plots
-        tactile_im2 = axes[1, 1].imshow(tactile_frame, aspect="auto", vmin=0, vmax=1)
-        axes[1, 1].set_title("Tactile Sensor (Right)")
-        axes[1, 1].axis("off")
     else:
         axes[1, 0].text(
             0.5, 0.5, "No Tactile Data", ha="center", va="center", transform=axes[1, 0].transAxes
         )
         axes[1, 0].set_title("Tactile Sensor (Left)")
+
+    # Right tactile sensor
+    if tactile_data_right is not None:
+        tactile_frame_right = np.transpose(tactile_data_right[0], (1, 2, 0))
+        # Normalize to 0-1 range if the data is in 0-255 range
+        if tactile_frame_right.max() > 1.0:
+            tactile_frame_right = tactile_frame_right / 255.0
+        tactile_im2 = axes[1, 1].imshow(tactile_frame_right, aspect="auto", vmin=0, vmax=1)
+        axes[1, 1].set_title("Tactile Sensor (Right)")
+        axes[1, 1].axis("off")
+    else:
         axes[1, 1].text(
             0.5, 0.5, "No Tactile Data", ha="center", va="center", transform=axes[1, 1].transAxes
         )
@@ -150,18 +172,27 @@ def create_sensor_gif_visualization(obs, save_path: str, fps: int = 20):
             audio_im.set_array(audio_data[frame])
 
         # Update tactile images
-        if tactile_data is not None and tactile_im is not None and frame < len(tactile_data):
-            tactile_frame = np.transpose(tactile_data[frame], (1, 2, 0))
+        if (
+            tactile_data_left is not None
+            and tactile_im is not None
+            and frame < len(tactile_data_left)
+        ):
+            tactile_frame_left = np.transpose(tactile_data_left[frame], (1, 2, 0))
             # Normalize to 0-1 range if the data is in 0-255 range
-            if tactile_frame.max() > 1.0:
-                tactile_frame = tactile_frame / 255.0
-            tactile_im.set_array(tactile_frame)
-        if tactile_data is not None and tactile_im2 is not None and frame < len(tactile_data):
-            tactile_frame = np.transpose(tactile_data[frame], (1, 2, 0))
+            if tactile_frame_left.max() > 1.0:
+                tactile_frame_left = tactile_frame_left / 255.0
+            tactile_im.set_array(tactile_frame_left)
+
+        if (
+            tactile_data_right is not None
+            and tactile_im2 is not None
+            and frame < len(tactile_data_right)
+        ):
+            tactile_frame_right = np.transpose(tactile_data_right[frame], (1, 2, 0))
             # Normalize to 0-1 range if the data is in 0-255 range
-            if tactile_frame.max() > 1.0:
-                tactile_frame = tactile_frame / 255.0
-            tactile_im2.set_array(tactile_frame)
+            if tactile_frame_right.max() > 1.0:
+                tactile_frame_right = tactile_frame_right / 255.0
+            tactile_im2.set_array(tactile_frame_right)
 
         return [camera_im, audio_im, tactile_im, tactile_im2]
 
@@ -170,8 +201,8 @@ def create_sensor_gif_visualization(obs, save_path: str, fps: int = 20):
 
     # Save animation
     try:
-        # Save as GIF (more compatible than MP4)
-        gif_path = os.path.join(viz_dir, "sensor_data_visualization.gif")
+        # Save as GIF directly in save_path
+        gif_path = os.path.join(save_path, "sensor_images.gif")
         print(f"💾 Saving GIF to: {gif_path}")
         anim.save(gif_path, writer="pillow", fps=fps)
         print(f"✅ GIF saved successfully: {gif_path}")
@@ -222,15 +253,12 @@ def verify_saved_data(save_path: str) -> bool:
     print(f"✅ Metadata file found: {metadata_file} ({metadata_size:,} bytes)")
 
     # Check for visualization files
-    viz_dir = os.path.join(save_path, "visualization")
-    if os.path.exists(viz_dir):
-        # Check for sensor GIF
-        sensor_gif = os.path.join(viz_dir, "sensor_data_visualization.gif")
-        if os.path.exists(sensor_gif):
-            gif_size = os.path.getsize(sensor_gif)
-            print(f"✅ Sensor GIF found: {sensor_gif} ({gif_size:,} bytes)")
-        else:
-            print(f"❌ Sensor GIF not found: {sensor_gif}")
+    sensor_gif = os.path.join(save_path, "sensor_images.gif")
+    if os.path.exists(sensor_gif):
+        gif_size = os.path.getsize(sensor_gif)
+        print(f"✅ Sensor GIF found: {sensor_gif} ({gif_size:,} bytes)")
+    else:
+        print(f"❌ Sensor GIF not found: {sensor_gif}")
 
     return True
 
@@ -277,16 +305,16 @@ def main():
         # Step 2: Data collection
         print("\n📊 Step 2: Data Collection")
         print("=" * 30)
-        print(f"📊 Recording parameters:")
-        print(f"   - Max frames: 60")
-        print(f"   - FPS: 20")
-        print(f"   - Duration: ~3 seconds")
+        print("📊 Recording parameters:")
+        print("   - Max frames: 200")
+        print("   - FPS: 20")
+        print("   - Duration: ~10 seconds")
 
         print("\n🎥 Recording data...")
-        obs = robot.record_parallel(max_frame=60, fps=20)
+        obs = robot.record_parallel(max_frame=200, fps=20)
 
         print("✅ Data recording completed")
-        print(f"📈 Recorded data shapes:")
+        print("📈 Recorded data shapes:")
         print(f"   - Leader arm: {obs.arms.leader.shape}")
         print(f"   - Follower arm: {obs.arms.follower.shape}")
 
@@ -390,10 +418,8 @@ def main():
             if verify_saved_data(save_path):
                 print("\n🎉 SUCCESS: Saver test completed successfully!")
                 print(f"📁 All data saved to: {os.path.abspath(save_path)}")
-                print(f"📊 Visualization files:")
-                print(
-                    f"   - Sensor GIF: {os.path.abspath(save_path)}/visualization/sensor_data_visualization.gif"
-                )
+                print("📊 Visualization files:")
+                print(f"   - Sensor GIF: {os.path.abspath(save_path)}/sensor_images.gif")
                 return True
             else:
                 print("❌ FAILED: Data verification failed")
