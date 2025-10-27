@@ -18,9 +18,9 @@ from robopy.config.robot_config.rakuda_config import (
     RakudaSensorObs,
 )
 from robopy.config.sensor_config import RealsenseCameraConfig, Sensors
-from robopy.config.sensor_config.params_config import TactileParams, AudioParams
-from robopy.sensors.tactile import DigitSensor
+from robopy.config.sensor_config.params_config import AudioParams, TactileParams
 from robopy.sensors.audio import AudioSensor
+from robopy.sensors.tactile import DigitSensor
 from robopy.sensors.visual import RealsenseCamera
 
 from ..common.composed import ComposedRobot
@@ -147,7 +147,9 @@ class RakudaRobot(ComposedRobot):
             else:
                 audio_obs_np[audio_name] = None
 
-        sensors_obs = RakudaSensorObs(cameras=camera_obs_np, tactile=tactile_obs_np, audio=audio_obs_np)
+        sensors_obs = RakudaSensorObs(
+            cameras=camera_obs_np, tactile=tactile_obs_np, audio=audio_obs_np
+        )
         return RakudaObs(arms=arms, sensors=sensors_obs)
 
     def record_parallel(
@@ -357,7 +359,9 @@ class RakudaRobot(ComposedRobot):
             else:
                 audio_obs_np[audio_name] = None
 
-        sensors_obs = RakudaSensorObs(cameras=camera_obs_np, tactile=tactile_obs_np, audio=audio_obs_np)
+        sensors_obs = RakudaSensorObs(
+            cameras=camera_obs_np, tactile=tactile_obs_np, audio=audio_obs_np
+        )
         return RakudaObs(arms=arms, sensors=sensors_obs)
 
     @override
@@ -421,10 +425,10 @@ class RakudaRobot(ComposedRobot):
             for audio in self._sensors.audio:
                 if audio.is_connected:
                     # Use async_read if available for better performance
-                    audio_data = audio.async_read(timeout_ms=50)
-                    if audio_data is not None and audio_data.ndim == 2:
-                        audio_data = audio_data.transpose(1, 0)  # CHW to HWC
-                    audio_data[audio.name] = audio_data
+                    audio_frame = audio.async_read(timeout_ms=50)
+                    if audio_frame is not None and audio_frame.ndim == 2:
+                        audio_frame = audio_frame.transpose(1, 0)  # CHW to HWC
+                    audio_data[audio.name] = audio_frame
                 else:
                     audio_data[audio.name] = None
         else:
@@ -546,6 +550,7 @@ class RakudaRobot(ComposedRobot):
                 came_cfg.width = cam_param.width
                 came_cfg.height = cam_param.height
                 came_cfg.fps = cam_param.fps
+                came_cfg.index = cam_param.index  # Add index attribute
 
                 camera_configs.append(came_cfg)
 
@@ -563,7 +568,9 @@ class RakudaRobot(ComposedRobot):
             tactile_configs = []
             audio_configs = []
 
-        sensor_configs = RakudaSensorConfigs(cameras=camera_configs, tactile=tactile_configs, audio=audio_configs)
+        sensor_configs = RakudaSensorConfigs(
+            cameras=camera_configs, tactile=tactile_configs, audio=audio_configs
+        )
         return sensor_configs
 
     def _init_sensors(self) -> Sensors:
