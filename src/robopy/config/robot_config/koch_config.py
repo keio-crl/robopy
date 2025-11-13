@@ -60,7 +60,7 @@ class KochObservation:
 KOCH_MOTOR_MAPPING: Dict[str, str] = {
     "shoulder_pan": "shoulder_pan",
     "shoulder_lift": "shoulder_lift",
-    "elbow_flex": "elbow_flex",
+    "elbow": "elbow",
     "wrist_flex": "wrist_flex",
     "wrist_roll": "wrist_roll",
     "gripper": "gripper",
