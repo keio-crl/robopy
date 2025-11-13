@@ -47,7 +47,9 @@ class KochRobot(ComposedRobot):
         camera_data: Dict[str, ndarray | None] = {}
         for cam in self._cameras:
             if cam.is_connected:
-                camera_data[cam.name] = cam.read()
+                camera_data[F"{cam.name}.rgb"] = cam.read()
+                if isinstance(cam, RealsenseCamera) and cam.config.is_depth_camera:
+                    camera_data[f"{cam.name}.depth"] = cam.read_depth()
             else:
                 camera_data[cam.name] = None
 
@@ -65,8 +67,7 @@ class KochRobot(ComposedRobot):
             if isinstance(cam_cfg, WebCameraConfig):
                 cam = WebCamera(index, name, cam_cfg)
             elif isinstance(cam_cfg, RealsenseCameraConfig):
-                # cam = RealsenseCamera(index,name, cam_cfg)
-                cam = WebCamera(index, name, None, is_realsense=True)
+                cam = RealsenseCamera(cam_cfg)
             else:
                 raise ValueError(f"Unsupported camera config type: {type(cam_cfg)}")
             self._cameras.append(cam)
