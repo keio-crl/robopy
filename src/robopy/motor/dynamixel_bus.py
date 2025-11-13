@@ -196,8 +196,6 @@ class DynamixelBus:
                 np.array(raw_values), [m.motor_name for m in motors_to_read]
             )
             for i, motor in enumerate(motors_to_read):
-                if results[motor.motor_name] is not None:
-                    raise ValueError("A same motor name exists multiple times in the bus.")
 
                 results[motor.motor_name] = calibrated_values[i]
 
