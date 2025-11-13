@@ -76,6 +76,9 @@ class KochPairSys(Robot):
             logger.info("Calibration successfully applied to both arms.")
             # --- End of Calibration Logic ---
 
+            self.follower.torque_enable()
+            self.leader.torque_enable()
+
             self._is_connected = True
             logger.info("Connected to KochPairSys successfully")
 
