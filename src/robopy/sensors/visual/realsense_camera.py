@@ -55,6 +55,7 @@ class RealsenseCamera(Camera):
         self.latest_color_frame: NDArray | None = None
         self.latest_depth_frame: NDArray | None = None
         self.new_frame_event: Event = Event()
+        self.align: rs.align | None = None  # type: ignore
 
         # Serial number for device identification (more reliable than index)
         self.serial_number: str | None = None
@@ -116,6 +117,7 @@ class RealsenseCamera(Camera):
         try:
             # Start pipeline
             self.rs_profile = self.rs_pipeline.start(rs_config)  # type: ignore
+            self.align = rs.align(rs.stream.color)  # type: ignore
             self._update_config_from_stream()
             self._is_connected = True
 
@@ -265,7 +267,10 @@ class RealsenseCamera(Camera):
         if not ret or frames is None:
             raise OSError("Failed to capture depth frame.")
 
-        depth_frame = frames.get_depth_frame()  # type: ignore
+        aligned_frames = self.align.process(frames)  # type: ignore
+
+
+        depth_frame = aligned_frames.get_depth_frame()  # type: ignore
 
         if not depth_frame:
             raise OSError("Failed to get depth frame from frameset.")
@@ -378,7 +383,9 @@ class RealsenseCamera(Camera):
         if not ret or frames is None:
             raise OSError(f"Failed to capture frame from {self.name}")
 
-        color_frame = frames.get_color_frame()  # type: ignore
+        aligned_frames = self.align.process(frames)  # type: ignore
+
+        color_frame = aligned_frames.get_color_frame()  # type: ignore
 
         if not color_frame:
             raise OSError("Failed to get color frame from frameset.")
@@ -485,12 +492,13 @@ class RealsenseCamera(Camera):
 
                 # Capture frames with timeout
                 ret, frames = self.rs_pipeline.try_wait_for_frames(timeout_ms=500)  # type: ignore
+                aligned_frames = self.align.process(frames)  # type: ignore
 
                 if not ret or frames is None:
                     continue
 
                 # Process color frame
-                color_frame = frames.get_color_frame()  # type: ignore
+                color_frame = aligned_frames.get_color_frame()  # type: ignore
                 if color_frame:
                     color_image = np.asanyarray(color_frame.get_data())  # type: ignore
                     processed_image = self._postprocess_image(color_image)
@@ -500,7 +508,7 @@ class RealsenseCamera(Camera):
 
                 # Process depth frame if available
                 if self.config.is_depth_camera:
-                    depth_frame = frames.get_depth_frame()  # type: ignore
+                    depth_frame = aligned_frames.get_depth_frame()  # type: ignore
                     if depth_frame:
                         depth_image = np.asanyarray(depth_frame.get_data())  # type: ignore
                         with self.depth_lock:
