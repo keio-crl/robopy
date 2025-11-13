@@ -3,6 +3,7 @@ import logging
 from robopy.config.robot_config.koch_config import KochConfig
 from robopy.motor.dynamixel_bus import DynamixelBus, DynamixelMotor
 from robopy.robots.common.arm import Arm
+from robopy.motor.control_table import XControlTable
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ class KochFollower(Arm):
             port=self._port,
             motors={
                 "shoulder_pan": DynamixelMotor(motor_ids[0], "shoulder_pan", "xl330-m077"),
-                "shouder_lift": DynamixelMotor(motor_ids[1], "shoulder_lift", "xl330-m077"),
+                "shoulder_lift": DynamixelMotor(motor_ids[1], "shoulder_lift", "xl330-m077"),
                 "elbow": DynamixelMotor(motor_ids[2], "elbow", "xl330-m077"),
                 "wrist_flex": DynamixelMotor(motor_ids[3], "wrist_flex", "xl330-m077"),
                 "wrist_roll": DynamixelMotor(motor_ids[4], "wrist_roll", "xl330-m077"),
@@ -43,6 +44,12 @@ class KochFollower(Arm):
     def is_connected(self) -> bool:
         return self._is_connected
 
+    def torque_enable(self):
+        self._motors.sync_write(XControlTable.TORQUE_ENABLE, {name: 1 for name in self.motor_names})
+
+    def torque_disable(self):
+        self._motors.sync_write(XControlTable.TORQUE_ENABLE, {name: 0 for name in self.motor_names})
+
     def connect(self) -> None:
         if self._is_connected:
             logger.info("Already connected to the Koch follower arm.")
@@ -54,8 +61,13 @@ class KochFollower(Arm):
         except Exception as e:
             logger.error(f"Failed to connect to the Koch follower arm: {e}")
             raise ConnectionError(f"Failed to connect to the Koch follower arm: {e}")
+        self._motors.write(XControlTable.POSITION_P_GAIN, "elbow", 1500)
+        self._motors.write(XControlTable.POSITION_I_GAIN, "elbow", 0)
+        self._motors.write(XControlTable.POSITION_D_GAIN, "elbow", 600)
 
     def disconnect(self) -> None:
+        self.torque_disable()
+
         # Implementation to disconnect from the Koch follower arm
         if not self._is_connected:
             logger.info("Not connected to the Koch follower arm.")

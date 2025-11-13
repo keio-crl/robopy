@@ -3,6 +3,7 @@ import logging
 from robopy.config.robot_config.koch_config import KochConfig
 from robopy.motor.dynamixel_bus import DynamixelBus, DynamixelMotor
 from robopy.robots.common.arm import Arm
+from robopy.motor.control_table import XControlTable
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ class KochLeader(Arm):
             port=self._port,
             motors={
                 "shoulder_pan": DynamixelMotor(motor_ids[0], "shoulder_pan", "xl330-m077"),
-                "shouder_lift": DynamixelMotor(motor_ids[1], "shoulder_lift", "xl330-m077"),
+                "shoulder_lift": DynamixelMotor(motor_ids[1], "shoulder_lift", "xl330-m077"),
                 "elbow": DynamixelMotor(motor_ids[2], "elbow", "xl330-m077"),
                 "wrist_flex": DynamixelMotor(motor_ids[3], "wrist_flex", "xl330-m077"),
                 "wrist_roll": DynamixelMotor(motor_ids[4], "wrist_roll", "xl330-m077"),
@@ -42,6 +43,13 @@ class KochLeader(Arm):
     def is_connected(self) -> bool:
         return self._is_connected
 
+    def torque_enable(self):
+        self._motors.write(XControlTable.TORQUE_ENABLE, "gripper", 1)
+        self._motors.write(XControlTable.GOAL_POSITION, "gripper", 148.00)
+
+    def torque_disable(self):
+        self._motors.write(XControlTable.TORQUE_ENABLE, "gripper", 0)
+
     def connect(self) -> None:
         if self._is_connected:
             logger.info("Already connected to the Koch Leader arm.")
@@ -53,8 +61,11 @@ class KochLeader(Arm):
         except Exception as e:
             logger.error(f"Failed to connect to the Koch Leader arm: {e}")
             raise ConnectionError(f"Failed to connect to the Koch Leader arm: {e}")
+        # self.torque_enable()
 
     def disconnect(self) -> None:
+        self.torque_disable()
+
         # Implementation to disconnect from the Koch Leader arm
         if not self._is_connected:
             logger.info("Not connected to the Koch Leader arm.")
