@@ -47,7 +47,7 @@ class KochRobot(ComposedRobot):
         camera_data: Dict[str, ndarray | None] = {}
         for cam in self._cameras:
             if cam.is_connected:
-                camera_data[F"{cam.name}.rgb"] = cam.read()
+                camera_data[f"{cam.name}.rgb"] = cam.read()
                 if isinstance(cam, RealsenseCamera) and cam.config.is_depth_camera:
                     camera_data[f"{cam.name}.depth"] = cam.read_depth()
             else:
