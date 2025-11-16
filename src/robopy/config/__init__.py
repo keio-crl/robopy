@@ -6,6 +6,11 @@ from .robot_config.rakuda_config import (
     RakudaSensorObs,
     RakudaSensorParams,
 )
+from .robot_config.koch_config import (
+    KochObservation,
+    KochConfig,
+    KochSensorConfig,
+)
 from .sensor_config.params_config import CameraParams, SensorsParams, TactileParams
 from .sensor_config.sensors import Sensors
 from .sensor_config.visual_config.camera_config import (
@@ -21,6 +26,9 @@ __all__ = [
     "RakudaSensorConfigs",
     "RakudaSensorObs",
     "RakudaSensorParams",
+    "KochConfig",
+    "KochSensorConfig",
+    "KochObservation",
     "CameraParams",
     "TactileParams",
     "SensorsParams",
