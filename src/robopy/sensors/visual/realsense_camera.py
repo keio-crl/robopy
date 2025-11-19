@@ -501,9 +501,9 @@ class RealsenseCamera(Camera):
                 start_time = time.perf_counter()
 
                 # Capture frames with timeout
-                frames = self.rs_pipeline.wait_for_frames()  # type: ignore
+                ret, frames = self.rs_pipeline.try_wait_for_frames(timeout_ms=500)  # type: ignore
 
-                if frames is None:
+                if not ret or frames is None:
                     continue
 
                 color = frames.get_color_frame()
@@ -514,14 +514,10 @@ class RealsenseCamera(Camera):
                     if not depth:
                         continue
 
-                    if abs(color.get_timestamp() - depth.get_timestamp()) > 5:  # ms
-                        print("Frame timestamps too far apart, skipping frame.")
-                        continue
-
                 try:
                     aligned_frames = self.align.process(frames)  # type: ignore
                 except Exception as e:
-                    print(f"Alignment Error: {e}")
+                    self.align = rs.align(rs.stream.color)  # type: ignore
                     continue
 
                 # Process color frame
