@@ -501,9 +501,9 @@ class RealsenseCamera(Camera):
                 start_time = time.perf_counter()
 
                 # Capture frames with timeout
-                ret, frames = self.rs_pipeline.wait_for_frames(timeout_ms=500)  # type: ignore
+                frames = self.rs_pipeline.wait_for_frames()  # type: ignore
 
-                if not ret or frames is None:
+                if frames is None:
                     continue
 
                 color = frames.get_color_frame()
