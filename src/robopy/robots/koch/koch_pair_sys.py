@@ -4,7 +4,7 @@ import logging
 import os
 import pickle
 import time
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 
 import numpy as np
 from numpy.typing import NDArray
@@ -119,7 +119,7 @@ class KochPairSys(Robot):
             self._is_connected = False
             logger.info("Disconnected from KochPairSys")
 
-    def get_observation(self) -> Dict[str, NDArray[np.float32]]:
+    def get_observation(self, leader_obs: Optional[Dict[str, NDArray[np.float32]]] = None) -> Dict[str, NDArray[np.float32]]:
         """Gets the current observation from both arms and sensors."""
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
@@ -128,9 +128,11 @@ class KochPairSys(Robot):
         follower_motor_names = list(self._follower.motors.motors.keys())
 
         # 直接Enumを使用
-        leader_obs = self._leader.motors.sync_read(
-            XControlTable.PRESENT_POSITION, leader_motor_names
-        )
+        if leader_obs is None:
+            leader_obs = self._leader.motors.sync_read(
+                XControlTable.PRESENT_POSITION, leader_motor_names
+            )
+        
         follower_obs = self._follower.motors.sync_read(
             XControlTable.PRESENT_POSITION, follower_motor_names
         )
@@ -215,7 +217,7 @@ class KochPairSys(Robot):
             self._follower.motors.sync_write(XControlTable.GOAL_POSITION, follower_goals)
 
         if if_record:
-            return self.get_observation()
+            return self.get_observation(leader_obs=leader_positions)
         return None
 
     def get_leader_action(self) -> dict:
@@ -242,9 +244,4 @@ class KochPairSys(Robot):
 
     @property
     def follower(self) -> KochFollower:
-        return self._follower
-        return self._follower
-        return self._follower
-        return self._follower
-        return self._follower
         return self._follower
