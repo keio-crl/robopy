@@ -86,6 +86,8 @@ class KochSaveWorker(SaveWorker[KochObs]):
                 frame_data = np.clip(frame_data, 0, 255).astype(np.uint8)
             if frame_data.shape[-3] == 3 or frame_data.shape[-3] == 1:
                 frame_data = frame_data.transpose(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
+            if frame_data.shape[-1] == 1:
+                frame_data = frame_data[..., 0]  # (N, H, W, 1) -> (N, H, W)
             imageio.mimsave(path, list(frame_data), fps=self.fps)
             logger.info("GIFを %s に保存しました。", path)
 
