@@ -72,6 +72,9 @@ class KochRobot(ComposedRobot):
         if not self.is_connected:
             raise ConnectionError("KochRobot is not connected. Call connect() first.")
 
+        if self._robot_system.leader is None:
+            raise ConnectionError("Leader arm is not available. Cannot start teleoperation.")
+
         if max_seconds is not None and max_seconds > 0:
             end_time = time.perf_counter() + max_seconds
             while time.perf_counter() < end_time:
@@ -313,7 +316,13 @@ class KochRobot(ComposedRobot):
         if leader_action.ndim != 2:
             raise ValueError("leader_action must be a 2D array.")
 
-        leader_motor_names = list(self._robot_system.leader.motors.motors.keys())
+        # Get leader motor names from mapping if leader is not connected
+        if self._robot_system.leader is not None and self._robot_system.leader.motors is not None:
+            leader_motor_names = list(self._robot_system.leader.motors.motors.keys())
+        else:
+            # Use motor mapping keys as leader motor names when leader is not connected
+            leader_motor_names = list(KOCH_MOTOR_MAPPING.keys())
+        
         if leader_action.shape[1] != len(leader_motor_names):
             raise ValueError(
                 f"leader_action must be of shape ({max_frame}, {len(leader_motor_names)})."
@@ -356,7 +365,13 @@ class KochRobot(ComposedRobot):
     def send_frame_action(self, leader_action: NDArray[np.float32]) -> None:
         follower_goals: Dict[str, float] = {}
 
-        leader_motor_names = list(self._robot_system.leader.motors.motors.keys())
+        # Get leader motor names from mapping if leader is not connected
+        if self._robot_system.leader is not None and self._robot_system.leader.motors is not None:
+            leader_motor_names = list(self._robot_system.leader.motors.motors.keys())
+        else:
+            # Use motor mapping keys as leader motor names when leader is not connected
+            leader_motor_names = list(KOCH_MOTOR_MAPPING.keys())
+        
         if len(leader_action) != len(leader_motor_names):
             raise ValueError(
                 f"Leader action length {len(leader_action)} does not match "

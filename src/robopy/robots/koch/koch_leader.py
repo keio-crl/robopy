@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 from robopy.config.robot_config.koch_config import KochConfig
 from robopy.motor.dynamixel_bus import DynamixelBus, DynamixelMotor
@@ -18,25 +19,30 @@ class KochLeader(Arm):
         if len(motor_ids) != 6:
             logger.error("Koch Leader requires exactly 6 motor IDs.")
             raise ValueError("Koch Leader requires exactly 6 motor IDs.")
-        self._motors = DynamixelBus(
-            port=self._port,
-            motors={
-                "shoulder_pan": DynamixelMotor(motor_ids[0], "shoulder_pan", "xl330-m077"),
-                "shoulder_lift": DynamixelMotor(motor_ids[1], "shoulder_lift", "xl330-m077"),
-                "elbow": DynamixelMotor(motor_ids[2], "elbow", "xl330-m077"),
-                "wrist_flex": DynamixelMotor(motor_ids[3], "wrist_flex", "xl330-m077"),
-                "wrist_roll": DynamixelMotor(motor_ids[4], "wrist_roll", "xl330-m077"),
-                "gripper": DynamixelMotor(motor_ids[5], "gripper", "xl330-m077"),
-            },
-        )
+        
+        if self._port is None:
+            logger.warning("Leader port is not specified. Leader arm will not be initialized.")
+            self._motors: Optional[DynamixelBus] = None
+        else:
+            self._motors = DynamixelBus(
+                port=self._port,
+                motors={
+                    "shoulder_pan": DynamixelMotor(motor_ids[0], "shoulder_pan", "xl330-m077"),
+                    "shoulder_lift": DynamixelMotor(motor_ids[1], "shoulder_lift", "xl330-m077"),
+                    "elbow": DynamixelMotor(motor_ids[2], "elbow", "xl330-m077"),
+                    "wrist_flex": DynamixelMotor(motor_ids[3], "wrist_flex", "xl330-m077"),
+                    "wrist_roll": DynamixelMotor(motor_ids[4], "wrist_roll", "xl330-m077"),
+                    "gripper": DynamixelMotor(motor_ids[5], "gripper", "xl330-m077"),
+                },
+            )
         self._is_connected = False
 
     @property
-    def port(self) -> str:
+    def port(self) -> Optional[str]:
         return self._port
 
     @property
-    def motors(self) -> DynamixelBus:
+    def motors(self) -> Optional[DynamixelBus]:
         return self._motors
 
     @property
@@ -44,13 +50,21 @@ class KochLeader(Arm):
         return self._is_connected
 
     def torque_enable(self):
+        if self._motors is None:
+            logger.warning("Leader motors are not initialized. Cannot enable torque.")
+            return
         self._motors.write(XControlTable.TORQUE_ENABLE, "gripper", 1)
         self._motors.write(XControlTable.GOAL_POSITION, "gripper", 148.00)
 
     def torque_disable(self):
+        if self._motors is None:
+            return
         self._motors.write(XControlTable.TORQUE_ENABLE, "gripper", 0)
 
     def connect(self) -> None:
+        if self._port is None or self._motors is None:
+            logger.info("Leader port is not specified. Skipping leader arm connection.")
+            return
         if self._is_connected:
             logger.info("Already connected to the Koch Leader arm.")
             return
@@ -64,6 +78,8 @@ class KochLeader(Arm):
         # self.torque_enable()
 
     def disconnect(self) -> None:
+        if self._motors is None:
+            return
         self.torque_disable()
 
         # Implementation to disconnect from the Koch Leader arm
@@ -80,8 +96,12 @@ class KochLeader(Arm):
 
     @property
     def motor_names(self) -> list[str]:
+        if self._motors is None:
+            return []
         return list(self._motors.motors.keys())
 
     @property
     def motor_models(self) -> list[str]:
+        if self._motors is None:
+            return []
         return [motor.model_name for motor in self._motors.motors.values()]
