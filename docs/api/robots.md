@@ -78,10 +78,10 @@ robot.connect()
 try:
     # テレオペレーション
     robot.teleoperation(duration=10)
-    
+
     # データ記録
     obs = robot.record_parallel(max_frame=1000,20)
-    
+
 finally:
     robot.disconnect()
 ```
@@ -101,10 +101,10 @@ follower.connect()
 try:
     # Leaderから観測データを取得
     leader_obs = leader.get_obs()
-    
+
     # Followerに動作指令を送信
     follower.set_action(leader_obs["action"])
-    
+
 finally:
     leader.disconnect()
     follower.disconnect()

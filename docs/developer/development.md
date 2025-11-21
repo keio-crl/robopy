@@ -14,18 +14,18 @@ git clone https://github.com/keio-crl/robopy.git
 ```bash
 cd robopy
 # 開発用依存関係のインストール
-uv sync --group dev 
+uv sync --group dev
 # docs 用依存関係のインストール
-uv sync --group docs 
+uv sync --group docs
 # すべての依存関係のインストール
-uv sync --all-groups 
+uv sync --all-groups
 ```
 
 ## コードスタイル
 Robopyでは、コードの一貫性を保つために以下のスタイルガイドラインに従っています。
 
 - **Formatting**: `ruff`をlinterとformatterとして使用しています。
-- **Type Checking**: `mypy`を使用して型チェックを行っています。 
+- **Type Checking**: `mypy`を使用して型チェックを行っています。
 - **Testing**: `pytest`を使用してユニットテストを実行しています。
 
 ```bash

@@ -1,3 +1,8 @@
+from .robot_config.koch_config import (
+    KochConfig,
+    KochObservation,
+    KochSensorConfig,
+)
 from .robot_config.rakuda_config import (
     RakudaArmObs,
     RakudaConfig,
@@ -5,11 +10,6 @@ from .robot_config.rakuda_config import (
     RakudaSensorConfigs,
     RakudaSensorObs,
     RakudaSensorParams,
-)
-from .robot_config.koch_config import (
-    KochObservation,
-    KochConfig,
-    KochSensorConfig,
 )
 from .sensor_config.params_config import CameraParams, SensorsParams, TactileParams
 from .sensor_config.sensors import Sensors

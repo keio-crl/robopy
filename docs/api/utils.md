@@ -97,4 +97,3 @@ import h5py
 with h5py.File("output.h5", "w") as f:
     f.create_dataset("array_data", data=your_data)
 ```
-

@@ -30,11 +30,11 @@ try:
     # タクタイル画像の取得
     tactile_image = sensor.read()
     print(f"タクタイル画像サイズ: {tactile_image.shape}")
-    
+
     # 接続状態確認
     if sensor.is_connected:
         print("✅ センサーは接続されています")
-    
+
 finally:
     sensor.disconnect()
 ```
@@ -53,7 +53,7 @@ try:
         tactile_data = sensor.capture()
         print(f"フレーム {i}: {tactile_data.shape}")
         time.sleep(0.1)  # 100ms間隔
-        
+
 finally:
     sensor.disconnect()
 ```
@@ -90,12 +90,12 @@ robot.connect()
 try:
     # データ記録（タクタイルセンサー含む）
     obs = robot.record_parallel(max_frame=100, fps=20)
-    
+
     # タクタイルデータの確認
     if obs['sensors']['tactile']:
         for name, data in obs['sensors']['tactile'].items():
             print(f"タクタイル {name}: {data.shape}")
-            
+
 finally:
     robot.disconnect()
 ```
@@ -209,7 +209,7 @@ try:
     tactile_data = sensor.capture()
 except Exception as e:
     print(f"データ取得エラー: {e}")
-    
+
     # 再接続試行
     sensor.disconnect()
     time.sleep(1)
@@ -228,14 +228,14 @@ sensor.connect()
 try:
     start_time = time.time()
     frame_count = 100
-    
+
     for i in range(frame_count):
         tactile_data = sensor.capture()
-    
+
     end_time = time.time()
     actual_fps = frame_count / (end_time - start_time)
     print(f"実際のフレームレート: {actual_fps:.1f} fps")
-    
+
 finally:
     sensor.disconnect()
 ```

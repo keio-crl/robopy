@@ -110,7 +110,7 @@ class RakudaRobot(ComposedRobot):
             logger.error(f"An error occurred during recording: {e}")
             raise e
 
-        # proccess observations to numpy arrays
+        # process observations to numpy arrays
         leader_obs_np = np.array(leader_obs)
         follower_obs_np = np.array(follower_obs)
         arms: RakudaArmObs = RakudaArmObs(leader=leader_obs_np, follower=follower_obs_np)
@@ -184,7 +184,7 @@ class RakudaRobot(ComposedRobot):
 
         logger.info(f"Starting parallel recording: {max_frame} frames at {fps}Hz")
         logger.info(
-            f"""Target interval: {get_obs_interval * 1000:.1f}ms, 
+            f"""Target interval: {get_obs_interval * 1000:.1f}ms,
             Max processing time: {max_processing_time_ms}ms"""
         )
 
@@ -265,7 +265,7 @@ class RakudaRobot(ComposedRobot):
                     if processing_time > max_processing_time:
                         skipped_frames += 1
                         logger.warning(
-                            f"""Frame {frame_count} took {processing_time * 1000:.1f}ms 
+                            f"""Frame {frame_count} took {processing_time * 1000:.1f}ms
                             (>{max_processing_time_ms}ms), skipping"""
                         )
                         continue

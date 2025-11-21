@@ -190,7 +190,7 @@ if config.sensors:
         print(f"カメラ数: {len(config.sensors.cameras)}")
         for cam in config.sensors.cameras:
             print(f"  {cam.name}: {cam.config}")
-    
+
     if config.sensors.tactile:
         print(f"タクタイルセンサー数: {len(config.sensors.tactile)}")
         for tactile in config.sensors.tactile:
@@ -221,7 +221,7 @@ if config.sensors:
             }
             for cam in config.sensors.cameras
         ]
-    
+
     if config.sensors.tactile:
         config_dict["tactile"] = [
             {

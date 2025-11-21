@@ -125,7 +125,7 @@ class RealsenseCamera(Camera):
             # Warmup period
             if warmup:
                 logger.debug(
-                    f"""Warming up {self.name} for 
+                    f"""Warming up {self.name} for
                         {self.config.warmup_s if hasattr(self.config, "warmup_s") else 1}
                         s...
                     """,
