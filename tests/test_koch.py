@@ -1,9 +1,8 @@
 import logging
 
-from robopy.config.robot_config.koch_config import KochConfig, KochSensorConfig
 from robopy.config import RealsenseCameraConfig
+from robopy.config.robot_config.koch_config import KochConfig, KochSensorConfig
 from robopy.utils import KochExpHandler, MetaDataConfig
-from robopy.robots import KochRobot
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -17,14 +16,10 @@ def main():
             sensors=KochSensorConfig(
                 cameras={
                     "main": RealsenseCameraConfig(
-                        width=640,
-                        height=480,
-                        fps=30,
-                        is_depth_camera=True
+                        width=640, height=480, fps=30, is_depth_camera=True
                     )
                 }
             ),
-
         )
         # koch.connect()
         # obs = koch.get_observation()
@@ -43,8 +38,7 @@ def main():
             fps=5,
         )
 
-
-        handler.record_save(100, "test", is_async=True)
+        handler.record_save(100, "test", if_async=True)
     except Exception as e:
         raise e
 

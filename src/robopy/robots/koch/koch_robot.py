@@ -7,6 +7,7 @@ from typing import DefaultDict, Dict, List, Optional, override
 
 import numpy as np
 from numpy.typing import NDArray
+from rich.progress import Progress
 
 from robopy.config.robot_config.koch_config import (
     KOCH_MOTOR_MAPPING,
@@ -24,9 +25,6 @@ from robopy.sensors.visual.web_camera import WebCamera
 from robopy.utils.worker.koch_save_worker import KochArmObs, KochObs
 
 from .koch_pair_sys import KochPairSys
-
-from rich.progress import Progress
-
 
 logger = getLogger(__name__)
 
@@ -95,7 +93,9 @@ class KochRobot(ComposedRobot):
 
         leader_obs: List[NDArray[np.float32]] = []
         follower_obs: List[NDArray[np.float32]] = []
-        camera_obs: DefaultDict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
+        camera_obs: DefaultDict[str, List[NDArray[np.float32] | NDArray[np.uint8] | None]] = (
+            defaultdict(list)
+        )
 
         interval = 1.0 / fps
         frame_start = time.perf_counter()
@@ -130,7 +130,7 @@ class KochRobot(ComposedRobot):
         follower_arr = np.asarray(follower_obs, dtype=np.float32)
         arms = KochArmObs(leader=leader_arr, follower=follower_arr)
 
-        camera_obs_np: Dict[str, NDArray[np.float32] | None] = {}
+        camera_obs_np: Dict[str, NDArray[np.uint8] | NDArray[np.float32] | None] = {}
         for cam_name, frames in camera_obs.items():
             if frames and all(frame is not None for frame in frames):
                 camera_obs_np[cam_name] = np.asarray(frames)
@@ -180,7 +180,9 @@ class KochRobot(ComposedRobot):
 
         leader_obs: List[NDArray[np.float32]] = []
         follower_obs: List[NDArray[np.float32]] = []
-        camera_obs: DefaultDict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
+        camera_obs: DefaultDict[str, List[NDArray[np.float32] | NDArray[np.uint8] | None]] = (
+            defaultdict(list)
+        )
 
         get_obs_interval = 1.0 / fps
         max_processing_time = max_processing_time_ms / 1000.0
@@ -197,9 +199,7 @@ class KochRobot(ComposedRobot):
 
         try:
             with Progress() as progress:
-                task = progress.add_task(
-                    "[green]Recording Koch Robot...", total=max_frame
-                )
+                task = progress.add_task("[green]Recording Koch Robot...", total=max_frame)
                 while frame_count < max_frame:
                     frame_start = time.perf_counter()
 
@@ -211,7 +211,9 @@ class KochRobot(ComposedRobot):
                         logger.warning("No arm observation available in time.")
                         continue
 
-                    sensor_data = self.sensors_observation(timeout_ms=max_processing_time_ms / 2.0, async_mode=is_async)
+                    sensor_data = self.sensors_observation(
+                        timeout_ms=max_processing_time_ms / 2.0, async_mode=is_async
+                    )
 
                     leader_obs.append(arm_obs.leader)
                     follower_obs.append(arm_obs.follower)
@@ -264,7 +266,7 @@ class KochRobot(ComposedRobot):
         follower_arr = np.asarray(follower_obs, dtype=np.float32)
         arms = KochArmObs(leader=leader_arr, follower=follower_arr)
 
-        camera_obs_np: Dict[str, NDArray[np.float32] | None] = {}
+        camera_obs_np: Dict[str, NDArray[np.uint8] | NDArray[np.float32] | None] = {}
         for cam_name, frames in camera_obs.items():
             if frames and all(frame is not None for frame in frames):
                 camera_obs_np[cam_name] = np.asarray(frames)
@@ -293,7 +295,7 @@ class KochRobot(ComposedRobot):
 
     def sensors_observation(
         self, *, async_mode: bool = True, timeout_ms: float = 16.0
-    ) -> Dict[str, NDArray[np.float32] | None]:
+    ) -> Dict[str, NDArray[np.float32] | NDArray[np.uint8] | None]:
         if not self.is_connected:
             raise ConnectionError("KochRobot is not connected. Call connect() first.")
 
@@ -322,7 +324,7 @@ class KochRobot(ComposedRobot):
         else:
             # Use motor mapping keys as leader motor names when leader is not connected
             leader_motor_names = list(KOCH_MOTOR_MAPPING.keys())
-        
+
         if leader_action.shape[1] != len(leader_motor_names):
             raise ValueError(
                 f"leader_action must be of shape ({max_frame}, {len(leader_motor_names)})."
@@ -371,7 +373,7 @@ class KochRobot(ComposedRobot):
         else:
             # Use motor mapping keys as leader motor names when leader is not connected
             leader_motor_names = list(KOCH_MOTOR_MAPPING.keys())
-        
+
         if len(leader_action) != len(leader_motor_names):
             raise ValueError(
                 f"Leader action length {len(leader_action)} does not match "
@@ -394,6 +396,7 @@ class KochRobot(ComposedRobot):
         cameras: List[WebCamera | RealsenseCamera] = []
         index = 0
         for name, cam_cfg in self.config.sensors.cameras.items():
+            cam: WebCamera | RealsenseCamera
             if isinstance(cam_cfg, WebCameraConfig):
                 cam = WebCamera(index, name, cam_cfg)
             elif isinstance(cam_cfg, RealsenseCameraConfig):
@@ -427,11 +430,10 @@ class KochRobot(ComposedRobot):
             pass
 
     def _teleoperate_step(self, *, record: bool) -> Optional[KochArmObs]:
-        if hasattr(self._robot_system, "teleoperate_step"):
-            arm_obs = self._robot_system.teleoperate_step()
-            if arm_obs is None or not record:
-                return None
-            return self._to_arm_obs(arm_obs)
+        arm_obs = self._robot_system.teleope_step(if_record=record)
+        if arm_obs is None or not record:
+            return None
+        return self._to_arm_obs(arm_obs)
 
         if record:
             arm_obs_dict = self._robot_system.teleope_step(if_record=True)
@@ -444,8 +446,8 @@ class KochRobot(ComposedRobot):
 
     def _capture_camera_data(
         self, *, async_mode: bool, timeout_ms: float
-    ) -> Dict[str, NDArray[np.float32] | None]:
-        camera_data: Dict[str, NDArray[np.float32] | None] = {}
+    ) -> Dict[str, NDArray[np.float32] | NDArray[np.uint8] | None]:
+        camera_data: Dict[str, NDArray[np.float32] | NDArray[np.uint8] | None] = {}
 
         for cam in self._cameras:
             color_key = f"{cam.name}.rgb"

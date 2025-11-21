@@ -274,7 +274,6 @@ class RealsenseCamera(Camera):
             print(e)
             raise OSError("Failed to align depth frame.") from e
 
-
         depth_frame = aligned_frames.get_depth_frame()  # type: ignore
 
         if not depth_frame:
@@ -283,7 +282,14 @@ class RealsenseCamera(Camera):
         # Convert to numpy array
         depth_image = np.asanyarray(depth_frame.get_data())  # type: ignore
 
-        depth_image = depth_image[..., np.newaxis]  # Add channel dimension if needed
+        if depth_image is None:
+            raise OSError("Failed to convert depth frame to numpy array.")
+
+        # Ensure depth_image is not None before slicing
+        if depth_image is not None:
+            depth_image = depth_image[..., np.newaxis]  # Add channel dimension if needed
+        else:
+             raise OSError("Depth image is None after conversion.")
         depth_image = depth_image.transpose(2, 0, 1)  # Convert HWC to CHW
         depth_image = np.clip(depth_image, 0, self.config.max_depth)
 
@@ -524,7 +530,7 @@ class RealsenseCamera(Camera):
 
                 try:
                     aligned_frames = self.align.process(frames)  # type: ignore
-                except Exception as e:
+                except Exception:
                     self.align = rs.align(rs.stream.color)  # type: ignore
                     continue
 
@@ -550,7 +556,6 @@ class RealsenseCamera(Camera):
 
                     # Signal new depth frame available
                     self.new_depth_event.set()
-
 
                 # Update logging info
                 frame_count += 1

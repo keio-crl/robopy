@@ -2,9 +2,9 @@ import logging
 from typing import Optional
 
 from robopy.config.robot_config.koch_config import KochConfig
+from robopy.motor.control_table import XControlTable
 from robopy.motor.dynamixel_bus import DynamixelBus, DynamixelMotor
 from robopy.robots.common.arm import Arm
-from robopy.motor.control_table import XControlTable
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ class KochLeader(Arm):
         if len(motor_ids) != 6:
             logger.error("Koch Leader requires exactly 6 motor IDs.")
             raise ValueError("Koch Leader requires exactly 6 motor IDs.")
-        
+
         if self._port is None:
             logger.warning("Leader port is not specified. Leader arm will not be initialized.")
             self._motors: Optional[DynamixelBus] = None

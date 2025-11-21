@@ -25,6 +25,7 @@ class KochPairSys(Robot):
 
     def __init__(self, cfg: KochConfig):
         motor_ids = list(range(1, 13))
+        self._leader: Optional[KochLeader]
         if cfg.leader_port is not None:
             self._leader = KochLeader(cfg, motor_ids[:6])
         else:
@@ -85,7 +86,7 @@ class KochPairSys(Robot):
             # --- End of Calibration Logic ---
 
             self.follower.torque_enable()
-            if self._leader is not None:
+            if self.leader is not None:
                 self.leader.torque_enable()
 
             self._is_connected = True
@@ -133,13 +134,15 @@ class KochPairSys(Robot):
             self._is_connected = False
             logger.info("Disconnected from KochPairSys")
 
-    def get_observation(self, leader_obs: Optional[Dict[str, NDArray[np.float32]]] = None) -> Dict[str, NDArray[np.float32]]:
+    def get_observation(
+        self, leader_obs: Optional[Dict[str, NDArray[np.float32]]] = None
+    ) -> Dict[str, NDArray[np.float32]]:
         """Gets the current observation from both arms and sensors."""
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
 
         follower_motor_names = list(self._follower.motors.motors.keys())
-        
+
         # Get leader observation if available
         if self._leader is not None and self._leader.motors is not None:
             leader_motor_names = list(self._leader.motors.motors.keys())
@@ -153,7 +156,7 @@ class KochPairSys(Robot):
             # Return empty array if leader is not available
             leader_obs_array = np.array([], dtype=np.float32)
             logger.debug("Leader arm is not available. Returning empty leader observation.")
-        
+
         follower_obs = self._follower.motors.sync_read(
             XControlTable.PRESENT_POSITION, follower_motor_names
         )
