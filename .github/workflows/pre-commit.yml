@@ -8,6 +8,7 @@ on:
 jobs:
   pre-commit:
     runs-on: ubuntu-latest
+    environment: manual-approval
     steps:
       - uses: actions/checkout@v4
 
