@@ -289,7 +289,7 @@ class RealsenseCamera(Camera):
         if depth_image is not None:
             depth_image = depth_image[..., np.newaxis]  # Add channel dimension if needed
         else:
-             raise OSError("Depth image is None after conversion.")
+            raise OSError("Depth image is None after conversion.")
         depth_image = depth_image.transpose(2, 0, 1)  # Convert HWC to CHW
         depth_image = np.clip(depth_image, 0, self.config.max_depth)
 
@@ -321,12 +321,12 @@ class RealsenseCamera(Camera):
             depth_frame = self.latest_depth_frame
             self.new_depth_event.clear()
 
+        if depth_frame is None:
+            raise RuntimeError(f"No depth frame available for {self.name}.")
+
         depth_frame = depth_frame[..., np.newaxis]  # Add channel dimension if needed
         depth_frame = depth_frame.transpose(2, 0, 1)  # Convert HWC to CHW
         depth_frame = np.clip(depth_frame, 0, self.config.max_depth)
-
-        if depth_frame is None:
-            raise RuntimeError(f"No depth frame available for {self.name}.")
 
         return depth_frame
 

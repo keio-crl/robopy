@@ -1,7 +1,7 @@
 import json
 import os
 from time import sleep
-from typing import Dict, List, override
+from typing import Any, Dict, List, override
 from venv import logger
 
 from numpy import float32
@@ -78,7 +78,7 @@ class RakudaExpHandler(ExpHandler):
         Handles serialization of numpy arrays and dataclass objects by converting
         them to JSON-serializable formats (lists for arrays, dicts for dataclasses).
         """
-        metadata = {}
+        metadata: dict[str, Any] = {}
         metadata["task_details"] = self.metadata_config.__dict__
         if data_shape:
             metadata["data_shape"] = data_shape
