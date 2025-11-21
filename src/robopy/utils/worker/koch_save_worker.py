@@ -1,12 +1,17 @@
+import concurrent.futures
 import os
+import queue
+import threading
+from concurrent.futures import Future
 from dataclasses import dataclass
 from logging import getLogger
-from typing import Dict
+from typing import Dict, Literal, NamedTuple, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
 from .save_worker import SaveWorker
+from ..h5_handler import H5Handler
 
 logger = getLogger(__name__)
 
@@ -23,56 +28,161 @@ class KochObs:
     cameras: Dict[str, NDArray[np.uint8] | NDArray[np.float32] | None]
 
 
+class SaveTask(NamedTuple):
+    task_type: Literal["hierarchical", "arm", "gif"]
+    data: Dict[str, dict] | tuple[NDArray[np.float32], NDArray[np.float32]] | NDArray[np.float32]
+    save_path: str
+
+
 class KochSaveWorker(SaveWorker[KochObs]):
-    """シンプルなKochロボット用保存ワーカー."""
+    """Kochロボット用の非同期保存ワーカー."""
 
     def __init__(self, fps: int, worker_num: int = 2) -> None:
         self.fps = fps
         self.worker_num = worker_num
 
+        self._save_queue: queue.Queue[SaveTask | None] = queue.Queue()
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=worker_num)
+        self._stop_event = threading.Event()
+        self._background_thread = threading.Thread(target=self._background_saver, daemon=False)
+        self._background_thread.start()
+        self._futures: list[Future] = []
+
     def save_arm_datas(
         self, leader_obs: NDArray[np.float32], follower_obs: NDArray[np.float32], path: str
     ) -> None:
-        """アームデータをnp.save形式で保存する."""
-        leader_dir = os.path.join(path, "arm", "leader")
-        follower_dir = os.path.join(path, "arm", "follower")
-        os.makedirs(leader_dir, exist_ok=True)
-        os.makedirs(follower_dir, exist_ok=True)
-
-        leader_path = os.path.join(leader_dir, "leader_arm.npy")
-        follower_path = os.path.join(follower_dir, "follower_arm.npy")
-
-        np.save(leader_path, leader_obs)
-        np.save(follower_path, follower_obs)
-        logger.info("Leaderアーム・Followerアームのデータを保存しました。")
+        """アームデータをHDF5形式で保存する."""
+        os.makedirs(path, exist_ok=True)
+        hierarchical_data = {
+            "arm": {
+                "leader": leader_obs,
+                "follower": follower_obs,
+            }
+        }
+        arm_h5_path = os.path.join(path, "koch_arm_observations.h5")
+        H5Handler.save_hierarchical(hierarchical_data, arm_h5_path, compress=True)
+        logger.info("Leaderアーム・FollowerアームのデータをHDF5形式で保存しました: %s", arm_h5_path)
 
     def save_all_obs(self, obs: KochObs, save_path: str, save_gif: bool) -> None:
-        """観測データ全体を保存する."""
+        """観測データをバックグラウンドで保存する."""
         os.makedirs(save_path, exist_ok=True)
+        camera_data, leader, follower = self._prepare_koch_obs(obs, save_path)
 
-        # アームデータ保存
-        self.save_arm_datas(obs.arms.leader, obs.arms.follower, save_path)
+        hierarchical_data = self._build_hierarchical_data(camera_data, leader, follower)
+        h5_path = os.path.join(save_path, "koch_observations.h5")
+        self.enqueue_save_task(
+            SaveTask(
+                task_type="hierarchical",
+                data=hierarchical_data,
+                save_path=h5_path,
+            )
+        )
 
-        # カメラデータ保存
-        cameras_root = os.path.join(save_path, "camera")
-        for name, frames in obs.cameras.items():
-            if frames is None:
-                logger.warning("カメラ %s のフレームが取得できなかったため保存をスキップします。", name)
+        self.enqueue_save_task(
+            SaveTask(
+                task_type="arm",
+                data=(leader, follower),
+                save_path=os.path.join(save_path, "arm"),
+            )
+        )
+
+        if save_gif:
+            gif_root = os.path.join(save_path, "camera_gif")
+            for name, frames in camera_data.items():
+                gif_path = os.path.join(gif_root, name, f"{name}.gif")
+                self.enqueue_save_task(
+                    SaveTask(
+                        task_type="gif",
+                        data=frames,
+                        save_path=gif_path,
+                    )
+                )
+
+        logger.info("観測データの保存処理をバックグラウンドで開始しました: %s", save_path)
+
+    def enqueue_save_task(self, task: SaveTask) -> None:
+        self._save_queue.put(task)
+
+    def wait_all_saved(self) -> None:
+        logger.info("全ての保存タスク完了を待機します...")
+        self._save_queue.join()
+        logger.info("全保存タスク完了。")
+
+    def shutdown(self) -> None:
+        logger.info("KochSaveWorkerのシャットダウンを開始します。")
+        self.wait_all_saved()
+        self._stop_event.set()
+        self._save_queue.put(None)
+        self._background_thread.join(timeout=60)
+        self._executor.shutdown(wait=True)
+        logger.info("KochSaveWorkerを正常に停止しました。")
+
+    def _background_saver(self) -> None:
+        logger.info("保存タスク用バックグラウンドスレッド開始。")
+        while True:
+            try:
+                task = self._save_queue.get(timeout=1.0)
+            except queue.Empty:
+                if self._stop_event.is_set():
+                    continue
                 continue
-            if "depth" in name.lower():
-                frames = frames[..., np.newaxis, :, :]  # (N, H, W) -> (N, H, W, 1)
 
+            if task is None:
+                break
 
-            camera_dir = os.path.join(cameras_root, name)
-            os.makedirs(camera_dir, exist_ok=True)
+            future: Future
+            match task.task_type:
+                case "hierarchical":
+                    data = cast(Dict[str, dict], task.data)
+                    future = self._executor.submit(
+                        self._save_hierarchical_h5,
+                        data,
+                        task.save_path,
+                    )
+                case "arm":
+                    leader, follower = cast(
+                        tuple[NDArray[np.float32], NDArray[np.float32]], task.data
+                    )
+                    future = self._executor.submit(
+                        self.save_arm_datas,
+                        leader,
+                        follower,
+                        task.save_path,
+                    )
+                case "gif":
+                    frames = cast(NDArray[np.float32], task.data)
+                    future = self._executor.submit(self._save_camera_gif, frames, task.save_path)
+                case _:
+                    logger.warning("未知のタスクタイプ: %s", task.task_type)
+                    self._save_queue.task_done()
+                    continue
 
-            camera_path = os.path.join(camera_dir, f"{name}_frames.npy")
-            np.save(camera_path, frames)
-            logger.info("カメラ %s のフレームを %s に保存しました。", name, camera_path)
+            self._futures.append(future)
+            self._save_queue.task_done()
 
-            if save_gif:
-                gif_path = os.path.join(camera_dir, f"{name}.gif")
-                self._save_camera_gif(frames, gif_path)
+        for future in concurrent.futures.as_completed(self._futures):
+            try:
+                future.result()
+            except Exception as exc:
+                logger.error("保存タスクで例外が発生しました: %s", exc, exc_info=True)
+
+        logger.info("バックグラウンドスレッドを終了します。")
+
+    def _prepare_koch_obs(
+        self, obs: KochObs, save_dir: str
+    ) -> tuple[Dict[str, NDArray[np.float32]], NDArray[np.float32], NDArray[np.float32]]:
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        camera_data = {
+            name: frames for name, frames in obs.cameras.items() if frames is not None
+        }
+        if not camera_data:
+            logger.warning("カメラデータが存在しません。")
+
+        leader = obs.arms.leader
+        follower = obs.arms.follower
+        return camera_data, leader, follower
 
     def _save_camera_gif(self, frames: NDArray[np.float32] | NDArray[np.uint8], path: str) -> None:
         """シンプルなGIFを書き出す."""
@@ -80,15 +190,39 @@ class KochSaveWorker(SaveWorker[KochObs]):
             import imageio.v2 as imageio
         except ImportError:
             logger.warning("imageio がインストールされていないため GIF 保存をスキップします。")
-        else:
-            frame_data = frames
-            if frame_data.dtype != np.uint8:
-                frame_data = np.clip(frame_data, 0, 255).astype(np.uint8)
-            if frame_data.shape[-3] == 3 or frame_data.shape[-3] == 1:
-                frame_data = frame_data.transpose(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
-            if frame_data.shape[-1] == 1:
-                frame_data = frame_data[..., 0]  # (N, H, W, 1) -> (N, H, W)
-            imageio.mimsave(path, list(frame_data), fps=self.fps)
-            logger.info("GIFを %s に保存しました。", path)
+            return
+
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        frame_data = frames
+        if frame_data.shape[-3] == 3 or frame_data.shape[-3] == 1:
+            frame_data = frame_data.transpose(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
+        if frame_data.shape[-1] == 1:
+            frame_data = frame_data[..., 0]  # (N, H, W, 1) -> (N, H, W)
+            frame_data = frame_data.astype(np.float32) / max(np.max(frame_data), 1e-6) * 255
+        if frame_data.dtype != np.uint8:
+            frame_data = np.clip(frame_data, 0, 255).astype(np.uint8)
+        imageio.mimsave(path, list(frame_data), fps=self.fps)
+        logger.info("GIFを %s に保存しました。", path)
+
+    def _save_hierarchical_h5(self, data_dict: Dict[str, dict], file_path: str) -> None:
+        H5Handler.save_hierarchical(data_dict, file_path, compress=True)
+        logger.info("観測データをHDF5に保存しました: %s", file_path)
+
+    def _build_hierarchical_data(
+        self,
+        camera_data: Dict[str, NDArray[np.float32]],
+        leader: NDArray[np.float32],
+        follower: NDArray[np.float32],
+    ) -> Dict[str, dict]:
+        hierarchical_data: Dict[str, dict] = {
+            "arm": {
+                "leader": leader,
+                "follower": follower,
+            },
+            "camera": {},
+        }
+        for name, frames in camera_data.items():
+            hierarchical_data["camera"][name] = frames
+        return hierarchical_data
 
 
