@@ -283,6 +283,10 @@ class RealsenseCamera(Camera):
         # Convert to numpy array
         depth_image = np.asanyarray(depth_frame.get_data())  # type: ignore
 
+        depth_image = depth_image[..., np.newaxis]  # Add channel dimension if needed
+        depth_image = depth_image.transpose(2, 0, 1)  # Convert HWC to CHW
+        depth_image = np.clip(depth_image, 0, self.config.max_depth)
+
         return depth_image
 
     def async_read_depth(self, timeout_ms: float = 200) -> NDArray:
@@ -310,6 +314,10 @@ class RealsenseCamera(Camera):
         with self.depth_lock:
             depth_frame = self.latest_depth_frame
             self.new_depth_event.clear()
+
+        depth_frame = depth_frame[..., np.newaxis]  # Add channel dimension if needed
+        depth_frame = depth_frame.transpose(2, 0, 1)  # Convert HWC to CHW
+        depth_frame = np.clip(depth_frame, 0, self.config.max_depth)
 
         if depth_frame is None:
             raise RuntimeError(f"No depth frame available for {self.name}.")
