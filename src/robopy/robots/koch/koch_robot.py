@@ -3,7 +3,7 @@ import threading
 import time
 from collections import defaultdict
 from logging import getLogger
-from typing import DefaultDict, Dict, List, Optional, override
+from typing import DefaultDict, Dict, List, override
 
 import numpy as np
 from numpy.typing import NDArray
@@ -144,7 +144,7 @@ class KochRobot(ComposedRobot):
         max_frame: int,
         fps: int = 20,
         teleop_hz: int = 25,
-        max_processing_time_ms: Optional[float] = None,
+        max_processing_time_ms: float | None = None,
         is_async: bool = True,
     ) -> KochObs:
         if max_frame <= 0:
@@ -429,7 +429,7 @@ class KochRobot(ComposedRobot):
         except Exception:
             pass
 
-    def _teleoperate_step(self, *, record: bool) -> Optional[KochArmObs]:
+    def _teleoperate_step(self, *, record: bool) -> KochArmObs | None:
         arm_obs = self._robot_system.teleope_step(if_record=record)
         if arm_obs is None or not record:
             return None

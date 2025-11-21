@@ -4,7 +4,7 @@ import logging
 import os
 import pickle
 import time
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -25,7 +25,7 @@ class KochPairSys(Robot):
 
     def __init__(self, cfg: KochConfig):
         motor_ids = list(range(1, 13))
-        self._leader: Optional[KochLeader]
+        self._leader: KochLeader | None
         if cfg.leader_port is not None:
             self._leader = KochLeader(cfg, motor_ids[:6])
         else:
@@ -135,7 +135,7 @@ class KochPairSys(Robot):
             logger.info("Disconnected from KochPairSys")
 
     def get_observation(
-        self, leader_obs: Optional[Dict[str, NDArray[np.float32]]] = None
+        self, leader_obs: Dict[str, NDArray[np.float32]] | None = None
     ) -> Dict[str, NDArray[np.float32]]:
         """Gets the current observation from both arms and sensors."""
         if not self._is_connected:
@@ -275,7 +275,7 @@ class KochPairSys(Robot):
         self._follower.motors.sync_write(XControlTable.GOAL_POSITION, action)
 
     @property
-    def leader(self) -> Optional[KochLeader]:
+    def leader(self) -> KochLeader | None:
         return self._leader
 
     @property

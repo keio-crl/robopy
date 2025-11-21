@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from typing import Optional
 
 from robopy.motor.dynamixel_bus import DynamixelBus
 
@@ -9,13 +8,13 @@ class Arm(ABC):
 
     @property
     @abstractmethod
-    def port(self) -> Optional[str]:
+    def port(self) -> str | None:
         """Abstract property for port"""
         pass
 
     @property
     @abstractmethod
-    def motors(self) -> Optional[DynamixelBus]:
+    def motors(self) -> DynamixelBus | None:
         """Abstract property for motors"""
         pass
 

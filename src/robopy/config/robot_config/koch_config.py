@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict
 
 from numpy.typing import ArrayLike
 
@@ -15,8 +15,8 @@ class KochSensorConfig:
 
     cameras: Dict[str, RealsenseCameraConfig | WebCameraConfig] = field(default_factory=dict)
     # 将来的に他のセンサも追加可能
-    # tactile: Optional[TactileConfig] = None
-    # force_torque: Optional[FTConfig] = None
+    # tactile: TactileConfig|None = None
+    # force_torque: FTConfig|None = None
 
 
 @dataclass
@@ -25,7 +25,7 @@ class KochConfig:
 
     follower_port: str
     calibration_path: str
-    leader_port: Optional[str] = None
+    leader_port: str | None = None
     sensors: KochSensorConfig = field(default_factory=KochSensorConfig)
 
     # Backward compatibility

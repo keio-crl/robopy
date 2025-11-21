@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from robopy.config.robot_config.koch_config import KochConfig
 from robopy.motor.control_table import XControlTable
@@ -22,7 +21,7 @@ class KochLeader(Arm):
 
         if self._port is None:
             logger.warning("Leader port is not specified. Leader arm will not be initialized.")
-            self._motors: Optional[DynamixelBus] = None
+            self._motors: DynamixelBus | None = None
         else:
             self._motors = DynamixelBus(
                 port=self._port,
@@ -38,11 +37,11 @@ class KochLeader(Arm):
         self._is_connected = False
 
     @property
-    def port(self) -> Optional[str]:
+    def port(self) -> str | None:
         return self._port
 
     @property
-    def motors(self) -> Optional[DynamixelBus]:
+    def motors(self) -> DynamixelBus | None:
         return self._motors
 
     @property
