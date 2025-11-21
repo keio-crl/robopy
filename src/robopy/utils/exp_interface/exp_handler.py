@@ -33,5 +33,5 @@ class ExpHandler(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    def save_metadata(self, save_path: str) -> None:
+    def save_metadata(self, save_path: str, data_shape: dict | None) -> None:
         pass

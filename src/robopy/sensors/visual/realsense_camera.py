@@ -282,9 +282,6 @@ class RealsenseCamera(Camera):
         # Convert to numpy array
         depth_image = np.asanyarray(depth_frame.get_data())  # type: ignore
 
-        if depth_image is None:
-            raise OSError("Failed to convert depth frame to numpy array.")
-
         # Ensure depth_image is not None before slicing
         if depth_image is not None:
             depth_image = depth_image[..., np.newaxis]  # Add channel dimension if needed
