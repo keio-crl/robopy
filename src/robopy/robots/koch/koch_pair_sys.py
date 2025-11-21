@@ -4,7 +4,7 @@ import logging
 import os
 import pickle
 import time
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -25,7 +25,11 @@ class KochPairSys(Robot):
 
     def __init__(self, cfg: KochConfig):
         motor_ids = list(range(1, 13))
-        self._leader = KochLeader(cfg, motor_ids[:6])
+        if cfg.leader_port is not None:
+            self._leader = KochLeader(cfg, motor_ids[:6])
+        else:
+            self._leader = None
+            logger.info("Leader port is not specified. Leader arm will not be available.")
         self._follower = KochFollower(cfg, motor_ids[6:])
 
         self.calibration_path = cfg.calibration_path
@@ -43,8 +47,11 @@ class KochPairSys(Robot):
             return
 
         try:
-            logger.info("Connecting to leader arm...")
-            self._leader.connect()
+            if self._leader is not None:
+                logger.info("Connecting to leader arm...")
+                self._leader.connect()
+            else:
+                logger.info("Leader arm is not available. Skipping leader connection.")
             logger.info("Connecting to follower arm...")
             self._follower.connect()
 
@@ -71,10 +78,15 @@ class KochPairSys(Robot):
                 raise ConnectionError(f"Calibration data error: {e}")
 
             # Apply calibration to each arm
-            self._leader.motors.set_calibration(calibration["leader"])
+            if self._leader is not None and self._leader.motors is not None:
+                self._leader.motors.set_calibration(calibration["leader"])
             self._follower.motors.set_calibration(calibration["follower"])
             logger.info("Calibration successfully applied to both arms.")
             # --- End of Calibration Logic ---
+
+            self.follower.torque_enable()
+            if self._leader is not None:
+                self.leader.torque_enable()
 
             self._is_connected = True
             logger.info("Connected to KochPairSys successfully")
@@ -97,8 +109,12 @@ class KochPairSys(Robot):
         all_calibration_data = {}
 
         # Calibrate leader arm
-        leader_calib = run_arm_calibration(self._leader, arm_type="leader")
-        all_calibration_data["leader"] = leader_calib
+        if self._leader is not None:
+            leader_calib = run_arm_calibration(self._leader, arm_type="leader")
+            all_calibration_data["leader"] = leader_calib
+        else:
+            # Create dummy calibration data for leader if not available
+            all_calibration_data["leader"] = {}
 
         # Calibrate follower arm
         follower_calib = run_arm_calibration(self._follower, arm_type="follower")
@@ -111,28 +127,37 @@ class KochPairSys(Robot):
         """Disconnects from all devices."""
         if self._is_connected:
             logger.info("Disconnecting KochPairSys...")
-            self._leader.disconnect()
+            if self._leader is not None:
+                self._leader.disconnect()
             self._follower.disconnect()
             self._is_connected = False
             logger.info("Disconnected from KochPairSys")
 
-    def get_observation(self) -> Dict[str, NDArray[np.float32]]:
+    def get_observation(self, leader_obs: Optional[Dict[str, NDArray[np.float32]]] = None) -> Dict[str, NDArray[np.float32]]:
         """Gets the current observation from both arms and sensors."""
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
 
-        leader_motor_names = list(self._leader.motors.motors.keys())
         follower_motor_names = list(self._follower.motors.motors.keys())
-
-        # 直接Enumを使用
-        leader_obs = self._leader.motors.sync_read(
-            XControlTable.PRESENT_POSITION, leader_motor_names
-        )
+        
+        # Get leader observation if available
+        if self._leader is not None and self._leader.motors is not None:
+            leader_motor_names = list(self._leader.motors.motors.keys())
+            # 直接Enumを使用
+            if leader_obs is None:
+                leader_obs = self._leader.motors.sync_read(
+                    XControlTable.PRESENT_POSITION, leader_motor_names
+                )
+            leader_obs_array = np.array(list(leader_obs.values()), dtype=np.float32)
+        else:
+            # Return empty array if leader is not available
+            leader_obs_array = np.array([], dtype=np.float32)
+            logger.debug("Leader arm is not available. Returning empty leader observation.")
+        
         follower_obs = self._follower.motors.sync_read(
             XControlTable.PRESENT_POSITION, follower_motor_names
         )
 
-        leader_obs_array = np.array(list(leader_obs.values()), dtype=np.float32)
         follower_obs_array = np.array(list(follower_obs.values()), dtype=np.float32)
         logger.debug(f"Leader positions: {leader_obs_array}")
         logger.debug(f"Follower positions: {follower_obs_array}")
@@ -146,6 +171,9 @@ class KochPairSys(Robot):
         """Teleoperation: Leader controls the Follower arm movements."""
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
+
+        if self._leader is None or self._leader.motors is None:
+            raise ConnectionError("Leader arm is not available. Cannot start teleoperation.")
 
         logger.info("Starting teleoperation. Leader will control follower.")
         logger.info("Press Ctrl+C to stop teleoperation.")
@@ -188,6 +216,12 @@ class KochPairSys(Robot):
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
 
+        if self._leader is None or self._leader.motors is None:
+            logger.warning("Leader arm is not available. Cannot perform teleoperation step.")
+            if if_record:
+                return self.get_observation(leader_obs=None)
+            return None
+
         # Get current positions from leader arm
         leader_motor_names = list(self._leader.motors.motors.keys())
         leader_positions = self._leader.motors.sync_read(
@@ -212,13 +246,17 @@ class KochPairSys(Robot):
             self._follower.motors.sync_write(XControlTable.GOAL_POSITION, follower_goals)
 
         if if_record:
-            return self.get_observation()
+            return self.get_observation(leader_obs=leader_positions)
         return None
 
     def get_leader_action(self) -> dict:
         """Get the current action (positions) from the leader arm."""
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
+
+        if self._leader is None or self._leader.motors is None:
+            logger.warning("Leader arm is not available. Returning empty action.")
+            return {}
 
         leader_motor_names = list(self._leader.motors.motors.keys())
         leader_positions = self._leader.motors.sync_read(
@@ -234,14 +272,9 @@ class KochPairSys(Robot):
         self._follower.motors.sync_write(XControlTable.GOAL_POSITION, action)
 
     @property
-    def leader(self) -> KochLeader:
+    def leader(self) -> Optional[KochLeader]:
         return self._leader
 
     @property
     def follower(self) -> KochFollower:
-        return self._follower
-        return self._follower
-        return self._follower
-        return self._follower
-        return self._follower
         return self._follower

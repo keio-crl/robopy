@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Constants from the original script
 BAUDRATE = 1_000_000
 PROTOCOL_VERSION = 2.0
-NUM_READ_RETRY = 2  # 10から2に削減 (パフォーマンス向上のため)
+NUM_READ_RETRY = 10  
 NUM_WRITE_RETRY = 2  # 10から2に削減 (パフォーマンス向上のため)
 
 
@@ -196,8 +196,6 @@ class DynamixelBus:
                 np.array(raw_values), [m.motor_name for m in motors_to_read]
             )
             for i, motor in enumerate(motors_to_read):
-                if results[motor.motor_name] is not None:
-                    raise ValueError("A same motor name exists multiple times in the bus.")
 
                 results[motor.motor_name] = calibrated_values[i]
 
