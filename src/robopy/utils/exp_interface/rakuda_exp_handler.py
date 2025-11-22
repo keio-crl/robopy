@@ -204,6 +204,11 @@ class RakudaExpHandler(ExpHandler):
 
         return data_shape
 
+    def close(self) -> None:
+        """Close the handler and clean up resources."""
+        self.robot.disconnect()
+        self.save_worker.shutdown()
+
     @override
     def record(self, max_frames: int, if_async: bool = True) -> RakudaObs:
         """record data from Rakuda robot
@@ -225,7 +230,7 @@ class RakudaExpHandler(ExpHandler):
         except KeyboardInterrupt:
             logger.info("Recording stopped by user...")
             sleep(0.5)
-            self.robot.disconnect()
+            self.close()
             raise RuntimeError("Recording stopped by user")
         return obs
 
@@ -262,7 +267,7 @@ class RakudaExpHandler(ExpHandler):
                 input_str = input()
                 if input_str.lower() == "q":
                     print("Exiting...")
-                    self.robot.disconnect()
+                    self.close()
                     sleep(0.5)
                     return
                 print(f"Warming up for default {warmup_time} seconds...")
@@ -302,15 +307,15 @@ class RakudaExpHandler(ExpHandler):
                 # disconnect and exit
                 else:
                     print("Invalid input. Exiting...")
-                    self.robot.disconnect()
+                    self.close()
                     return
         except Exception as e:
-            self.robot.disconnect()
+            self.close()
             raise RuntimeError(f"Failed to record from Rakuda robot: {e}")
         except KeyboardInterrupt:
             logger.info("Recording stopped by user...")
             sleep(0.5)
-            self.robot.disconnect()
+            self.close()
 
     def _init_config(self, rakuda_config: RakudaConfig) -> RakudaConfig:
         leader_port_num = rakuda_config.leader_port
