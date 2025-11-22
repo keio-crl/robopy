@@ -1,9 +1,10 @@
-from logging import INFO, basicConfig
+from logging import INFO, getLogger
 
 from robopy.config import RakudaConfig, RakudaSensorParams, TactileParams
 from robopy.utils import MetaDataConfig, RakudaExpHandler
 
-basicConfig(level=INFO)
+logger = getLogger(__name__)
+logger.setLevel(INFO)
 
 
 def exp_handler_import():

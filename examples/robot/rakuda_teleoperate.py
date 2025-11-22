@@ -1,6 +1,7 @@
-from logging import INFO, basicConfig
+from logging import INFO, getLogger
 
-basicConfig(level=INFO)
+logger = getLogger(__name__)
+logger.setLevel(INFO)
 
 
 def rakuda_teleoperate():

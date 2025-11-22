@@ -1,5 +1,5 @@
 import logging
-from logging import basicConfig, getLogger
+from logging import getLogger
 from typing import Any, Dict
 
 import h5py
@@ -7,7 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 logger = getLogger(__name__)
-basicConfig(level=logging.INFO)
+logger.setLevel(logging.INFO)
 
 
 class H5Handler:
