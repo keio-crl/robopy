@@ -32,16 +32,17 @@ def test_rakuda_exp_send():
         action = handler.record(max_frames=200).arms.leader
         handler.send(max_frame=200, fps=10, leader_action=action)
     except Exception as e:
+        handler.close()
         raise e
     except KeyboardInterrupt:
-        handler.robot.disconnect()
+        handler.close()
 
 
 if __name__ == "__main__":
     handler = RakudaExpHandler(
         rakuda_config=RakudaConfig(
-            leader_port="/dev/ttyUSB0",
-            follower_port="/dev/ttyUSB1",
+            leader_port="/dev/ttyUSB1",
+            follower_port="/dev/ttyUSB0",
             # sensors=RakudaSensorParams(
             #    tactile=[
             #        TactileParams(serial_num="D20542", name="left"),
