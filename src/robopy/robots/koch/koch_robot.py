@@ -29,7 +29,7 @@ from .koch_pair_sys import KochPairSys
 logger = getLogger(__name__)
 
 
-class KochRobot(ComposedRobot):
+class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
     def __init__(self, cfg: KochConfig) -> None:
         super().__init__()
         self.config = self._init_config(cfg)
