@@ -7,12 +7,18 @@ from typing import Any, Dict, Generic, TypeVar
 import numpy as np
 from numpy.typing import NDArray
 
+from robopy.robots.common.composed import ComposedRobot
+from robopy.utils.worker.save_worker import SaveWorker
+
 from .meta_data_config import MetaDataConfig
 
-T = TypeVar("T")
+ObsType = TypeVar("ObsType")
+RobotType = TypeVar("RobotType", bound=ComposedRobot)
+ConfigType = TypeVar("ConfigType")
+WorkerType = TypeVar("WorkerType", bound=SaveWorker)
 
 
-class ExpHandler(ABC, Generic[T]):
+class ExpHandler(ABC, Generic[ObsType, RobotType, ConfigType, WorkerType]):
     def __init__(self, metadata_config: MetaDataConfig, fps: int) -> None:
         self.metadata_config = metadata_config
         self.fps = fps
@@ -20,24 +26,24 @@ class ExpHandler(ABC, Generic[T]):
 
     @property
     @abstractmethod
-    def robot(self) -> Any:
+    def robot(self) -> RobotType:
         """Robot instance."""
         pass
 
     @property
     @abstractmethod
-    def save_worker(self) -> Any:
+    def save_worker(self) -> WorkerType:
         """Save worker instance."""
         pass
 
     @property
     @abstractmethod
-    def config(self) -> Any:
+    def config(self) -> ConfigType:
         """Robot configuration."""
         pass
 
     @abstractmethod
-    def record(self, max_frames: int, if_async: bool = True) -> T:
+    def record(self, max_frames: int, if_async: bool = True) -> ObsType:
         pass
 
     @abstractmethod
@@ -45,7 +51,7 @@ class ExpHandler(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    def _extract_data_shapes(self, obs: T) -> dict:
+    def _extract_data_shapes(self, obs: ObsType) -> dict:
         pass
 
     def close(self) -> None:

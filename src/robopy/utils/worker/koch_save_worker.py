@@ -1,17 +1,14 @@
-import concurrent.futures
 import os
-import queue
-import threading
 from concurrent.futures import Future
 from dataclasses import dataclass
 from logging import getLogger
-from typing import Dict, Literal, NamedTuple, cast
+from typing import Dict, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
 from ..h5_handler import H5Handler
-from .save_worker import SaveWorker
+from .save_worker import SaveTask, SaveWorker
 
 logger = getLogger(__name__)
 
@@ -28,30 +25,36 @@ class KochObs:
     cameras: Dict[str, NDArray[np.uint8] | NDArray[np.float32] | None]
 
 
-class SaveTask(NamedTuple):
-    task_type: Literal["hierarchical", "arm", "gif"]
-    data: (
-        Dict[str, dict]
-        | tuple[NDArray[np.float32], NDArray[np.float32]]
-        | NDArray[np.float32]
-        | NDArray[np.uint8]
-    )
-    save_path: str
-
-
 class KochSaveWorker(SaveWorker[KochObs]):
     """Kochロボット用の非同期保存ワーカー."""
 
     def __init__(self, fps: int, worker_num: int = 2) -> None:
+        super().__init__(worker_num=worker_num)
         self.fps = fps
-        self.worker_num = worker_num
 
-        self._save_queue: queue.Queue[SaveTask | None] = queue.Queue()
-        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=worker_num)
-        self._stop_event = threading.Event()
-        self._background_thread = threading.Thread(target=self._background_saver, daemon=False)
-        self._background_thread.start()
-        self._futures: list[Future] = []
+    def _process_task(self, task: SaveTask) -> Future | None:
+        match task.task_type:
+            case "hierarchical":
+                data = cast(Dict[str, dict], task.data)
+                return self._executor.submit(
+                    self._save_hierarchical_h5,
+                    data,
+                    task.save_path,
+                )
+            case "arm":
+                leader, follower = cast(tuple[NDArray[np.float32], NDArray[np.float32]], task.data)
+                return self._executor.submit(
+                    self.save_arm_datas,
+                    leader,
+                    follower,
+                    task.save_path,
+                )
+            case "gif":
+                frames = cast(NDArray[np.float32], task.data)
+                return self._executor.submit(self._save_camera_gif, frames, task.save_path)
+            case _:
+                logger.warning("未知のタスクタイプ: %s", task.task_type)
+                return None
 
     def save_arm_datas(
         self, leader_obs: NDArray[np.float32], follower_obs: NDArray[np.float32], path: str
@@ -105,73 +108,8 @@ class KochSaveWorker(SaveWorker[KochObs]):
 
         logger.info("観測データの保存処理をバックグラウンドで開始しました: %s", save_path)
 
-    def enqueue_save_task(self, task: SaveTask) -> None:
-        self._save_queue.put(task)
-
-    def wait_all_saved(self) -> None:
-        logger.info("全ての保存タスク完了を待機します...")
-        self._save_queue.join()
-        logger.info("全保存タスク完了。")
-
     def shutdown(self) -> None:
-        logger.info("KochSaveWorkerのシャットダウンを開始します。")
-        self.wait_all_saved()
-        self._stop_event.set()
-        self._save_queue.put(None)
-        self._background_thread.join(timeout=60)
-        self._executor.shutdown(wait=True)
-        logger.info("KochSaveWorkerを正常に停止しました。")
-
-    def _background_saver(self) -> None:
-        logger.info("保存タスク用バックグラウンドスレッド開始。")
-        while True:
-            try:
-                task = self._save_queue.get(timeout=1.0)
-            except queue.Empty:
-                if self._stop_event.is_set():
-                    continue
-                continue
-
-            if task is None:
-                break
-
-            future: Future
-            match task.task_type:
-                case "hierarchical":
-                    data = cast(Dict[str, dict], task.data)
-                    future = self._executor.submit(
-                        self._save_hierarchical_h5,
-                        data,
-                        task.save_path,
-                    )
-                case "arm":
-                    leader, follower = cast(
-                        tuple[NDArray[np.float32], NDArray[np.float32]], task.data
-                    )
-                    future = self._executor.submit(
-                        self.save_arm_datas,
-                        leader,
-                        follower,
-                        task.save_path,
-                    )
-                case "gif":
-                    frames = cast(NDArray[np.float32], task.data)
-                    future = self._executor.submit(self._save_camera_gif, frames, task.save_path)
-                case _:
-                    logger.warning("未知のタスクタイプ: %s", task.task_type)
-                    self._save_queue.task_done()
-                    continue
-
-            self._futures.append(future)
-            self._save_queue.task_done()
-
-        for future in concurrent.futures.as_completed(self._futures):
-            try:
-                future.result()
-            except Exception as exc:
-                logger.error("保存タスクで例外が発生しました: %s", exc, exc_info=True)
-
-        logger.info("バックグラウンドスレッドを終了します。")
+        super().shutdown()
 
     def _prepare_koch_obs(
         self, obs: KochObs, save_dir: str
