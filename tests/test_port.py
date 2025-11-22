@@ -1,9 +1,10 @@
-import logging
+from logging import INFO, getLogger
 
 from robopy.config.robot_config.rakuda_config import RakudaConfig
 from robopy.robots.rakuda.rakuda_pair_sys import RakudaPairSys
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = getLogger(__name__)
+logger.setLevel(level=INFO)
 
 
 def main():

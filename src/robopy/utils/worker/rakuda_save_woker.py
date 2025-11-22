@@ -1,10 +1,7 @@
-import concurrent.futures
 import os
-import queue
-import threading
 from concurrent.futures import Future
 from logging import getLogger
-from typing import Dict, Literal, NamedTuple, cast
+from typing import Dict, cast
 
 import matplotlib
 from rich.console import Console
@@ -22,181 +19,79 @@ from robopy.config.robot_config.rakuda_config import RakudaObs
 from robopy.utils.blosc_handler import BLOSCHandler
 from robopy.utils.h5_handler import H5Handler
 
-from .save_worker import SaveWorker
+from .save_worker import SaveTask, SaveWorker
 
 logger = getLogger(__name__)
 
 console = Console()
 
 
-class SaveTask(NamedTuple):
-    """Data class representing a save task"""
-
-    task_type: Literal[
-        "camera", "tactile", "arm_obs", "arm", "animation", "metadata", "hierarchical"
-    ]
-    data: (
-        tuple[Dict[str, NDArray[np.float32]], Dict[str, NDArray[np.float32]]]
-        | tuple[NDArray[np.float32], NDArray[np.float32]]
-        | Dict[str, NDArray[np.float32]]
-        | Dict[str, dict]
-    )  # type: ignore
-    save_path: str = ""
-    fps: int | None = None
-
-
-class RakudaSaveWorker(SaveWorker):
+class RakudaSaveWorker(SaveWorker[RakudaObs]):
     def __init__(self, cfg: RakudaConfig, worker_num: int, fps: int) -> None:
-        super().__init__()
-        self.worker_num = worker_num
+        super().__init__(worker_num=worker_num)
         self.cfg = cfg
         self.fps = fps
 
-        # Background save queue and executor setup
-        self._save_queue: queue.Queue[SaveTask | None] = queue.Queue()
-        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=worker_num)
-        # Use non-daemon thread to ensure tasks complete before shutdown
-        self._background_thread = threading.Thread(target=self._background_saver, daemon=False)
-        self._background_thread.start()
-        self._stop_event = threading.Event()
-        self._futures: list[Future] = []
+    def _process_task(self, task: SaveTask) -> Future | None:
+        match task.task_type:
+            case "camera":
+                camera_data = cast(Dict[str, NDArray[np.float32]], task.data)
+                logger.debug(f"Processing camera save task to {task.save_path}")
+                return self._executor.submit(self._save_camera_data, camera_data, task.save_path)
+            case "tactile":
+                tactile_data = cast(Dict[str, NDArray[np.float32]], task.data)
+                logger.debug(f"Processing tactile save task to {task.save_path}")
+                return self._executor.submit(self._save_tactile_data, tactile_data, task.save_path)
+            case "arm_obs":
+                arm_data = cast(tuple[NDArray[np.float32], NDArray[np.float32]], task.data)
+                logger.debug(f"Processing arm_obs save task to {task.save_path}")
+                return self._executor.submit(
+                    self.make_rakuda_arm_obs,
+                    arm_data[0],  # leader
+                    arm_data[1],  # follower
+                    task.save_path,
+                )
+            case "animation":
+                data = cast(
+                    tuple[Dict[str, NDArray[np.float32]], Dict[str, NDArray[np.float32]]],
+                    task.data,
+                )
+                camera_data, tactile_data = data
+                logger.debug(f"Processing animation save task to {task.save_path}")
+                if camera_data is not None and tactile_data is not None and task.fps is not None:
+                    return self._executor.submit(
+                        self.make_rakuda_obs_animation,
+                        camera_data,
+                        tactile_data,
+                        task.save_path,
+                        task.fps,
+                    )
+                else:
+                    logger.warning("Animation task missing required data")
+                    return None
 
-    def _background_saver(self) -> None:
-        """Background worker thread that processes save tasks from the queue"""
-        logger.info("Background saver thread started")
+            case "arm":
+                arm_data = cast(tuple[NDArray[np.float32], NDArray[np.float32]], task.data)
+                logger.debug(f"Processing arm save task to {task.save_path}")
+                return self._executor.submit(
+                    self.save_arm_datas,
+                    arm_data[0],  # leader
+                    arm_data[1],  # follower
+                    task.save_path,
+                )
 
-        while True:
-            try:
-                task = self._save_queue.get(timeout=1.0)
+            case "hierarchical":
+                hierarchical_data = cast(Dict[str, dict], task.data)
+                logger.debug(f"Processing hierarchical save task to {task.save_path}")
+                return self._executor.submit(
+                    self._save_hierarchical_h5,
+                    hierarchical_data,
+                    task.save_path,
+                )
 
-                if task is None:  # Finish signal
-                    break
-
-                match task.task_type:
-                    case "camera":
-                        camera_data = cast(Dict[str, NDArray[np.float32]], task.data)
-                        logger.debug(f"Processing camera save task to {task.save_path}")
-                        future = self._executor.submit(
-                            self._save_camera_data, camera_data, task.save_path
-                        )
-                    case "tactile":
-                        tactile_data = cast(Dict[str, NDArray[np.float32]], task.data)
-                        logger.debug(f"Processing tactile save task to {task.save_path}")
-                        future = self._executor.submit(
-                            self._save_tactile_data, tactile_data, task.save_path
-                        )
-                    case "arm_obs":
-                        arm_data = cast(tuple[NDArray[np.float32], NDArray[np.float32]], task.data)
-                        logger.debug(f"Processing arm_obs save task to {task.save_path}")
-                        future = self._executor.submit(
-                            self.make_rakuda_arm_obs,
-                            arm_data[0],  # leader
-                            arm_data[1],  # follower
-                            task.save_path,
-                        )
-                    case "animation":
-                        data = cast(
-                            tuple[Dict[str, NDArray[np.float32]], Dict[str, NDArray[np.float32]]],
-                            task.data,
-                        )
-                        camera_data, tactile_data = data
-                        logger.debug(f"Processing animation save task to {task.save_path}")
-                        if (
-                            camera_data is not None
-                            and tactile_data is not None
-                            and task.fps is not None
-                        ):
-                            future = self._executor.submit(
-                                self.make_rakuda_obs_animation,
-                                camera_data,
-                                tactile_data,
-                                task.save_path,
-                                task.fps,
-                            )
-                        else:
-                            logger.warning("Animation task missing required data")
-                            self._save_queue.task_done()
-                            continue
-
-                    case "arm":
-                        arm_data = cast(tuple[NDArray[np.float32], NDArray[np.float32]], task.data)
-                        logger.debug(f"Processing arm save task to {task.save_path}")
-                        future = self._executor.submit(
-                            self.save_arm_datas,
-                            arm_data[0],  # leader
-                            arm_data[1],  # follower
-                            task.save_path,
-                        )
-
-                    case "hierarchical":
-                        hierarchical_data = cast(Dict[str, dict], task.data)
-                        logger.debug(f"Processing hierarchical save task to {task.save_path}")
-                        future = self._executor.submit(
-                            self._save_hierarchical_h5,
-                            hierarchical_data,
-                            task.save_path,
-                        )
-
-                    case _:
-                        logger.warning(f"Unknown task type: {task.task_type}")
-                        self._save_queue.task_done()
-                        continue
-
-                self._futures.append(future)
-                self._save_queue.task_done()
-                logger.debug(f"Task queued, remaining: {self._save_queue.qsize()}")
-
-            except queue.Empty:
-                continue
-            except Exception as e:
-                logger.error(f"Error in background saver: {e}", exc_info=True)
-
-        # Wait for all tasks to complete
-        logger.info(f"Waiting for {len(self._futures)} tasks to complete...")
-        for i, future in enumerate(concurrent.futures.as_completed(self._futures)):
-            try:
-                future.result()
-                logger.debug(f"Task {i + 1}/{len(self._futures)} completed")
-            except Exception as e:
-                logger.error(f"Error in background save task {i + 1}: {e}", exc_info=True)
-
-        logger.info("Background saver thread finished successfully")
-
-    def enqueue_save_task(self, task: SaveTask) -> None:
-        """Add a save task to the queue (non-blocking)"""
-        self._save_queue.put(task)
-
-    def wait_all_saved(self) -> None:
-        """Wait for all save tasks to complete"""
-        logger.info("Waiting for all queued tasks to complete...")
-        self._save_queue.join()
-        logger.info("All queued tasks marked as done")
-
-    def shutdown(self) -> None:
-        """Shutdown the save worker"""
-        logger.info("Shutting down save worker...")
-
-        # Wait for all tasks in the queue to complete
-        self.wait_all_saved()
-
-        # Send shutdown signal to background thread
-        logger.info("Sending shutdown signal to background thread...")
-        self._stop_event.set()
-        self._save_queue.put(None)  # Shutdown signal
-
-        # Wait for background thread to finish (timeout: 60 seconds)
-        logger.info("Waiting for background thread to finish...")
-        self._background_thread.join(timeout=60)
-
-        if self._background_thread.is_alive():
-            logger.warning("Background thread did not finish in time")
-        else:
-            logger.info("Background thread finished")
-
-        # Shutdown ThreadPoolExecutor
-        logger.info("Shutting down thread pool executor...")
-        self._executor.shutdown(wait=True)
-        logger.info("Save worker shutdown complete")
+            case _:
+                logger.warning(f"Unknown task type: {task.task_type}")
+                return None
 
     def prepare_rakuda_obs(
         self, obs: RakudaObs, save_dir: str

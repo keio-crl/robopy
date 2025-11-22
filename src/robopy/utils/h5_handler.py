@@ -1,11 +1,13 @@
 import logging
+from logging import getLogger
 from typing import Any, Dict
 
 import h5py
 import numpy as np
 from numpy.typing import NDArray
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 class H5Handler:
