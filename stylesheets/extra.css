@@ -1,0 +1,201 @@
+/* 日本語フォント対応 */
+.md-content {
+	font-family: "Hiragino Kaku Gothic ProN", "ヒラギノ角ゴ ProN W3", "メイリオ", Meiryo,
+		"BIZ UDPGothic", "Yu Gothic UI", "Yu Gothic", "Noto Sans CJK JP", sans-serif;
+}
+
+/* コードブロックの日本語フォント対応 */
+.md-typeset code,
+.md-typeset pre code {
+	font-family: "Roboto", "Noto Sans Mono CJK JP", monospace;
+}
+
+/* 見出しのスタイル調整 */
+.md-typeset h1 {
+	color: var(--md-primary-fg-color);
+	border-bottom: 2px solid var(--md-primary-fg-color);
+	padding-bottom: 0.5rem;
+	margin-bottom: 1.5rem;
+}
+
+.md-typeset h2 {
+	border-bottom: 1px solid var(--md-default-fg-color--lighter);
+	padding-bottom: 0.3rem;
+}
+
+/* 注意ブロックのスタイル */
+.md-typeset .admonition {
+	margin: 1.5625em 0;
+	border-radius: 0.5rem;
+}
+
+.md-typeset .admonition-title {
+	font-weight: 600;
+}
+
+/* テーブルのレスポンシブ対応 */
+.md-typeset table:not([class]) {
+	font-size: 0.9rem;
+	border-collapse: collapse;
+}
+
+.md-typeset table:not([class]) th,
+.md-typeset table:not([class]) td {
+	border: 1px solid var(--md-default-fg-color--lighter);
+	padding: 0.75rem;
+}
+
+.md-typeset table:not([class]) th {
+	background-color: var(--md-default-bg-color);
+	font-weight: 600;
+}
+
+/* ナビゲーションの日本語対応 */
+.md-nav__title {
+	font-weight: 600;
+	font-size: 0.85rem;
+}
+
+.md-nav__item .md-nav__link {
+	font-size: 0.8rem;
+}
+
+/* ダークモード時の調整 */
+[data-md-color-scheme="slate"] {
+	--md-code-bg-color: #2d3748;
+	--md-code-fg-color: #e2e8f0;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) th {
+	background-color: var(--md-default-bg-color);
+}
+
+/* 検索ハイライトの調整 */
+.md-search-result__article {
+	padding: 1rem;
+	border-radius: 0.3rem;
+}
+
+.md-search-result__title {
+	font-weight: 600;
+}
+
+/* コードブロックのスタイル改善 */
+.md-typeset .highlight {
+	border-radius: 0.5rem;
+	overflow: hidden;
+}
+
+.md-typeset .highlight code {
+	background-color: transparent;
+}
+
+/* インラインコードのスタイル */
+.md-typeset code {
+	background-color: var(--md-code-bg-color);
+	color: var(--md-code-fg-color);
+	padding: 0.1em 0.3em;
+	border-radius: 0.2rem;
+	font-size: 0.85em;
+}
+
+/* タブのスタイル改善 */
+.md-typeset .tabbed-set {
+	border-radius: 0.5rem;
+	overflow: hidden;
+}
+
+.md-typeset .tabbed-labels > label {
+	font-weight: 500;
+}
+
+/* ページ内リンクのスタイル */
+.md-typeset a {
+	color: var(--md-primary-fg-color);
+	text-decoration: none;
+}
+
+.md-typeset a:hover {
+	text-decoration: underline;
+}
+
+/* モバイル対応 */
+@media screen and (max-width: 76.1875em) {
+	.md-typeset table:not([class]) {
+		font-size: 0.8rem;
+	}
+
+	.md-typeset table:not([class]) th,
+	.md-typeset table:not([class]) td {
+		padding: 0.5rem;
+	}
+
+	.md-content {
+		font-size: 0.9rem;
+	}
+}
+
+/* 印刷時のスタイル */
+@media print {
+	.md-content {
+		font-family: "Hiragino Kaku Gothic ProN", "メイリオ", Meiryo, sans-serif;
+	}
+
+	.md-typeset code,
+	.md-typeset pre code {
+		font-family: "Courier New", "Noto Sans Mono CJK JP", monospace;
+	}
+}
+
+/* アニメーションの改善 */
+.md-typeset details {
+	transition: all 0.2s ease;
+}
+
+.md-typeset details[open] {
+	border-color: var(--md-primary-fg-color);
+}
+
+/* フッターのスタイル */
+.md-footer {
+	font-size: 0.8rem;
+}
+
+/* APIドキュメントのスタイル改善 */
+.md-typeset .doc-signature {
+	background-color: var(--md-code-bg-color);
+	border-radius: 0.3rem;
+	padding: 0.5rem;
+	margin: 0.5rem 0;
+}
+
+.md-typeset .doc-contents {
+	margin-left: 1rem;
+}
+
+/* --- コードブロック背景色・文字色カスタマイズ --- */
+
+/* ライトモード用 */
+[data-md-color-scheme="default"] .md-typeset pre code,
+[data-md-color-scheme="default"] .md-typeset .highlight pre,
+[data-md-color-scheme="default"] .md-typeset .highlight code {
+	background: #e0e2e5 !important;
+	color: #2d3748 !important;
+}
+
+/* ダークモード用 */
+[data-md-color-scheme="slate"] .md-typeset pre code,
+[data-md-color-scheme="slate"] .md-typeset .highlight pre,
+[data-md-color-scheme="slate"] .md-typeset .highlight code {
+	background: #23272e !important;
+	color: #e2e8f0 !important;
+}
+
+/* コードブロックの角を丸くする */
+.md-typeset pre,
+.md-typeset pre code,
+.md-typeset .highlight,
+.md-typeset .highlight pre,
+.md-typeset .highlight code {
+	border-radius: 0.6em !important;
+}
