@@ -1,7 +1,7 @@
 from logging import INFO, basicConfig
 
 from robopy.config import RakudaConfig
-from robopy.utils import MetaDataConfig, RakudaExpHandler
+from robopy.utils import H5Handler, MetaDataConfig, RakudaExpHandler
 
 basicConfig(level=INFO)
 
@@ -57,4 +57,13 @@ if __name__ == "__main__":
         ),
         fps=10,
     )
-    handler.record_save(max_frames=100, save_path="test_01")
+    try:
+        action = H5Handler.load_single_array(
+            file_path="./data/test_01/1_1/rakuda_observations.h5", dataset_name="arm/leader"
+        )
+        handler.record_save_with_fixed_leader(
+            max_frame=action.shape[0], leader_action=action, save_path="test_no_tactile"
+        )
+    except Exception as e:
+        handler.close()
+        raise e

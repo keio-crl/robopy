@@ -5,6 +5,7 @@ from time import sleep
 from typing import Any, Dict, Generic, TypeVar
 
 import numpy as np
+from numpy import float32
 from numpy.typing import NDArray
 
 from robopy.robots.common.composed import ComposedRobot
@@ -149,6 +150,78 @@ class ExpHandler(ABC, Generic[ObsType, RobotType, ConfigType, WorkerType]):
                     print("Invalid input. Exiting...")
                     self.close()
                     return
+        except Exception as e:
+            self.close()
+            raise RuntimeError(f"Failed to record from robot: {e}")
+        except KeyboardInterrupt:
+            print("Recording stopped by user...")
+            sleep(0.5)
+            self.close()
+
+    def record_save_with_fixed_leader(
+        self,
+        max_frame: int,
+        leader_action: NDArray[float32],
+        save_path: str,
+        save_gif: bool = True,
+    ) -> None:
+        """Record and save data with fixed leader action."""
+        try:
+            print("Starting recording with fixed leader action...")
+            if not self.robot.is_connected:
+                self.robot.connect()
+
+            while True:
+                print("Press 'Enter' to start recording with fixed leader action, or 'q' to quit")
+                input_str = input()
+                if input_str.lower() == "q":
+                    print("Exiting...")
+                    self.close()
+                    sleep(0.5)
+                    return
+
+                print("Recording with fixed leader action...")
+
+                obs = self.robot.record_with_fixed_leader(
+                    max_frame=max_frame,
+                    leader_action=leader_action,
+                    fps=self.fps,
+                    teleop_hz=100,
+                    max_processing_time_ms=40,
+                )
+
+                print(
+                    "Recording finished. print 1~9 to save data,",
+                    " or 'e' to record again",
+                )
+                input_str = input()
+
+                # handle user input
+                if input_str.lower() == "e":
+                    print("Recording again...")
+                    continue
+                # save data
+                elif input_str in [str(i) for i in range(1, 10)]:
+                    save_dir = os.path.join("data", f"{save_path}", f"{input_str}")
+                    count = 1
+                    unique_save_dir = save_dir + f"_{count}"
+                    while os.path.exists(unique_save_dir):
+                        unique_save_dir = f"{save_dir}_{count}"
+                        count += 1
+                    os.makedirs(unique_save_dir)
+
+                    self.save_worker.save_all_obs(obs, unique_save_dir, save_gif)
+
+                    # Collect data shapes for metadata
+                    data_shape = self._extract_data_shapes(obs)
+
+                    self.save_metadata(unique_save_dir, data_shape)
+                # disconnect and exit
+                else:
+                    print("Invalid input. Exiting...")
+                    self.close()
+                    return
+
         except Exception as e:
             self.close()
             raise RuntimeError(f"Failed to record from robot: {e}")
