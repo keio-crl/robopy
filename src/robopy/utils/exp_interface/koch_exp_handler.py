@@ -40,7 +40,7 @@ class KochExpHandler(ExpHandler[KochObs]):
             raise RuntimeError(f"Failed to connect to Koch robot: {exc}") from exc
 
     @override
-    def save_metadata(self, save_path: str, data_shape: Dict) -> None:
+    def save_metadata(self, save_path: str, data_shape: Dict | None = None) -> None:
         metadata = {
             "task_details": self.metadata_config.__dict__,
             "data_shape": data_shape,
@@ -51,12 +51,12 @@ class KochExpHandler(ExpHandler[KochObs]):
             json.dump(metadata, fp, indent=2, default=self._json_serializer)
 
     @override
-    def record(self, max_frames: int, is_async: bool) -> KochObs:
+    def record(self, max_frames: int, if_async: bool = True) -> KochObs:
         if max_frames <= 0:
             raise ValueError("max_frames must be greater than 0")
 
         try:
-            obs = self.robot.record_parallel(max_frame=max_frames, fps=self.fps, is_async=is_async)
+            obs = self.robot.record_parallel(max_frame=max_frames, fps=self.fps, is_async=if_async)
         except KeyboardInterrupt as exc:  # pragma: no cover - manual interruption
             sleep(0.5)
             self.robot.disconnect()
@@ -71,9 +71,9 @@ class KochExpHandler(ExpHandler[KochObs]):
         self,
         max_frames: int,
         save_path: str,
+        if_async: bool = True,
         save_gif: bool = True,
         warmup_time: int = 5,
-        is_async: bool = False,
     ) -> None:
         try:
             print("Starting recording...")
@@ -95,7 +95,7 @@ class KochExpHandler(ExpHandler[KochObs]):
                 input()
                 print("Recording...")
 
-                obs = self.record(max_frames=max_frames, is_async=is_async)
+                obs = self.record(max_frames=max_frames, if_async=if_async)
 
                 print("Recording finished. Type 1~9 to save data, or 'e' to record again")
                 input_str = input()
@@ -136,7 +136,7 @@ class KochExpHandler(ExpHandler[KochObs]):
         if not hasattr(config_obj, "__dict__"):
             return str(config_obj)
 
-        result = {}
+        result: Dict[str, object] = {}
         for key, value in config_obj.__dict__.items():
             if value is None:
                 result[key] = None
@@ -190,4 +190,3 @@ class KochExpHandler(ExpHandler[KochObs]):
             return
 
         self.robot.teleoperation(max_seconds=warmup_time)
-

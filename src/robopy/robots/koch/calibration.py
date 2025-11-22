@@ -37,6 +37,8 @@ def apply_drive_mode(position, drive_mode):
 def reset_torque_and_set_mode(arm: Arm):
     """Disables torque and sets the correct operating modes for calibration."""
     bus = arm.motors
+    if bus is None:
+        raise RuntimeError(f"Motors for {arm} are not initialized.")
     all_motor_names = arm.motor_names
 
     # Disable torque for all motors
@@ -61,6 +63,9 @@ def run_arm_calibration(arm: Arm, arm_type: str) -> Dict[str, Tuple[int, bool]]:
     This function determines the homing offset and drive mode for each motor.
     """
     reset_torque_and_set_mode(arm)
+
+    if arm.motors is None:
+        raise RuntimeError(f"Motors for {arm_type} arm are not initialized.")
 
     motor_names = arm.motor_names
     resolutions = [arm.motors.motors[name].resolution for name in motor_names]

@@ -1,7 +1,7 @@
 import json
 import os
 from time import sleep
-from typing import Dict, List, override
+from typing import Any, Dict, List, override
 from venv import logger
 
 from numpy import float32
@@ -72,15 +72,16 @@ class RakudaExpHandler(ExpHandler):
             raise RuntimeError(f"Failed to connect to Rakuda robot: {e}")
 
     @override
-    def save_metadata(self, save_path: str, data_shape: Dict) -> None:
+    def save_metadata(self, save_path: str, data_shape: Dict | None = None) -> None:
         """Save metadata to JSON file with custom serialization for non-JSON objects.
 
         Handles serialization of numpy arrays and dataclass objects by converting
         them to JSON-serializable formats (lists for arrays, dicts for dataclasses).
         """
-        metadata = {}
+        metadata: dict[str, Any] = {}
         metadata["task_details"] = self.metadata_config.__dict__
-        metadata["data_shape"] = data_shape
+        if data_shape:
+            metadata["data_shape"] = data_shape
         metadata["robot_config"] = self._serialize_config(self.robot.config)
 
         with open(os.path.join(save_path, "metadata.json"), "w") as f:
@@ -104,7 +105,7 @@ class RakudaExpHandler(ExpHandler):
         if not hasattr(config_obj, "__dict__"):
             return str(config_obj)
 
-        result = {}
+        result: Dict[str, object] = {}
         for key, value in config_obj.__dict__.items():
             if value is None:
                 result[key] = None
@@ -174,7 +175,7 @@ class RakudaExpHandler(ExpHandler):
                 }
             }
         """
-        data_shape = {}
+        data_shape: Dict[str, Dict] = {}
 
         # Extract arm data shapes
         if obs.arms is not None:
@@ -204,7 +205,7 @@ class RakudaExpHandler(ExpHandler):
         return data_shape
 
     @override
-    def record(self, max_frames: int) -> RakudaObs:
+    def record(self, max_frames: int, if_async: bool = True) -> RakudaObs:
         """record data from Rakuda robot
 
         Args:
@@ -233,6 +234,7 @@ class RakudaExpHandler(ExpHandler):
         self,
         max_frames: int,
         save_path: str,
+        if_async: bool = True,
         save_gif: bool = True,
         warmup_time: int = 5,
     ) -> None:
@@ -242,6 +244,7 @@ class RakudaExpHandler(ExpHandler):
             max_frames (int): maximum number of frames to record
             save_path (str): path to save the recorded data:
             data will be saved to `data/{save_path}`
+            if_async (bool, optional): If use parallel. Defaults to True.
             save_gif (bool, optional): if save gif. Defaults to True.
             warmup_time (int, optional): warm up time before recording. Defaults to 5.
 

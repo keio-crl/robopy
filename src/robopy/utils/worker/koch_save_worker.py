@@ -10,8 +10,8 @@ from typing import Dict, Literal, NamedTuple, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from .save_worker import SaveWorker
 from ..h5_handler import H5Handler
+from .save_worker import SaveWorker
 
 logger = getLogger(__name__)
 
@@ -30,7 +30,12 @@ class KochObs:
 
 class SaveTask(NamedTuple):
     task_type: Literal["hierarchical", "arm", "gif"]
-    data: Dict[str, dict] | tuple[NDArray[np.float32], NDArray[np.float32]] | NDArray[np.float32]
+    data: (
+        Dict[str, dict]
+        | tuple[NDArray[np.float32], NDArray[np.float32]]
+        | NDArray[np.float32]
+        | NDArray[np.uint8]
+    )
     save_path: str
 
 
@@ -170,13 +175,13 @@ class KochSaveWorker(SaveWorker[KochObs]):
 
     def _prepare_koch_obs(
         self, obs: KochObs, save_dir: str
-    ) -> tuple[Dict[str, NDArray[np.float32]], NDArray[np.float32], NDArray[np.float32]]:
+    ) -> tuple[
+        Dict[str, NDArray[np.float32] | NDArray[np.uint8]], NDArray[np.float32], NDArray[np.float32]
+    ]:
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
-        camera_data = {
-            name: frames for name, frames in obs.cameras.items() if frames is not None
-        }
+        camera_data = {name: frames for name, frames in obs.cameras.items() if frames is not None}
         if not camera_data:
             logger.warning("カメラデータが存在しません。")
 
@@ -198,7 +203,7 @@ class KochSaveWorker(SaveWorker[KochObs]):
             frame_data = frame_data.transpose(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
         if frame_data.shape[-1] == 1:
             frame_data = frame_data[..., 0]  # (N, H, W, 1) -> (N, H, W)
-            frame_data = frame_data.astype(np.float32) / max(np.max(frame_data), 1e-6) * 255
+            frame_data = frame_data.astype(np.float32) / max(float(np.max(frame_data)), 1e-6) * 255
         if frame_data.dtype != np.uint8:
             frame_data = np.clip(frame_data, 0, 255).astype(np.uint8)
         imageio.mimsave(path, list(frame_data), fps=self.fps)
@@ -210,7 +215,7 @@ class KochSaveWorker(SaveWorker[KochObs]):
 
     def _build_hierarchical_data(
         self,
-        camera_data: Dict[str, NDArray[np.float32]],
+        camera_data: Dict[str, NDArray[np.float32] | NDArray[np.uint8]],
         leader: NDArray[np.float32],
         follower: NDArray[np.float32],
     ) -> Dict[str, dict]:
@@ -224,5 +229,3 @@ class KochSaveWorker(SaveWorker[KochObs]):
         for name, frames in camera_data.items():
             hierarchical_data["camera"][name] = frames
         return hierarchical_data
-
-
