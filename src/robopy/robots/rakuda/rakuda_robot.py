@@ -28,7 +28,7 @@ from .rakuda_pair_sys import RakudaPairSys
 logger = getLogger(__name__)
 
 
-class RakudaRobot(ComposedRobot):
+class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
     def __init__(self, cfg: RakudaConfig):
         self.config = cfg
         self._pair_sys = RakudaPairSys(cfg)
