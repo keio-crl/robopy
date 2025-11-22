@@ -15,7 +15,7 @@ from .exp_handler import ExpHandler
 from .meta_data_config import MetaDataConfig
 
 
-class RakudaExpHandler(ExpHandler[RakudaObs]):
+class RakudaExpHandler(ExpHandler[RakudaObs, RakudaRobot, RakudaConfig, RakudaSaveWorker]):
     """This class handles the experimental interface for the Rakuda robot.
 
     Sensors:

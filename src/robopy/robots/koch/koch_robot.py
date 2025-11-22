@@ -493,3 +493,16 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
         leader = np.asarray(getattr(arm_data, "leader"), dtype=np.float32)
         follower = np.asarray(getattr(arm_data, "follower"), dtype=np.float32)
         return KochArmObs(leader=leader, follower=follower)
+
+    def record_with_fixed_leader(
+        self,
+        max_frame: int,
+        leader_action: NDArray[np.float32],
+        fps: int = 20,
+        teleop_hz: int = 100,
+        max_processing_time_ms: float = 40,
+    ) -> KochObs:
+        """
+        leaderは提供されたシーケンスを使用して再生し、follower及び他のobsを収集する。
+        """
+        raise NotImplementedError("record_with_fixed_leader is not implemented for KochRobot.")

@@ -12,7 +12,7 @@ from .exp_handler import ExpHandler
 from .meta_data_config import MetaDataConfig
 
 
-class KochExpHandler(ExpHandler[KochObs]):
+class KochExpHandler(ExpHandler[KochObs, KochRobot, KochConfig, KochSaveWorker]):
     """Kochロボットの実験用ハンドラ."""
 
     def __init__(
