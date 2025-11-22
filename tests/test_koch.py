@@ -1,10 +1,11 @@
-import logging
+from logging import INFO, getLogger
 
 from robopy.config import RealsenseCameraConfig
 from robopy.config.robot_config.koch_config import KochConfig, KochSensorConfig
 from robopy.utils import KochExpHandler, MetaDataConfig
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = getLogger(__name__)
+logger.setLevel(level=INFO)
 
 
 def main():

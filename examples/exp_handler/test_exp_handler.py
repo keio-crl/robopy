@@ -1,9 +1,10 @@
-from logging import INFO, basicConfig
+from logging import INFO, getLogger
 
 from robopy.config import RakudaConfig
 from robopy.utils import H5Handler, MetaDataConfig, RakudaExpHandler
 
-basicConfig(level=INFO)
+logger = getLogger(__name__)
+logger.setLevel(INFO)
 
 
 def test_exp_handler_import():
