@@ -98,10 +98,10 @@ try:
     # 接続
     robot.connect()
     print("✅ ロボットに接続しました")
-    
+
     print("🎮 テレオペレーションを開始します...")
     robot.teleoperation()
-    
+
 finally:
     # 切断
     robot.disconnect()

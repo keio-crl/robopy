@@ -99,11 +99,11 @@ try:
     # 画像取得
     image = camera.capture()
     print(f"画像サイズ: {image.shape}")
-    
+
     # 接続状態確認
     if camera.is_connected:
         print("✅ カメラは接続されています")
-    
+
 finally:
     camera.disconnect()
 ```
@@ -130,7 +130,7 @@ try:
     # 画像取得
     image = camera.capture()
     print(f"画像サイズ: {image.shape}")
-    
+
 finally:
     camera.disconnect()
 ```
@@ -218,15 +218,15 @@ import cv2
 def test_webcam(device_id=0):
     """Webカメラのテスト"""
     cap = cv2.VideoCapture(device_id)
-    
+
     if not cap.isOpened():
         print(f"❌ カメラ {device_id} を開けませんでした")
         return False
-    
+
     # テスト画像の取得
     ret, frame = cap.read()
     cap.release()
-    
+
     if ret:
         print(f"✅ カメラ {device_id} は正常に動作します")
         print(f"   解像度: {frame.shape[:2]}")

@@ -26,7 +26,7 @@ from .save_worker import SaveWorker
 
 logger = getLogger(__name__)
 
-consle = Console()
+console = Console()
 
 
 class SaveTask(NamedTuple):
@@ -499,7 +499,7 @@ class RakudaSaveWorker(SaveWorker):
             table.add_row(f"Camera: {name}", str(data.shape))
         for name, data in tactile_data.items():
             table.add_row(f"Tactile Sensor: {name}", str(data.shape))
-        consle.print(table)
+        console.print(table)
 
         if not os.path.exists(save_path):
             os.makedirs(save_path)

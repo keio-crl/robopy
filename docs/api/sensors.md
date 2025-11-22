@@ -105,7 +105,7 @@ try:
     # 画像キャプチャ
     image = camera.capture()
     print(f"キャプチャした画像サイズ: {image.shape}")
-    
+
 finally:
     camera.disconnect()
 ```
@@ -123,7 +123,7 @@ try:
     # タクタイルデータの取得
     tactile_data = sensor.capture()
     print(f"タクタイルデータサイズ: {tactile_data.shape}")
-    
+
 finally:
     sensor.disconnect()
 ```

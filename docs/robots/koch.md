@@ -57,10 +57,10 @@ robot = KochRobot(config)
 try:
     # 接続
     robot.connect()
-    
+
     # テレオペレーション（10秒間）
     robot.teleoperation(duration=10)
-    
+
 finally:
     robot.disconnect()
 ```

@@ -46,13 +46,13 @@ robot = RakudaRobot(config)
 try:
     # 接続
     robot.connect()
-    
+
     # テレオペレーション（10秒間）
     robot.teleoperation(duration=10)
-    
+
     # データ記録
     obs = robot.record_parallel(max_frame=500, fps=30)
-    
+
 finally:
     robot.disconnect()
 ```
@@ -71,7 +71,7 @@ obs = robot.record(max_frame=100, fps=5)
 ```python
 # 並列記録（高fps対応）
 obs = robot.record_parallel(
-    max_frame=1000, 
+    max_frame=1000,
     fps=20,
     max_processing_time_ms=25.0
 )
