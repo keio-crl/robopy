@@ -29,7 +29,7 @@ from .koch_pair_sys import KochPairSys
 logger = getLogger(__name__)
 
 
-class KochRobot(ComposedRobot):
+class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
     def __init__(self, cfg: KochConfig) -> None:
         super().__init__()
         self.config = self._init_config(cfg)
@@ -274,6 +274,22 @@ class KochRobot(ComposedRobot):
                 camera_obs_np[cam_name] = None
 
         return KochObs(arms=arms, cameras=camera_obs_np)
+
+    def record_with_fixed_leader(
+        self,
+        max_frame: int,
+        leader_action: NDArray[np.float32],
+        fps: int = 20,
+        teleop_hz: int = 100,
+        max_processing_time_ms: float = 40,
+    ) -> KochObs:
+        """Placeholder for future fixed-leader recording support.
+
+        Currently KochRobot does not implement this feature. This method
+        exists to satisfy the ComposedRobot protocol and will be
+        implemented when Koch supports fixed-leader playback.
+        """
+        raise NotImplementedError("record_with_fixed_leader is not implemented for KochRobot yet.")
 
     @override
     def get_observation(self) -> KochObs:

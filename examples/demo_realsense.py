@@ -13,8 +13,8 @@ from robopy.config.sensor_config.visual_config.camera_config import RealsenseCam
 from robopy.sensors.visual.realsense_camera import RealsenseCamera
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def simulate_main_thread_work():

@@ -67,6 +67,36 @@ class RakudaExpHandler(ExpHandler[RakudaObs, RakudaRobot, RakudaConfig, RakudaSa
         except Exception as e:
             raise RuntimeError(f"Failed to connect to Rakuda robot: {e}")
 
+    @override
+    def record(self, max_frames: int, if_async: bool = True) -> RakudaObs:
+        """record data from Rakuda robot
+
+        Args:
+            max_frames (int): maximum number of frames to record
+            if_async (bool, optional): If use parallel. Defaults to True.
+
+        Raises:
+            RuntimeError: failed to record from Rakuda robot
+
+        Returns:
+            RakudaObs: recorded observation
+        """
+        try:
+            obs = self.robot.record_parallel(max_frame=max_frames, fps=self.fps)
+        except Exception as e:
+            raise RuntimeError(f"Failed to record from Rakuda robot: {e}")
+        except KeyboardInterrupt:
+            logger.info("Recording stopped by user...")
+            sleep(0.5)
+            self.close()
+            raise RuntimeError("Recording stopped by user")
+        return obs
+
+    @override
+    def send(self, max_frame: int, fps: int, leader_action: NDArray[float32]) -> None:
+        """send leader action to Rakuda robot"""
+        self.robot.send(max_frame, fps, leader_action)
+
     @property
     @override
     def robot(self) -> RakudaRobot:
@@ -81,6 +111,32 @@ class RakudaExpHandler(ExpHandler[RakudaObs, RakudaRobot, RakudaConfig, RakudaSa
     @override
     def config(self) -> RakudaConfig:
         return self._robot.config
+
+    def _init_config(self, rakuda_config: RakudaConfig) -> RakudaConfig:
+        leader_port_num = rakuda_config.leader_port
+        follower_port_num = rakuda_config.follower_port
+        config: RakudaConfig = rakuda_config
+        cameras: List[CameraParams] = [
+            CameraParams(
+                name="main",
+                width=640,
+                height=480,
+                fps=30,
+            )
+        ]
+        if config.sensors is None:
+            config = RakudaConfig(
+                leader_port=leader_port_num,
+                follower_port=follower_port_num,
+                sensors=RakudaSensorParams(cameras=cameras, tactile=[]),
+            )
+        else:
+            if len(config.sensors.cameras) == 0:
+                config.sensors.cameras = cameras  # default camera
+            if len(config.sensors.tactile) == 0:
+                config.sensors.tactile = []  # default no tactile
+
+        return config
 
     @override
     def _extract_data_shapes(self, obs: RakudaObs) -> dict:
@@ -132,59 +188,3 @@ class RakudaExpHandler(ExpHandler[RakudaObs, RakudaRobot, RakudaConfig, RakudaSa
                         data_shape["sensors"]["tactile"][tactile_name] = list(tactile_data.shape)
 
         return data_shape
-
-    @override
-    def record(self, max_frames: int, if_async: bool = True) -> RakudaObs:
-        """record data from Rakuda robot
-
-        Args:
-            max_frames (int): maximum number of frames to record
-            if_async (bool, optional): If use parallel. Defaults to True.
-
-        Raises:
-            RuntimeError: failed to record from Rakuda robot
-
-        Returns:
-            RakudaObs: recorded observation
-        """
-        try:
-            obs = self.robot.record_parallel(max_frame=max_frames, fps=self.fps)
-        except Exception as e:
-            raise RuntimeError(f"Failed to record from Rakuda robot: {e}")
-        except KeyboardInterrupt:
-            logger.info("Recording stopped by user...")
-            sleep(0.5)
-            self.close()
-            raise RuntimeError("Recording stopped by user")
-        return obs
-
-    def _init_config(self, rakuda_config: RakudaConfig) -> RakudaConfig:
-        leader_port_num = rakuda_config.leader_port
-        follower_port_num = rakuda_config.follower_port
-        config: RakudaConfig = rakuda_config
-        cameras: List[CameraParams] = [
-            CameraParams(
-                name="main",
-                width=640,
-                height=480,
-                fps=30,
-            )
-        ]
-        if config.sensors is None:
-            config = RakudaConfig(
-                leader_port=leader_port_num,
-                follower_port=follower_port_num,
-                sensors=RakudaSensorParams(cameras=cameras, tactile=[]),
-            )
-        else:
-            if len(config.sensors.cameras) == 0:
-                config.sensors.cameras = cameras  # default camera
-            if len(config.sensors.tactile) == 0:
-                config.sensors.tactile = []  # default no tactile
-
-        return config
-
-    @override
-    def send(self, max_frame: int, fps: int, leader_action: NDArray[float32]) -> None:
-        """send leader action to Rakuda robot"""
-        self.robot.send(max_frame, fps, leader_action)
