@@ -1,5 +1,8 @@
 from typing import Generic, Protocol, TypeVar
 
+import numpy as np
+from numpy.typing import NDArray
+
 S = TypeVar("S", covariant=True)
 R = TypeVar("R", covariant=True)
 Obs = TypeVar("Obs", covariant=True)
@@ -28,3 +31,12 @@ class ComposedRobot(Protocol, Generic[R, S, Obs]):
     def connect(self) -> None: ...
 
     def disconnect(self) -> None: ...
+
+    def record_with_fixed_leader(
+        self,
+        max_frame: int,
+        leader_action: NDArray[np.float32],
+        fps: int = 20,
+        teleop_hz: int = 100,
+        max_processing_time_ms: float = 40,
+    ) -> Obs: ...
