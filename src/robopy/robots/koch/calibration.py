@@ -3,6 +3,7 @@
 from typing import Dict, List, Tuple
 
 import numpy as np
+from numpy.typing import NDArray
 
 from robopy.motor.control_table import XControlTable
 from robopy.robots.common.arm import Arm
@@ -16,25 +17,25 @@ ZERO_POSITION_DEGREE = 0
 ROTATED_POSITION_DEGREE = 90
 
 
-def convert_degrees_to_steps(degrees: float, resolutions: List[int]) -> np.ndarray:
+def convert_degrees_to_steps(degrees: float, resolutions: List[int]) -> NDArray[np.int_]:
     """Converts degrees to motor steps based on motor resolutions."""
     steps = np.array(degrees) / 180.0 * np.array(resolutions) / 2.0
     return steps.astype(int)
 
 
-def assert_drive_mode(drive_mode):
+def assert_drive_mode(drive_mode: NDArray[np.int_]) -> None:
     if not np.all(np.isin(drive_mode, [0, 1])):
         raise ValueError(f"`drive_mode` contains values other than 0 or 1: ({drive_mode})")
 
 
-def apply_drive_mode(position, drive_mode):
+def apply_drive_mode(position: NDArray[np.int_], drive_mode: NDArray[np.int_]) -> NDArray[np.int_]:
     assert_drive_mode(drive_mode)
     signed_drive_mode = -(drive_mode * 2 - 1)
     position *= signed_drive_mode
     return position
 
 
-def reset_torque_and_set_mode(arm: Arm):
+def reset_torque_and_set_mode(arm: Arm) -> None:
     """Disables torque and sets the correct operating modes for calibration."""
     bus = arm.motors
     if bus is None:

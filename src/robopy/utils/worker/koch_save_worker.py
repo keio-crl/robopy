@@ -8,7 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..h5_handler import H5Handler
-from .save_worker import SaveTask, SaveWorker
+from .save_worker import HierarchicalTaskData, SaveTask, SaveWorker
 
 logger = getLogger(__name__)
 
@@ -32,10 +32,10 @@ class KochSaveWorker(SaveWorker[KochObs]):
         super().__init__(worker_num=worker_num)
         self.fps = fps
 
-    def _process_task(self, task: SaveTask) -> Future | None:
+    def _process_task(self, task: SaveTask) -> Future[None] | None:
         match task.task_type:
             case "hierarchical":
-                data = cast(Dict[str, dict], task.data)
+                data = cast(HierarchicalTaskData, task.data)
                 return self._executor.submit(
                     self._save_hierarchical_h5,
                     data,
@@ -147,7 +147,7 @@ class KochSaveWorker(SaveWorker[KochObs]):
         imageio.mimsave(path, list(frame_data), fps=self.fps)
         logger.info("GIFを %s に保存しました。", path)
 
-    def _save_hierarchical_h5(self, data_dict: Dict[str, dict], file_path: str) -> None:
+    def _save_hierarchical_h5(self, data_dict: HierarchicalTaskData, file_path: str) -> None:
         H5Handler.save_hierarchical(data_dict, file_path, compress=True)
         logger.info("観測データをHDF5に保存しました: %s", file_path)
 
@@ -156,8 +156,8 @@ class KochSaveWorker(SaveWorker[KochObs]):
         camera_data: Dict[str, NDArray[np.float32] | NDArray[np.uint8]],
         leader: NDArray[np.float32],
         follower: NDArray[np.float32],
-    ) -> Dict[str, dict]:
-        hierarchical_data: Dict[str, dict] = {
+    ) -> HierarchicalTaskData:
+        hierarchical_data: HierarchicalTaskData = {
             "arm": {
                 "leader": leader,
                 "follower": follower,

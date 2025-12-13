@@ -1,9 +1,10 @@
 import queue
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from collections import defaultdict
+from concurrent.futures import Future, ThreadPoolExecutor
 from logging import getLogger
-from typing import DefaultDict, Dict, List, override
+from typing import Dict, List, override
 
 import numpy as np
 from numpy.typing import NDArray
@@ -71,10 +72,10 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
         if max_frame <= 0:
             raise ValueError("max_frame must be greater than 0.")
 
-        leader_obs = []
-        follower_obs = []
-        camera_obs: Dict[str, List] = DefaultDict(list)
-        tactile_obs: Dict[str, List] = DefaultDict(list)
+        leader_obs: List[NDArray[np.float32]] = []
+        follower_obs: List[NDArray[np.float32]] = []
+        camera_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
+        tactile_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
 
         get_obs_interval = 1.0 / fps
         frame_count = 0
@@ -154,7 +155,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
         arm_obs_queue: queue.Queue[RakudaArmObs] = queue.Queue(maxsize=teleop_hz * 2)
         stop_event = threading.Event()
 
-        def teleop_worker():
+        def teleop_worker() -> None:
             interval = 1.0 / teleop_hz
             while not stop_event.is_set():
                 start_time = time.perf_counter()
@@ -171,10 +172,10 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
         teleop_thread = threading.Thread(target=teleop_worker, daemon=True)
         teleop_thread.start()
 
-        leader_obs = []
-        follower_obs = []
-        camera_obs: Dict[str, List] = DefaultDict(list)
-        tactile_obs: Dict[str, List] = DefaultDict(list)
+        leader_obs: List[NDArray[np.float32]] = []
+        follower_obs: List[NDArray[np.float32]] = []
+        camera_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
+        tactile_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
 
         get_obs_interval = 1.0 / fps
         max_processing_time = max_processing_time_ms / 1000.0
@@ -207,7 +208,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                 try:
                     with ThreadPoolExecutor(max_workers=4) as executor:
                         # Camera futures
-                        camera_futures = {}
+                        camera_futures: Dict[str, Future[NDArray[np.float32] | None]] = {}
                         if self._sensors.cameras:
                             for cam in self._sensors.cameras:
                                 if cam.is_connected:
@@ -216,7 +217,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                                     )
 
                         # Tactile futures
-                        tactile_futures = {}
+                        tactile_futures: Dict[str, Future[NDArray[np.float32] | None]] = {}
                         if self._sensors.tactile:
                             for tac in self._sensors.tactile:
                                 if tac.is_connected:
@@ -226,7 +227,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
 
                         timeout = max_processing_time * 0.5
 
-                        camera_data: Dict[str, NDArray | None] = {}
+                        camera_data: Dict[str, NDArray[np.float32] | None] = {}
                         for cam_name, future in camera_futures.items():
                             try:
                                 camera_data[cam_name] = future.result(timeout=timeout / 2)
@@ -236,7 +237,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                                 )
                                 camera_data[cam_name] = None
 
-                        tactile_data: Dict[str, NDArray | None] = {}
+                        tactile_data: Dict[str, NDArray[np.float32] | None] = {}
                         for tac_name, future in tactile_futures.items():
                             try:
                                 tactile_data[tac_name] = future.result(timeout=timeout / 2)
@@ -750,7 +751,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
     def robot_system(self) -> RakudaPairSys:
         return self._pair_sys
 
-    def __del__(self):
+    def __del__(self) -> None:
         try:
             self.disconnect()
         except Exception:

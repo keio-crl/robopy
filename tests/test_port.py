@@ -7,7 +7,7 @@ logger = getLogger(__name__)
 logger.setLevel(level=INFO)
 
 
-def main():
+def main() -> None:
     try:
         rakuda_config = RakudaConfig(
             leader_port="/dev/ttyUSB0",

@@ -3,7 +3,7 @@ from abc import abstractmethod
 from robopy.sensors.common.sensor import Sensor
 
 
-class Camera(Sensor):
+class Camera[T](Sensor[T]):
     """Abstract Base Class for Camera"""
 
     @abstractmethod

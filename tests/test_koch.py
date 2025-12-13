@@ -8,7 +8,7 @@ logger = getLogger(__name__)
 logger.setLevel(level=INFO)
 
 
-def main():
+def main() -> None:
     try:
         koch_config = KochConfig(
             leader_port="/dev/ttyACM1",
