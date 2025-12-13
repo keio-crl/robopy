@@ -2,8 +2,13 @@ name: Pre-commit
 
 on:
   push:
-    branches: [main, master, dev, develop]
+    branches: [main]
   pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   pre-commit:
