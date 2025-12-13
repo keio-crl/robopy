@@ -1,5 +1,5 @@
 from time import sleep
-from typing import Dict, override
+from typing import Any, Dict, override
 
 import numpy as np
 from numpy.typing import NDArray
@@ -71,8 +71,8 @@ class KochExpHandler(ExpHandler[KochObs, KochRobot, KochConfig, KochSaveWorker])
         self.robot.send(max_frame=max_frame, fps=fps, leader_action=leader_action)
 
     @override
-    def _extract_data_shapes(self, obs: KochObs) -> dict:
-        data_shape: Dict[str, Dict] = {}
+    def _extract_data_shapes(self, obs: KochObs) -> dict[str, Any]:
+        data_shape: Dict[str, Dict[str, Any]] = {}
         data_shape["arms"] = {
             "leader": list(obs.arms.leader.shape),
             "follower": list(obs.arms.follower.shape),

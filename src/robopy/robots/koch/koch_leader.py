@@ -48,14 +48,14 @@ class KochLeader(Arm):
     def is_connected(self) -> bool:
         return self._is_connected
 
-    def torque_enable(self):
+    def torque_enable(self) -> None:
         if self._motors is None:
             logger.warning("Leader motors are not initialized. Cannot enable torque.")
             return
         self._motors.write(XControlTable.TORQUE_ENABLE, "gripper", 1)
         self._motors.write(XControlTable.GOAL_POSITION, "gripper", 148.00)
 
-    def torque_disable(self):
+    def torque_disable(self) -> None:
         if self._motors is None:
             return
         self._motors.write(XControlTable.TORQUE_ENABLE, "gripper", 0)

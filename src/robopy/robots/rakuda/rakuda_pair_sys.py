@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 class RakudaPairSys(Robot):
     """Class representing the Rakuda robotic system with both leader and follower arms."""
 
-    def __init__(self, cfg: RakudaConfig):
+    def __init__(self, cfg: RakudaConfig) -> None:
         self.config = cfg
         self._leader = RakudaLeader(cfg)
         self._follower = RakudaFollower(cfg)
@@ -93,7 +93,7 @@ class RakudaPairSys(Robot):
                 # Get current positions from leader arm
                 leader_positions = self.get_leader_action()
                 # Map leader positions to follower positions
-                follower_positions = {}
+                follower_positions: Dict[str, float] = {}
                 for leader_name, position in leader_positions.items():
                     follower_name = self._motor_mapping.get(leader_name)
                     if follower_name:

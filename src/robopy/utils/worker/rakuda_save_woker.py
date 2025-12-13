@@ -19,7 +19,7 @@ from robopy.config.robot_config.rakuda_config import RakudaObs
 from robopy.utils.blosc_handler import BLOSCHandler
 from robopy.utils.h5_handler import H5Handler
 
-from .save_worker import SaveTask, SaveWorker
+from .save_worker import HierarchicalTaskData, SaveTask, SaveWorker
 
 logger = getLogger(__name__)
 
@@ -32,7 +32,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
         self.cfg = cfg
         self.fps = fps
 
-    def _process_task(self, task: SaveTask) -> Future | None:
+    def _process_task(self, task: SaveTask) -> Future[None] | None:
         match task.task_type:
             case "camera":
                 camera_data = cast(Dict[str, NDArray[np.float32]], task.data)
@@ -81,7 +81,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
                 )
 
             case "hierarchical":
-                hierarchical_data = cast(Dict[str, dict], task.data)
+                hierarchical_data = cast(HierarchicalTaskData, task.data)
                 logger.debug(f"Processing hierarchical save task to {task.save_path}")
                 return self._executor.submit(
                     self._save_hierarchical_h5,
@@ -222,12 +222,16 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
         logger.info(f"Animation saved to {save_dir}")
 
     @staticmethod
-    def make_rakuda_arm_obs(leader: np.ndarray, follower: np.ndarray, save_path: str) -> None:
+    def make_rakuda_arm_obs(
+        leader: NDArray[np.float32],
+        follower: NDArray[np.float32],
+        save_path: str,
+    ) -> None:
         """Save arm observation data as a plot image.
 
         Args:
-            leader (np.ndarray): Leader arm positions. Shape: (frames, joints)
-            follower (np.ndarray): Follower arm positions. Shape: (frames, joints)
+            leader (NDArray[np.float32]): Leader arm positions. Shape: (frames, joints)
+            follower (NDArray[np.float32]): Follower arm positions. Shape: (frames, joints)
             save_path (str): Path to save the plot image.
 
         Raises:
@@ -324,11 +328,11 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
             data = np.ascontiguousarray(data)
         BLOSCHandler.save(data, file_path)
 
-    def _save_hierarchical_h5(self, data_dict: Dict[str, dict], file_path: str) -> None:
+    def _save_hierarchical_h5(self, data_dict: HierarchicalTaskData, file_path: str) -> None:
         """Save hierarchical data structure to HDF5 file.
 
         Args:
-            data_dict (Dict[str, dict]): Hierarchical dictionary of data.
+            data_dict (HierarchicalTaskData): Hierarchical dictionary of data.
             file_path (str): Path to save the HDF5 file.
         """
         H5Handler.save_hierarchical(data_dict, file_path, compress=True)
@@ -340,7 +344,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
         tactile_data: Dict[str, NDArray[np.float32]],
         leader: NDArray[np.float32],
         follower: NDArray[np.float32],
-    ) -> Dict[str, dict]:
+    ) -> HierarchicalTaskData:
         """Build hierarchical data structure for HDF5 storage.
 
         Args:
@@ -350,9 +354,9 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
             follower (NDArray[np.float32]): Follower arm positions.
 
         Returns:
-            Dict[str, dict]: Hierarchical data structure.
+            HierarchicalTaskData: Hierarchical data structure.
         """
-        hierarchical_data: Dict[str, dict] = {
+        hierarchical_data: HierarchicalTaskData = {
             "camera": {},
             "tactile": {},
             "arm": {

@@ -191,7 +191,7 @@ class H5Handler:
                 info[name] = {
                     "shape": obj.shape,
                     "dtype": str(obj.dtype),
-                    "size_bytes": obj.nbytes,
+                    "size_bytes": obj.nbytes,  # type: ignore[attr-defined]
                 }
 
         with h5py.File(file_path, "r") as f:

@@ -18,7 +18,7 @@ from .camera import Camera
 from .utils import find_camera_indices
 
 
-class WebCamera(Camera):
+class WebCamera(Camera[NDArray[np.float32]]):
     """Implementation class for cameras using OpenCV"""
 
     def __init__(

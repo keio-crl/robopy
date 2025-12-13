@@ -26,6 +26,8 @@ dev = [
     "ruff>=0.12.11",
     "pre-commit>=4.0.1",
     "codespell>=2.2.6",
+    "types-pyserial>=3.5.0.20251001",
+    "h5py-stubs>=0.1.2",
 ]
 
 docs = [
@@ -48,7 +50,9 @@ python_version = "3.12"
 ignore_missing_imports = true
 check_untyped_defs = true
 files = ["src", "tests"]
-
+plugins = [
+    "numpy.typing.mypy_plugin",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["src", "tests"]

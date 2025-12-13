@@ -1,5 +1,5 @@
 from time import sleep
-from typing import Dict, List, override
+from typing import Any, Dict, List, override
 from venv import logger
 
 from numpy import float32
@@ -139,7 +139,7 @@ class RakudaExpHandler(ExpHandler[RakudaObs, RakudaRobot, RakudaConfig, RakudaSa
         return config
 
     @override
-    def _extract_data_shapes(self, obs: RakudaObs) -> dict:
+    def _extract_data_shapes(self, obs: RakudaObs) -> dict[str, Any]:
         """Extract data shapes from observation for metadata.
 
         Collects shapes from:
@@ -160,7 +160,7 @@ class RakudaExpHandler(ExpHandler[RakudaObs, RakudaRobot, RakudaConfig, RakudaSa
                 }
             }
         """
-        data_shape: Dict[str, Dict] = {}
+        data_shape: Dict[str, Dict[str, Any]] = {}
 
         # Extract arm data shapes
         if obs.arms is not None:

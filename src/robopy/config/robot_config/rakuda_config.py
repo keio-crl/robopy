@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
@@ -16,7 +14,7 @@ class RakudaConfig:
 
     leader_port: str
     follower_port: str
-    sensors: RakudaSensorParams | None = field(default=None)
+    sensors: "RakudaSensorParams | None" = field(default=None)
     slow_mode: bool = False
 
 

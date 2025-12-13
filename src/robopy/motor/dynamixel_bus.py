@@ -8,10 +8,12 @@ integration into larger robotic systems.
 
 import logging
 from enum import Enum
-from typing import Any, Dict, List, Tuple
+from types import TracebackType
+from typing import Any, Dict, List, Tuple, Type
 
 import dynamixel_sdk as dxl
 import numpy as np
+from numpy.typing import NDArray
 
 from .control_table import ControlItem, XControlTable, cast_value, get_model_definition
 
@@ -27,7 +29,7 @@ NUM_WRITE_RETRY = 2  # 10から2に削減 (パフォーマンス向上のため)
 class DynamixelCommError(ConnectionError):
     """Exception representing a Dynamixel communication error."""
 
-    def __init__(self, message: str, dxl_comm_result_code: int):
+    def __init__(self, message: str, dxl_comm_result_code: int) -> None:
         packet_handler = dxl.PacketHandler(PROTOCOL_VERSION)
         dxl_comm_result = packet_handler.getTxRxResult(dxl_comm_result_code)
         super().__init__(f"{message}\n[CommResult: {dxl_comm_result}]")
@@ -36,7 +38,7 @@ class DynamixelCommError(ConnectionError):
 class DynamixelMotor:
     """Class that holds the definition and state of an individual motor."""
 
-    def __init__(self, motor_id: int, motor_name: str, model_name: str):
+    def __init__(self, motor_id: int, motor_name: str, model_name: str) -> None:
         self.id = motor_id
         self.motor_name = motor_name
         self.model_name = model_name
@@ -53,7 +55,12 @@ class DynamixelBus:
     Handles synchronized reading and writing, calibration, and error handling.
     """
 
-    def __init__(self, port: str, motors: Dict[str, DynamixelMotor], need_calibration: bool = True):
+    def __init__(
+        self,
+        port: str,
+        motors: Dict[str, DynamixelMotor],
+        need_calibration: bool = True,
+    ) -> None:
         self.port_handler = dxl.PortHandler(port)
         self.packet_handler = dxl.PacketHandler(PROTOCOL_VERSION)
         self.motors = motors
@@ -73,14 +80,19 @@ class DynamixelBus:
         self.port_handler.closePort()
         logger.info(f"Closed port {self.port_handler.port_name}.")
 
-    def __enter__(self):
+    def __enter__(self) -> "DynamixelBus":
         self.open()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: Type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         self.close()
 
-    def set_calibration(self, calibration_data: Dict[str, Tuple[int, bool]]):
+    def set_calibration(self, calibration_data: Dict[str, Tuple[int, bool]]) -> None:
         """Sets the calibration data for the motors."""
         self.calibration = calibration_data
         logger.info("Calibration data set.")
@@ -200,7 +212,11 @@ class DynamixelBus:
 
         return results
 
-    def _apply_calibration(self, values: np.ndarray, motor_names: List[str]) -> np.ndarray:
+    def _apply_calibration(
+        self,
+        values: NDArray[np.int32],
+        motor_names: List[str],
+    ) -> NDArray[np.float32]:
         """Converts raw motor steps (int32) to calibrated degrees (float32)."""
         values = values.astype(np.int32)
         for i, name in enumerate(motor_names):
@@ -219,7 +235,11 @@ class DynamixelBus:
 
         return float_values
 
-    def _revert_calibration(self, values: np.ndarray, motor_names: List[str]) -> np.ndarray:
+    def _revert_calibration(
+        self,
+        values: NDArray[np.float32],
+        motor_names: List[str],
+    ) -> NDArray[np.int32]:
         """Converts calibrated degrees (float32) back to raw motor steps (int32)."""
         # Convert from degrees to steps
         step_values = values.astype(np.float32)

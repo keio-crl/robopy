@@ -14,9 +14,9 @@ from robopy.utils.worker.save_worker import SaveWorker
 from .meta_data_config import MetaDataConfig
 
 ObsType = TypeVar("ObsType")
-RobotType = TypeVar("RobotType", bound=ComposedRobot)
+RobotType = TypeVar("RobotType", bound=ComposedRobot[Any])
 ConfigType = TypeVar("ConfigType")
-WorkerType = TypeVar("WorkerType", bound=SaveWorker)
+WorkerType = TypeVar("WorkerType", bound=SaveWorker[Any])
 
 
 class ExpHandler(ABC, Generic[ObsType, RobotType, ConfigType, WorkerType]):
@@ -52,7 +52,7 @@ class ExpHandler(ABC, Generic[ObsType, RobotType, ConfigType, WorkerType]):
         pass
 
     @abstractmethod
-    def _extract_data_shapes(self, obs: ObsType) -> dict:
+    def _extract_data_shapes(self, obs: ObsType) -> dict[str, Any]:
         pass
 
     def close(self) -> None:
@@ -68,7 +68,7 @@ class ExpHandler(ABC, Generic[ObsType, RobotType, ConfigType, WorkerType]):
             except Exception:
                 pass
 
-    def save_metadata(self, save_path: str, data_shape: Dict | None = None) -> None:
+    def save_metadata(self, save_path: str, data_shape: Dict[str, Any] | None = None) -> None:
         """Save metadata to JSON file."""
         metadata: dict[str, Any] = {}
         metadata["task_details"] = self.metadata_config.__dict__
@@ -231,7 +231,7 @@ class ExpHandler(ABC, Generic[ObsType, RobotType, ConfigType, WorkerType]):
             self.close()
 
     @staticmethod
-    def _serialize_config(config_obj: object) -> dict | str:
+    def _serialize_config(config_obj: object) -> dict[str, Any] | str:
         """Convert config object to JSON-serializable dictionary."""
         if not hasattr(config_obj, "__dict__"):
             return str(config_obj)

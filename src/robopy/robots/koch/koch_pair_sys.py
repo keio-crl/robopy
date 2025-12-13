@@ -4,7 +4,7 @@ import logging
 import os
 import pickle
 import time
-from typing import Dict, Tuple
+from typing import Any, Dict, Tuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 class KochPairSys(Robot):
     """Class representing a pair of Koch robotic arms: Leader and Follower"""
 
-    def __init__(self, cfg: KochConfig):
+    def __init__(self, cfg: KochConfig) -> None:
         motor_ids = list(range(1, 13))
         self._leader: KochLeader | None
         if cfg.leader_port is not None:
@@ -190,7 +190,7 @@ class KochPairSys(Robot):
                 )
 
                 # Map leader positions to follower using explicit mapping
-                follower_goals = {}
+                follower_goals: Dict[str, Any] = {}
                 for leader_motor, leader_pos in leader_positions.items():
                     if leader_motor in self._motor_mapping:
                         follower_motor = self._motor_mapping[leader_motor]
@@ -252,7 +252,7 @@ class KochPairSys(Robot):
             return self.get_observation(leader_obs=leader_positions)
         return None
 
-    def get_leader_action(self) -> dict:
+    def get_leader_action(self) -> dict[str, NDArray[np.float32]]:
         """Get the current action (positions) from the leader arm."""
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
@@ -267,7 +267,7 @@ class KochPairSys(Robot):
         )
         return leader_positions
 
-    def send_follower_action(self, action: dict) -> None:
+    def send_follower_action(self, action: dict[str, float]) -> None:
         """Send action to the follower arm only."""
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
