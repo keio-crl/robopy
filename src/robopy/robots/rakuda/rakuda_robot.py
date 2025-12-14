@@ -378,8 +378,8 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
 
         leader_obs = []
         follower_obs = []
-        camera_obs: Dict[str, List] = DefaultDict(list)
-        tactile_obs: Dict[str, List] = DefaultDict(list)
+        camera_obs: Dict[str, List] = defaultdict(list)
+        tactile_obs: Dict[str, List] = defaultdict(list)
 
         get_obs_interval = 1.0 / fps
         max_processing_time = max_processing_time_ms / 1000.0

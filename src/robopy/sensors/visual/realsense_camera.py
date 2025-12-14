@@ -1,3 +1,6 @@
+# pyright: reportAttributeAccessIssue=false
+# realsenseのライブラリに型情報がないので無視する
+
 import logging
 import time
 from datetime import datetime, timezone

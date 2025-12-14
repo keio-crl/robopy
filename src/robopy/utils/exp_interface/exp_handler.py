@@ -14,7 +14,7 @@ from robopy.utils.worker.save_worker import SaveWorker
 from .meta_data_config import MetaDataConfig
 
 ObsType = TypeVar("ObsType")
-RobotType = TypeVar("RobotType", bound=ComposedRobot[Any])
+RobotType = TypeVar("RobotType", bound=ComposedRobot[Any, Any, Any])
 ConfigType = TypeVar("ConfigType")
 WorkerType = TypeVar("WorkerType", bound=SaveWorker[Any])
 
