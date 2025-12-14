@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .blosc_handler import BLOSCHandler
 from .exp_interface.meta_data_config import MetaDataConfig
@@ -9,6 +9,7 @@ from .worker.rakuda_save_woker import RakudaSaveWorker
 from .worker.save_worker import SaveWorker
 
 if TYPE_CHECKING:
+    from .exp_interface.exp_handler import ExpHandler
     from .exp_interface.koch_exp_handler import KochExpHandler
     from .exp_interface.rakuda_exp_handler import RakudaExpHandler
 
@@ -25,7 +26,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> type[ExpHandler[Any, Any, Any, Any]]:
     """Lazy import for exp_interface modules to avoid circular imports."""
     if name == "KochExpHandler":
         from .exp_interface.koch_exp_handler import KochExpHandler

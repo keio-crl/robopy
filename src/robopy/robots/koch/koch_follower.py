@@ -44,10 +44,10 @@ class KochFollower(Arm):
     def is_connected(self) -> bool:
         return self._is_connected
 
-    def torque_enable(self):
+    def torque_enable(self) -> None:
         self._motors.sync_write(XControlTable.TORQUE_ENABLE, {name: 1 for name in self.motor_names})
 
-    def torque_disable(self):
+    def torque_disable(self) -> None:
         self._motors.sync_write(XControlTable.TORQUE_ENABLE, {name: 0 for name in self.motor_names})
 
     def connect(self) -> None:

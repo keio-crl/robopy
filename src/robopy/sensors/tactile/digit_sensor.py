@@ -14,7 +14,7 @@ from ..common.sensor import Sensor
 logger = getLogger(__name__)
 
 
-class DigitSensor(Sensor):
+class DigitSensor(Sensor[NDArray[np.float32]]):
     def __init__(self, config: TactileParams):
         self.config = config
         self.name = config.name
@@ -28,7 +28,7 @@ class DigitSensor(Sensor):
         self.stop_event: Event | None = None
         self.frame_lock: Lock = Lock()
         self.new_frame_event: Event = Event()
-        self.latest_frame: NDArray | None = None
+        self.latest_frame: NDArray[np.float32] | None = None
         self.frame_ready = False  # Flag to track if initial frame is ready
 
     def connect(self) -> None:

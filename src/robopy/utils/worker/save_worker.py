@@ -4,12 +4,13 @@ import threading
 from abc import ABC, abstractmethod
 from concurrent.futures import Future
 from logging import getLogger
-from typing import Any, Generic, NamedTuple, TypeVar
+from typing import Any, Dict, Generic, NamedTuple, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
 
 T = TypeVar("T")
+type HierarchicalTaskData = Dict[str, dict[str, NDArray[np.float32] | NDArray[np.uint8]]]
 
 logger = getLogger(__name__)
 
@@ -31,7 +32,7 @@ class SaveWorker(ABC, Generic[T]):
         self._stop_event = threading.Event()
         self._background_thread = threading.Thread(target=self._background_saver, daemon=False)
         self._background_thread.start()
-        self._futures: list[Future] = []
+        self._futures: list[Future[None]] = []
 
     @abstractmethod
     def save_arm_datas(
@@ -114,14 +115,14 @@ class SaveWorker(ABC, Generic[T]):
         logger.info("Background saver thread finished successfully")
 
     @abstractmethod
-    def _process_task(self, task: SaveTask) -> Future | None:
+    def _process_task(self, task: SaveTask) -> Future[None] | None:
         """Process a single save task.
 
         Args:
             task (SaveTask): The task to process.
 
         Returns:
-            Future | None: The future object representing the asynchronous execution of the task,
-                           or None if no future is created.
+            Future[None] | None: The future object representing the asynchronous
+                                 execution of the task, or None if no future is created.
         """
         pass
