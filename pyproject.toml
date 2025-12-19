@@ -4,17 +4,18 @@ version = "0.2.0"
 description = "A Python library for controlling robots with Dynamixel actuators and Intel RealSense cameras."
 readme = "README.md"
 authors = [{ name = "tetsugo", email = "tetsugou2002@gmail.com" }]
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 
 dependencies = [
     "blosc2>=3.8.0",
     "digit-interface>=0.2.1",
     "dynamixel-sdk>=3.7.31",
     "h5py>=3.15.1",
-    "imageio>=2.37.2",
-    "matplotlib>=3.10.6",
-    "numpy>=2.2.6",
-    "opencv-python>=4.12.0.88",
+    "imageio>=2.37.0",
+    "matplotlib>=3.10.3",
+    "numpy>=1.26.0",
+    "opencv-python>=4.10",
+    "pyyaml>=6.0.2",
     "rich>=14.1.0",
     "tqdm>=4.67.1",
 ]
