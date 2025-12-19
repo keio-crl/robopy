@@ -5,7 +5,7 @@ import logging
 import time
 from datetime import datetime, timezone
 from threading import Event, Lock, Thread
-from typing import Any, Literal, override
+from typing import Any, Literal
 
 import cv2
 import numpy as np
@@ -170,7 +170,6 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
         self._is_connected = False
         logger.info(f"{self.name} disconnected.")
 
-    @override
     def read(self, specific_color: Literal["rgb", "bgr"] | None = None) -> NDArray[np.float32]:
         """Read frames from the camera synchronously (blocking).
 
@@ -206,7 +205,6 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
 
         return color_image
 
-    @override
     def async_read(self, timeout_ms: float = 16) -> NDArray[np.float32]:
         """Read the latest available frame asynchronously (non-blocking).
 

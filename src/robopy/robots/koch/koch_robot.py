@@ -3,7 +3,7 @@ import threading
 import time
 from collections import defaultdict
 from logging import getLogger
-from typing import DefaultDict, Dict, List, override
+from typing import DefaultDict, Dict, List
 
 import numpy as np
 from numpy.typing import NDArray
@@ -38,7 +38,6 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
         self._sensors = self._init_sensors()
         self._cameras: List[WebCamera | RealsenseCamera] = list(self._sensors.cameras or [])
 
-    @override
     def connect(self) -> None:
         try:
             self._robot_system.connect()
@@ -57,14 +56,12 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
                 cam.disconnect()
                 raise
 
-    @override
     def disconnect(self) -> None:
         self._robot_system.disconnect()
         for cam in self._cameras:
             if cam.is_connected:
                 cam.disconnect()
 
-    @override
     def teleoperation(self, max_seconds: float | None = None) -> None:
         """Start teleoperation mode where leader controls follower."""
         if not self.is_connected:
@@ -291,7 +288,6 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
         """
         raise NotImplementedError("record_with_fixed_leader is not implemented for KochRobot yet.")
 
-    @override
     def get_observation(self) -> KochObs:
         if not self.is_connected:
             raise ConnectionError("KochRobot is not connected. Call connect() first.")

@@ -1,5 +1,5 @@
 from time import sleep
-from typing import Any, Dict, override
+from typing import Any, Dict
 
 import numpy as np
 from numpy.typing import NDArray
@@ -36,21 +36,17 @@ class KochExpHandler(ExpHandler[KochObs, KochRobot, KochConfig, KochSaveWorker])
             raise RuntimeError(f"Failed to connect to Koch robot: {exc}") from exc
 
     @property
-    @override
     def robot(self) -> KochRobot:
         return self._robot
 
     @property
-    @override
     def save_worker(self) -> KochSaveWorker:
         return self._save_worker
 
     @property
-    @override
     def config(self) -> KochConfig:
         return self._config
 
-    @override
     def record(self, max_frames: int, if_async: bool = True) -> KochObs:
         if max_frames <= 0:
             raise ValueError("max_frames must be greater than 0")
@@ -66,11 +62,9 @@ class KochExpHandler(ExpHandler[KochObs, KochRobot, KochConfig, KochSaveWorker])
 
         return obs
 
-    @override
     def send(self, max_frame: int, fps: int, leader_action: NDArray[np.float32]) -> None:
         self.robot.send(max_frame=max_frame, fps=fps, leader_action=leader_action)
 
-    @override
     def _extract_data_shapes(self, obs: KochObs) -> dict[str, Any]:
         data_shape: Dict[str, Dict[str, Any]] = {}
         data_shape["arms"] = {
