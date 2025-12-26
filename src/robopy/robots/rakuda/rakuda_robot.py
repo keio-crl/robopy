@@ -4,7 +4,7 @@ import time
 from collections import defaultdict
 from concurrent.futures import Future, ThreadPoolExecutor
 from logging import getLogger
-from typing import Dict, List, override
+from typing import Dict, List
 
 import numpy as np
 from numpy.typing import NDArray
@@ -36,7 +36,6 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
         self._sensor_configs: RakudaSensorConfigs = self._init_config()
         self._sensors: Sensors = self._init_sensors()
 
-    @override
     def connect(self) -> None:
         try:
             self._pair_sys.connect()
@@ -44,7 +43,6 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
             self._pair_sys.disconnect()
             raise e
 
-    @override
     def disconnect(self) -> None:
         self._pair_sys.disconnect()
 
@@ -54,7 +52,6 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
         for tac in self._sensors.tactile or []:
             tac.disconnect()
 
-    @override
     def teleoperation(self, max_seconds: float | None = None) -> None:
         """Start teleoperation for Rakuda robot."""
         if not self.is_connected:
@@ -514,7 +511,6 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
         sensors_obs = RakudaSensorObs(cameras=camera_obs_np, tactile=tactile_obs_np)
         return RakudaObs(arms=arms, sensors=sensors_obs)
 
-    @override
     def get_observation(self) -> RakudaObs:
         """get_observation get the current observation from the robot system and sensors."""
         if not self.is_connected:

@@ -4,13 +4,13 @@ import threading
 from abc import ABC, abstractmethod
 from concurrent.futures import Future
 from logging import getLogger
-from typing import Any, Dict, Generic, NamedTuple, TypeVar
+from typing import Any, Dict, Generic, NamedTuple, TypeAlias, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
 
 T = TypeVar("T")
-type HierarchicalTaskData = Dict[str, dict[str, NDArray[np.float32] | NDArray[np.uint8]]]
+HierarchicalTaskData: TypeAlias = Dict[str, dict[str, NDArray[np.float32] | NDArray[np.uint8]]]
 
 logger = getLogger(__name__)
 
