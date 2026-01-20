@@ -4,7 +4,7 @@ import time
 from collections import defaultdict
 from concurrent.futures import Future, ThreadPoolExecutor
 from logging import getLogger
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List
 
 import numpy as np
 from numpy.typing import NDArray
@@ -36,12 +36,6 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
         self._sensor_configs: RakudaSensorConfigs = self._init_config()
         self._sensors: Sensors = self._init_sensors()
 
-        # Async Control Variables
-        self._command_queue: queue.Queue[NDArray[np.float32]] = queue.Queue()
-        self._control_thread: Optional[threading.Thread] = None
-        self._stop_control_event = threading.Event()
-        self._control_active = False
-
     def connect(self) -> None:
         try:
             self._pair_sys.connect()
@@ -57,152 +51,6 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
 
         for tac in self._sensors.tactile or []:
             tac.disconnect()
-
-    def start_async_control(self, control_hz: int = 100, policy_fps: int = 5) -> None:
-        """
-        Start the asynchronous control loop.
-        The robot will maintain position if the queue is empty,
-        and interpolate/execute actions if the queue has data.
-        """
-        if self._control_active:
-            logger.warning("Async control is already active.")
-            return
-
-        if not self.is_connected:
-            self.connect()
-
-        self._stop_control_event.clear()
-        self._control_active = True
-
-        # 現在の姿勢を初期ターゲットとして取得（安全のため）
-        initial_obs = self._pair_sys.get_observation()
-        initial_pose = initial_obs.leader.copy()
-
-        self._control_thread = threading.Thread(
-            target=self._async_control_worker,
-            args=(control_hz, policy_fps, initial_pose),
-            daemon=True,
-        )
-        self._control_thread.start()
-        logger.info(
-            f"Async control started: Control={control_hz}Hz, Policy={policy_fps}fps"
-        )
-
-    def stop_async_control(self) -> None:
-        """Stop the asynchronous control loop."""
-        if not self._control_active:
-            return
-
-        self._stop_control_event.set()
-        if self._control_thread is not None:
-            self._control_thread.join(timeout=2.0)
-            self._control_thread = None
-
-        self._control_active = False
-        logger.info("Async control stopped.")
-
-    def schedule_action(self, action: NDArray[np.float32]) -> None:
-        """
-        Add a target action (or sequence of actions) to the execution queue.
-        Expected shape: (D,) for single step or (T, D) for chunked actions.
-        """
-        if not self._control_active:
-            raise RuntimeError(
-                "Async control is not running. Call start_async_control() first."
-            )
-
-        if action.ndim == 1:
-            self._command_queue.put(action)
-        elif action.ndim == 2:
-            for i in range(action.shape[0]):
-                self._command_queue.put(action[i])
-        else:
-            raise ValueError(f"Invalid action shape: {action.shape}")
-
-    def wait_until_queue_empty(self, timeout: float | None = None) -> bool:
-        """
-        Wait until all queued actions are executed.
-        Returns True if empty, False if timed out.
-        """
-        # queue.join() blocks until all tasks are marked done,
-        # but here we simplify by just checking size since it's a simple movement consumer
-        start = time.time()
-        while not self._command_queue.empty():
-            if timeout is not None and time.time() - start > timeout:
-                return False
-            time.sleep(0.01)
-        return True
-
-    def _async_control_worker(
-        self, control_hz: int, policy_fps: int, initial_pose: NDArray[np.float32]
-    ) -> None:
-        interval = 1.0 / control_hz
-        steps_per_action = int(control_hz / policy_fps)
-        if steps_per_action < 1:
-            steps_per_action = 1
-
-        current_command = initial_pose
-
-        # State variables for interpolation
-        target_command: Optional[NDArray[np.float32]] = None
-        start_command: Optional[NDArray[np.float32]] = None
-        step_index = 0
-
-        try:
-            while not self._stop_control_event.is_set():
-                loop_start = time.perf_counter()
-
-                # 1. Determine Target
-                if target_command is None:
-                    # Try to fetch next action
-                    try:
-                        # Non-blocking fetch
-                        next_action = self._command_queue.get_nowait()
-
-                        # New interpolation segment starts
-                        start_command = current_command
-                        target_command = next_action
-                        step_index = 0
-
-                    except queue.Empty:
-                        # Queue is empty: Hold position (re-send current command)
-                        target_command = None
-                        pass
-
-                # 2. Compute Command
-                if target_command is not None and start_command is not None:
-                    # Interpolating
-                    step_index += 1
-                    alpha = step_index / steps_per_action
-
-                    if alpha >= 1.0:
-                        # Reached target
-                        cmd_to_send = target_command
-                        current_command = target_command
-                        # Reset for next target
-                        target_command = None
-                        start_command = None
-                    else:
-                        # Linear Interpolation
-                        cmd_to_send = (
-                            1.0 - alpha
-                        ) * start_command + alpha * target_command
-                else:
-                    # Holding
-                    cmd_to_send = current_command
-
-                # 3. Send to Robot
-                self.send_frame_action(cmd_to_send)
-
-                # 4. Sleep to maintain frequency
-                elapsed = time.perf_counter() - loop_start
-                sleep_time = max(0.0, interval - elapsed)
-                time.sleep(sleep_time)
-
-        except Exception as e:
-            logger.error(f"Async control worker crashed: {e}")
-        finally:
-            logger.info("Async control worker finished.")
 
     def teleoperation(self, max_seconds: float | None = None) -> None:
         """Start teleoperation for Rakuda robot."""
@@ -243,7 +91,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
         logger.info(
             f"Starting interpolated policy run: {max_steps} steps @ {policy_fps}Hz policy / {teleop_hz}Hz control"
         )
-
+        
         try:
             # 1. Initial Observation
             obs = self.get_observation()
@@ -256,26 +104,24 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                 # 2. Get Next Target Action from Policy (user callback)
                 # Note: This might take time (inference time)
                 target_action = get_action_fn(obs)
-
+                
                 # Check shape
                 if target_action.shape != current_command.shape:
-                    raise ValueError(
-                        f"Action shape mismatch: expected {current_command.shape}, got {target_action.shape}"
-                    )
+                     raise ValueError(f"Action shape mismatch: expected {current_command.shape}, got {target_action.shape}")
 
                 # 3. Interpolation Loop
                 # Interpolate from `current_command` (last target) to `target_action`
                 start_action = current_command
-
+                
                 for i in range(1, steps_per_action + 1):
                     loop_start = time.perf_counter()
-
+                    
                     alpha = i / steps_per_action
                     # Linear Interpolation
                     interp_cmd = (1.0 - alpha) * start_action + alpha * target_action
-
+                    
                     self.send_frame_action(interp_cmd)
-
+                    
                     # Maintain control frequency
                     elapsed = time.perf_counter() - loop_start
                     sleep_time = max(0.0, interval - elapsed)
@@ -286,12 +132,10 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
 
                 # 4. Get Observation for the next step
                 obs = self.get_observation()
-
+                
                 step_duration = time.perf_counter() - step_start_time
-                logger.debug(
-                    f"Step {step + 1}/{max_steps} finished in {step_duration:.3f}s"
-                )
-
+                logger.debug(f"Step {step+1}/{max_steps} finished in {step_duration:.3f}s")
+                
         except KeyboardInterrupt:
             logger.info("Policy run interrupted by user.")
         except Exception as e:
@@ -349,9 +193,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
         # process observations to numpy arrays
         leader_obs_np = np.array(leader_obs)
         follower_obs_np = np.array(follower_obs)
-        arms: RakudaArmObs = RakudaArmObs(
-            leader=leader_obs_np, follower=follower_obs_np
-        )
+        arms: RakudaArmObs = RakudaArmObs(leader=leader_obs_np, follower=follower_obs_np)
         # process camera observations
         camera_obs_np: Dict[str, NDArray[np.float32] | None] = {}
         for cam_name, frames in camera_obs.items():
@@ -445,9 +287,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                 try:
                     with ThreadPoolExecutor(max_workers=4) as executor:
                         # Camera futures
-                        camera_futures: Dict[
-                            str, Future[NDArray[np.float32] | None]
-                        ] = {}
+                        camera_futures: Dict[str, Future[NDArray[np.float32] | None]] = {}
                         if self._sensors.cameras:
                             for cam in self._sensors.cameras:
                                 if cam.is_connected:
@@ -456,9 +296,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                                     )
 
                         # Tactile futures
-                        tactile_futures: Dict[
-                            str, Future[NDArray[np.float32] | None]
-                        ] = {}
+                        tactile_futures: Dict[str, Future[NDArray[np.float32] | None]] = {}
                         if self._sensors.tactile:
                             for tac in self._sensors.tactile:
                                 if tac.is_connected:
@@ -471,9 +309,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                         camera_data: Dict[str, NDArray[np.float32] | None] = {}
                         for cam_name, future in camera_futures.items():
                             try:
-                                camera_data[cam_name] = future.result(
-                                    timeout=timeout / 2
-                                )
+                                camera_data[cam_name] = future.result(timeout=timeout / 2)
                             except Exception as e:
                                 logger.warning(
                                     f"Camera {cam_name} failed in frame {frame_count}: {e}"
@@ -483,9 +319,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                         tactile_data: Dict[str, NDArray[np.float32] | None] = {}
                         for tac_name, future in tactile_futures.items():
                             try:
-                                tactile_data[tac_name] = future.result(
-                                    timeout=timeout / 2
-                                )
+                                tactile_data[tac_name] = future.result(timeout=timeout / 2)
                             except Exception as e:
                                 logger.warning(
                                     f"Tactile {tac_name} failed in frame {frame_count}: {e}"
@@ -535,16 +369,12 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
             teleop_thread.join(timeout=1.0)
 
         avg_processing_time = total_processing_time / max(1, frame_count) * 1000
-        logger.info(
-            f"Recording completed: {frame_count} frames, {skipped_frames} skipped"
-        )
+        logger.info(f"Recording completed: {frame_count} frames, {skipped_frames} skipped")
         logger.info(f"Average processing time: {avg_processing_time:.1f}ms")
 
         leader_obs_np = np.array(leader_obs)
         follower_obs_np = np.array(follower_obs)
-        arms: RakudaArmObs = RakudaArmObs(
-            leader=leader_obs_np, follower=follower_obs_np
-        )
+        arms: RakudaArmObs = RakudaArmObs(leader=leader_obs_np, follower=follower_obs_np)
 
         camera_obs_np: Dict[str, NDArray[np.float32] | None] = {}
         for cam_name, frames in camera_obs.items():
@@ -583,9 +413,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
             raise ValueError("Length of leader_action must match max_frame.")
 
         # follower_obsを高頻度で取得するためのキュー
-        follower_obs_queue: queue.Queue[NDArray[np.float32]] = queue.Queue(
-            maxsize=teleop_hz * 2
-        )
+        follower_obs_queue: queue.Queue[NDArray[np.float32]] = queue.Queue(maxsize=teleop_hz * 2)
         stop_event = threading.Event()
 
         def control_worker():
@@ -605,9 +433,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                     idx0 = int(np.floor(idx_float))
                     idx1 = min(idx0 + 1, max_frame - 1)
                     alpha = idx_float - idx0
-                    action = (1 - alpha) * leader_action[idx0] + alpha * leader_action[
-                        idx1
-                    ]
+                    action = (1 - alpha) * leader_action[idx0] + alpha * leader_action[idx1]
 
                 # フォロワーに送信
                 self.send_frame_action(action)
@@ -649,9 +475,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                 # 最新のfollower_obsを取得
                 try:
                     while True:
-                        current_follower = follower_obs_queue.get(
-                            timeout=get_obs_interval
-                        )
+                        current_follower = follower_obs_queue.get(timeout=get_obs_interval)
                         while not follower_obs_queue.empty():
                             current_follower = follower_obs_queue.get_nowait()
                         break
@@ -685,9 +509,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                         camera_data: Dict[str, NDArray | None] = {}
                         for cam_name, future in camera_futures.items():
                             try:
-                                camera_data[cam_name] = future.result(
-                                    timeout=timeout / 2
-                                )
+                                camera_data[cam_name] = future.result(timeout=timeout / 2)
                             except Exception as e:
                                 logger.warning(
                                     f"Camera {cam_name} failed in frame {frame_count}: {e}"
@@ -697,9 +519,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                         tactile_data: Dict[str, NDArray | None] = {}
                         for tac_name, future in tactile_futures.items():
                             try:
-                                tactile_data[tac_name] = future.result(
-                                    timeout=timeout / 2
-                                )
+                                tactile_data[tac_name] = future.result(timeout=timeout / 2)
                             except Exception as e:
                                 logger.warning(
                                     f"Tactile {tac_name} failed in frame {frame_count}: {e}"
@@ -750,16 +570,12 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
             control_thread.join(timeout=1.0)
 
         avg_processing_time = total_processing_time / max(1, frame_count) * 1000
-        logger.info(
-            f"Recording completed: {frame_count} frames, {skipped_frames} skipped"
-        )
+        logger.info(f"Recording completed: {frame_count} frames, {skipped_frames} skipped")
         logger.info(f"Average processing time: {avg_processing_time:.1f}ms")
 
         leader_obs_np = np.array(leader_obs)
         follower_obs_np = np.array(follower_obs)
-        arms: RakudaArmObs = RakudaArmObs(
-            leader=leader_obs_np, follower=follower_obs_np
-        )
+        arms: RakudaArmObs = RakudaArmObs(leader=leader_obs_np, follower=follower_obs_np)
 
         camera_obs_np: Dict[str, NDArray[np.float32] | None] = {}
         for cam_name, frames in camera_obs.items():
@@ -822,11 +638,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                 if tac.is_connected:
                     # Use async_read if available for better performance
                     tac_data = tac.async_read(timeout_ms=50)
-                    if (
-                        tac_data is not None
-                        and tac_data.ndim == 3
-                        and tac_data.shape[2] == 3
-                    ):
+                    if tac_data is not None and tac_data.ndim == 3 and tac_data.shape[2] == 3:
                         tac_data = tac_data.transpose(2, 0, 1)  # HWC to CHW
                     tactile_data[tac.name] = tac_data
                 else:
@@ -909,8 +721,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
             table.add_column("Value", style="magenta")
             table.add_row("Original Frames (fps)", f"{max_frame} ({fps}Hz)")
             table.add_row(
-                "Sent Frames (after interpolation)",
-                f"{sent_count} ({sent_count / elapsed:.2f}Hz)",
+                "Sent Frames (after interpolation)", f"{sent_count} ({sent_count / elapsed:.2f}Hz)"
             )
             table.add_row("Total Time (s)", f"{elapsed:.2f}")
             console = Console()
@@ -962,9 +773,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
             camera_configs = [RealsenseCameraConfig()]
             tactile_configs = []
 
-        sensor_configs = RakudaSensorConfigs(
-            cameras=camera_configs, tactile=tactile_configs
-        )
+        sensor_configs = RakudaSensorConfigs(cameras=camera_configs, tactile=tactile_configs)
         return sensor_configs
 
     def _init_sensors(self) -> Sensors:
