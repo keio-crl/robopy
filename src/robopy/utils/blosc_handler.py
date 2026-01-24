@@ -1,3 +1,5 @@
+from typing import Any
+
 import blosc2
 from numpy.typing import NDArray
 
@@ -7,7 +9,7 @@ class BLOSCHandler:
         pass
 
     @staticmethod
-    def save(data: NDArray, path: str) -> None:
+    def save(data: NDArray[Any], path: str) -> None:
         """Save data dictionary to a Blosc2 file."""
         packed = blosc2.pack_array2(data)
         if isinstance(packed, bytes):
@@ -17,9 +19,8 @@ class BLOSCHandler:
             raise ValueError("Failed to pack array: blosc2.pack_array2 returned non-bytes result")
 
     @staticmethod
-    def load(path: str) -> NDArray:
+    def load(path: str) -> NDArray[Any]:
         """Load data dictionary from a Blosc2 file."""
         with open(path, "rb") as f:
             packed = f.read()
-        data = blosc2.unpack_array2(packed)
-        return data
+        return blosc2.unpack_array2(packed)

@@ -8,13 +8,13 @@ class Arm(ABC):
 
     @property
     @abstractmethod
-    def port(self) -> str:
+    def port(self) -> str | None:
         """Abstract property for port"""
         pass
 
     @property
     @abstractmethod
-    def motors(self) -> DynamixelBus:
+    def motors(self) -> DynamixelBus | None:
         """Abstract property for motors"""
         pass
 

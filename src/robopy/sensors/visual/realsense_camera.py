@@ -1,8 +1,11 @@
+# pyright: reportAttributeAccessIssue=false
+# realsenseのライブラリに型情報がないので無視する
+
 import logging
 import time
 from datetime import datetime, timezone
 from threading import Event, Lock, Thread
-from typing import Any, Literal, override
+from typing import Any, Literal
 
 import cv2
 import numpy as np
@@ -20,7 +23,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class RealsenseCamera(Camera):
+class RealsenseCamera(Camera[NDArray[np.float32]]):
     """Implementation class for Intel RealSense cameras using pyrealsense2
 
     This implementation uses threading to avoid blocking the main thread.
@@ -52,9 +55,11 @@ class RealsenseCamera(Camera):
         self.stop_event: Event | None = None
         self.frame_lock: Lock = Lock()
         self.depth_lock: Lock = Lock()
-        self.latest_color_frame: NDArray | None = None
-        self.latest_depth_frame: NDArray | None = None
+        self.latest_color_frame: NDArray[np.float32] | None = None
+        self.latest_depth_frame: NDArray[np.float32] | None = None
         self.new_frame_event: Event = Event()
+        self.new_depth_event: Event = Event()
+        self.align: rs.align | None = None  # type: ignore
 
         # Serial number for device identification (more reliable than index)
         self.serial_number: str | None = None
@@ -116,13 +121,14 @@ class RealsenseCamera(Camera):
         try:
             # Start pipeline
             self.rs_profile = self.rs_pipeline.start(rs_config)  # type: ignore
+            self.align = rs.align(rs.stream.color)  # type: ignore
             self._update_config_from_stream()
             self._is_connected = True
 
             # Warmup period
             if warmup:
                 logger.debug(
-                    f"""Warming up {self.name} for 
+                    f"""Warming up {self.name} for
                         {self.config.warmup_s if hasattr(self.config, "warmup_s") else 1}
                         s...
                     """,
@@ -137,7 +143,7 @@ class RealsenseCamera(Camera):
                         logger.warning(f"Warmup frame failed: {e}")
 
             # Start background capture thread
-            self._start_capture_thread()
+            # self._start_capture_thread()
 
             logger.info(f"{self.name} connected successfully.")
 
@@ -157,14 +163,13 @@ class RealsenseCamera(Camera):
 
         # Stop pipeline
         if self.rs_pipeline:
-            self.rs_pipeline.stop()  # type: ignore
+            self.rs_pipeline.stop()
             self.rs_pipeline = None
             self.rs_profile = None
 
         self._is_connected = False
         logger.info(f"{self.name} disconnected.")
 
-    @override
     def read(self, specific_color: Literal["rgb", "bgr"] | None = None) -> NDArray[np.float32]:
         """Read frames from the camera synchronously (blocking).
 
@@ -200,7 +205,6 @@ class RealsenseCamera(Camera):
 
         return color_image
 
-    @override
     def async_read(self, timeout_ms: float = 16) -> NDArray[np.float32]:
         """Read the latest available frame asynchronously (non-blocking).
 
@@ -244,7 +248,7 @@ class RealsenseCamera(Camera):
 
         return frame
 
-    def read_depth(self, timeout_ms: int = 1000) -> NDArray:
+    def read_depth(self, timeout_ms: int = 1000) -> NDArray[np.float32]:
         """Read depth frame synchronously.
 
         Args:
@@ -260,22 +264,36 @@ class RealsenseCamera(Camera):
             raise RuntimeError("Depth stream is not enabled for this camera.")
 
         # Wait for frames
-        ret, frames = self.rs_pipeline.try_wait_for_frames(timeout_ms=timeout_ms)  # type: ignore
+        ret, aligned_frames = self.rs_pipeline.try_wait_for_frames(timeout_ms=timeout_ms)  # type: ignore
 
-        if not ret or frames is None:
+        if not ret or aligned_frames is None:
             raise OSError("Failed to capture depth frame.")
 
-        depth_frame = frames.get_depth_frame()  # type: ignore
+        try:
+            aligned_frames = self.align.process(aligned_frames)  # type: ignore[union-attr]
+        except Exception as e:
+            print(e)
+            raise OSError("Failed to align depth frame.") from e
+
+        depth_frame = aligned_frames.get_depth_frame()
 
         if not depth_frame:
             raise OSError("Failed to get depth frame from frameset.")
 
         # Convert to numpy array
-        depth_image = np.asanyarray(depth_frame.get_data())  # type: ignore
+        depth_image = np.asanyarray(depth_frame.get_data())
 
-        return depth_image
+        # Ensure depth_image is not None before slicing
+        if depth_image is not None:
+            depth_image = depth_image[..., np.newaxis]  # Add channel dimension if needed
+        else:
+            raise OSError("Depth image is None after conversion.")
+        depth_image = depth_image.transpose(2, 0, 1)  # Convert HWC to CHW
+        depth_image = np.clip(depth_image, 0, self.config.max_depth)
 
-    def async_read_depth(self, timeout_ms: float = 200) -> NDArray:
+        return depth_image  # type: ignore[no-any-return]
+
+    def async_read_depth(self, timeout_ms: float = 200) -> NDArray[np.float32]:
         """Read the latest depth frame asynchronously.
 
         Args:
@@ -294,14 +312,19 @@ class RealsenseCamera(Camera):
             self._start_capture_thread()
 
         # Wait for new frame (using same event as color for simplicity)
-        if not self.new_frame_event.wait(timeout=timeout_ms / 1000.0):
+        if not self.new_depth_event.wait(timeout=timeout_ms / 1000.0):
             raise TimeoutError(f"Timed out waiting for depth frame from {self.name}.")
 
         with self.depth_lock:
             depth_frame = self.latest_depth_frame
+            self.new_depth_event.clear()
 
         if depth_frame is None:
             raise RuntimeError(f"No depth frame available for {self.name}.")
+
+        depth_frame = depth_frame[..., np.newaxis]  # Add channel dimension if needed
+        depth_frame = depth_frame.transpose(2, 0, 1)  # Convert HWC to CHW
+        depth_frame = np.clip(depth_frame, 0, self.config.max_depth)
 
         return depth_frame
 
@@ -320,35 +343,35 @@ class RealsenseCamera(Camera):
             raise ImportError("pyrealsense2 is not installed.")
 
         found_cameras_info = []
-        context = rs.context()  # type: ignore
-        devices = context.query_devices()  # type: ignore
+        context = rs.context()
+        devices = context.query_devices()
 
         for device in devices:
             camera_info = {
-                "name": device.get_info(rs.camera_info.name),  # type: ignore
+                "name": device.get_info(rs.camera_info.name),
                 "type": "RealSense",
-                "serial_number": device.get_info(rs.camera_info.serial_number),  # type: ignore
-                "firmware_version": device.get_info(rs.camera_info.firmware_version),  # type: ignore
-                "usb_type_descriptor": device.get_info(rs.camera_info.usb_type_descriptor),  # type: ignore
-                "physical_port": device.get_info(rs.camera_info.physical_port),  # type: ignore
-                "product_id": device.get_info(rs.camera_info.product_id),  # type: ignore
-                "product_line": device.get_info(rs.camera_info.product_line),  # type: ignore
+                "serial_number": device.get_info(rs.camera_info.serial_number),
+                "firmware_version": device.get_info(rs.camera_info.firmware_version),
+                "usb_type_descriptor": device.get_info(rs.camera_info.usb_type_descriptor),
+                "physical_port": device.get_info(rs.camera_info.physical_port),
+                "product_id": device.get_info(rs.camera_info.product_id),
+                "product_line": device.get_info(rs.camera_info.product_line),
             }
 
             # Get default stream profiles
-            sensors = device.query_sensors()  # type: ignore
+            sensors = device.query_sensors()
             for sensor in sensors:
-                profiles = sensor.get_stream_profiles()  # type: ignore
+                profiles = sensor.get_stream_profiles()
 
                 for profile in profiles:
-                    if profile.is_video_stream_profile() and profile.is_default():  # type: ignore
-                        vprofile = profile.as_video_stream_profile()  # type: ignore
+                    if profile.is_video_stream_profile() and profile.is_default():
+                        vprofile = profile.as_video_stream_profile()
                         stream_info = {
-                            "stream_type": vprofile.stream_name(),  # type: ignore
-                            "format": vprofile.format().name,  # type: ignore
-                            "width": vprofile.width(),  # type: ignore
-                            "height": vprofile.height(),  # type: ignore
-                            "fps": vprofile.fps(),  # type: ignore
+                            "stream_type": vprofile.stream_name(),
+                            "format": vprofile.format().name,
+                            "width": vprofile.width(),
+                            "height": vprofile.height(),
+                            "fps": vprofile.fps(),
                         }
                         camera_info["default_stream_profile"] = stream_info
                         break
@@ -373,18 +396,24 @@ class RealsenseCamera(Camera):
             color_mode = self.config.color_mode
 
         # Wait for frames with timeout
-        ret, frames = self.rs_pipeline.try_wait_for_frames(timeout_ms=timeout_ms)  # type: ignore
+        ret, aligned_frames = self.rs_pipeline.try_wait_for_frames(timeout_ms=timeout_ms)  # type: ignore
 
-        if not ret or frames is None:
+        if not ret or aligned_frames is None:
             raise OSError(f"Failed to capture frame from {self.name}")
 
-        color_frame = frames.get_color_frame()  # type: ignore
+        aligned_frames = self.align.process(aligned_frames)  # type: ignore[union-attr]
+
+        try:
+            color_frame = aligned_frames.get_color_frame()
+        except Exception as e:
+            print(e)
+            color_frame = None
 
         if not color_frame:
             raise OSError("Failed to get color frame from frameset.")
 
         # Convert to numpy array
-        color_image = np.asanyarray(color_frame.get_data(), dtype=np.float32)  # type: ignore
+        color_image = np.asanyarray(color_frame.get_data(), dtype=np.float32)
 
         # Process the image
         processed_image = self._postprocess_image(color_image, color_mode)
@@ -434,8 +463,8 @@ class RealsenseCamera(Camera):
         if rs is None:
             raise ImportError("pyrealsense2 is not installed.")
 
-        context = rs.context()  # type: ignore
-        devices = context.query_devices()  # type: ignore
+        context = rs.context()
+        devices = context.query_devices()
 
         if len(devices) == 0:
             raise ConnectionError("No RealSense devices found.")
@@ -447,7 +476,7 @@ class RealsenseCamera(Camera):
             )
 
         device = devices[self.index]
-        self.serial_number = device.get_info(rs.camera_info.serial_number)  # type: ignore
+        self.serial_number = device.get_info(rs.camera_info.serial_number)
         logger.info(f"Found camera at index {self.index} with serial: {self.serial_number}")
 
     def _update_config_from_stream(self) -> None:
@@ -458,11 +487,11 @@ class RealsenseCamera(Camera):
         color_stream = self.rs_profile.get_stream(rs.stream.color).as_video_stream_profile()  # type: ignore
 
         if self.config.fps is None:
-            self.config.fps = color_stream.fps()  # type: ignore
+            self.config.fps = color_stream.fps()
         if self.config.width is None:
-            self.config.width = color_stream.width()  # type: ignore
+            self.config.width = color_stream.width()
         if self.config.height is None:
-            self.config.height = color_stream.height()  # type: ignore
+            self.config.height = color_stream.height()
 
         # Update capture dimensions
         if self.config.width and self.config.height:
@@ -489,25 +518,42 @@ class RealsenseCamera(Camera):
                 if not ret or frames is None:
                     continue
 
+                color = frames.get_color_frame()
+                if not color:
+                    continue  # 不完全なセットを捨てる
+                if self.config.is_depth_camera:
+                    depth = frames.get_depth_frame()
+                    if not depth:
+                        continue
+
+                try:
+                    aligned_frames = self.align.process(frames)  # type: ignore[union-attr]
+                except Exception:
+                    self.align = rs.align(rs.stream.color)  # type: ignore
+                    continue
+
                 # Process color frame
-                color_frame = frames.get_color_frame()  # type: ignore
+                color_frame = aligned_frames.first(rs.stream.color)  # type: ignore
                 if color_frame:
                     color_image = np.asanyarray(color_frame.get_data())  # type: ignore
-                    processed_image = self._postprocess_image(color_image)
+                    processed_image = self._postprocess_image(color_image)  # type: ignore
 
                     with self.frame_lock:
                         self.latest_color_frame = processed_image
 
+                # Signal new frame available
+                self.new_frame_event.set()
+
                 # Process depth frame if available
                 if self.config.is_depth_camera:
-                    depth_frame = frames.get_depth_frame()  # type: ignore
+                    depth_frame = aligned_frames.get_depth_frame()
                     if depth_frame:
-                        depth_image = np.asanyarray(depth_frame.get_data())  # type: ignore
+                        depth_image = np.asanyarray(depth_frame.get_data())
                         with self.depth_lock:
                             self.latest_depth_frame = depth_image
 
-                # Signal new frame available
-                self.new_frame_event.set()
+                    # Signal new depth frame available
+                    self.new_depth_event.set()
 
                 # Update logging info
                 frame_count += 1

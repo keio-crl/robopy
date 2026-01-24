@@ -34,7 +34,7 @@ document.addEventListener('DOMContentLoaded', function() {
     externalLinks.forEach(function(link) {
         link.setAttribute('target', '_blank');
         link.setAttribute('rel', 'noopener noreferrer');
-        
+
         // 外部リンクアイコンを追加
         if (!link.querySelector('.external-link-icon')) {
             const icon = document.createElement('span');
@@ -76,7 +76,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const originalText = button.textContent;
             button.textContent = 'コピーしました！';
             button.style.backgroundColor = '#4caf50';
-            
+
             setTimeout(function() {
                 button.textContent = originalText;
                 button.style.backgroundColor = '';
@@ -115,7 +115,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 searchInput.focus();
             }
         }
-        
+
         // ESCで検索を閉じる
         if (e.key === 'Escape') {
             const searchInput = document.querySelector('.md-search__input');
@@ -149,7 +149,7 @@ document.addEventListener('DOMContentLoaded', function() {
         wrapper.className = 'table-wrapper';
         wrapper.style.overflowX = 'auto';
         wrapper.style.marginBottom = '1rem';
-        
+
         table.parentNode.insertBefore(wrapper, table);
         wrapper.appendChild(table);
     });
@@ -165,7 +165,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
         });
-        
+
         observer.observe(document.documentElement, {
             attributes: true,
             attributeFilter: ['data-md-color-scheme']

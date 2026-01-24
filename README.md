@@ -9,7 +9,7 @@
 ### インストール
 
 ```bash
-uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.0
+uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.1
 # RealSenseサポート（Linux）
 uv add pyrealsense2
 ```
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     # H5ファイルの情報を取得して表示
     file_info = H5Handler.get_info(h5_file_path)
     print("H5 File Information:")
-    
+
     for key, value in file_info.items():
         print(f"  {key}: shape={value['shape']}, dtype={value['dtype']}")
 
@@ -105,10 +105,10 @@ robot = RakudaRobot(config)
 
 try:
     robot.connect()
-    
+
     # テレオペレーション（5秒間）
     robot.teleoperation(duration=5)
-    
+
 finally:
     robot.disconnect()
 ```

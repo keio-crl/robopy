@@ -1,7 +1,6 @@
 import time
 from logging import getLogger
 from threading import Event, Lock, Thread
-from typing import override
 
 import numpy as np
 from digit_interface import Digit
@@ -14,7 +13,7 @@ from ..common.sensor import Sensor
 logger = getLogger(__name__)
 
 
-class DigitSensor(Sensor):
+class DigitSensor(Sensor[NDArray[np.float32]]):
     def __init__(self, config: TactileParams):
         self.config = config
         self.name = config.name
@@ -28,7 +27,7 @@ class DigitSensor(Sensor):
         self.stop_event: Event | None = None
         self.frame_lock: Lock = Lock()
         self.new_frame_event: Event = Event()
-        self.latest_frame: NDArray | None = None
+        self.latest_frame: NDArray[np.float32] | None = None
         self.frame_ready = False  # Flag to track if initial frame is ready
 
     def connect(self) -> None:
@@ -63,14 +62,12 @@ class DigitSensor(Sensor):
         self.frame_ready = False  # Reset frame ready flag
         logger.info(f"Digit sensor {self.name} disconnected.")
 
-    @override
     def read(self) -> NDArray[np.float32]:
         if not self.is_connected:
             raise RuntimeError(f"Digit sensor {self.name} is not connected.")
         frame = self.digit.get_frame().astype(np.float32)
         return frame
 
-    @override
     def async_read(self, timeout_ms: float = 100) -> NDArray[np.float32]:
         """Read the latest frame asynchronously (non-blocking)."""
         if not self.is_connected:

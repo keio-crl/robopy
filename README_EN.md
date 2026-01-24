@@ -1,5 +1,5 @@
 # Robopy
-[日本語](README.md) | ENG  
+[日本語](README.md) | ENG
 
 **Robopy** is a Python interface for robot control. It supports Rakuda and Koch robots (under development) with integrated data collection from cameras and tactile sensors.
 
@@ -8,7 +8,7 @@
 ### Installation
 
 ```bash
-uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.0
+uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.1
 # RealSense support (Linux)
 uv add pyrealsense2
 ```
@@ -79,10 +79,10 @@ robot = RakudaRobot(config)
 
 try:
     robot.connect()
-    
+
     # Teleoperation (5 seconds)
     robot.teleoperation(duration=5)
-    
+
 finally:
     robot.disconnect()
 ```

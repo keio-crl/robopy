@@ -1,9 +1,12 @@
 from abc import abstractmethod
+from typing import Generic, TypeVar
 
 from robopy.sensors.common.sensor import Sensor
 
+T = TypeVar("T")
 
-class Camera(Sensor):
+
+class Camera(Sensor[T], Generic[T]):
     """Abstract Base Class for Camera"""
 
     @abstractmethod

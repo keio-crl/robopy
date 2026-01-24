@@ -15,17 +15,17 @@ class KochSensorConfig:
 
     cameras: Dict[str, RealsenseCameraConfig | WebCameraConfig] = field(default_factory=dict)
     # 将来的に他のセンサも追加可能
-    # tactile: Optional[TactileConfig] = None
-    # force_torque: Optional[FTConfig] = None
+    # tactile: TactileConfig|None = None
+    # force_torque: FTConfig|None = None
 
 
 @dataclass
 class KochConfig:
     """Configuration class for Koch robot."""
 
-    leader_port: str
     follower_port: str
     calibration_path: str
+    leader_port: str | None = None
     sensors: KochSensorConfig = field(default_factory=KochSensorConfig)
 
     # Backward compatibility
@@ -60,7 +60,7 @@ class KochObservation:
 KOCH_MOTOR_MAPPING: Dict[str, str] = {
     "shoulder_pan": "shoulder_pan",
     "shoulder_lift": "shoulder_lift",
-    "elbow_flex": "elbow_flex",
+    "elbow": "elbow",
     "wrist_flex": "wrist_flex",
     "wrist_roll": "wrist_roll",
     "gripper": "gripper",

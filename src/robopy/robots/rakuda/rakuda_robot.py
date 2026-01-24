@@ -1,9 +1,10 @@
 import queue
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from collections import defaultdict
+from concurrent.futures import Future, ThreadPoolExecutor
 from logging import getLogger
-from typing import DefaultDict, Dict, List, override
+from typing import Dict, List
 
 import numpy as np
 from numpy.typing import NDArray
@@ -29,14 +30,13 @@ from .rakuda_pair_sys import RakudaPairSys
 logger = getLogger(__name__)
 
 
-class RakudaRobot(ComposedRobot):
+class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
     def __init__(self, cfg: RakudaConfig):
         self.config = cfg
         self._pair_sys = RakudaPairSys(cfg)
         self._sensor_configs: RakudaSensorConfigs = self._init_config()
         self._sensors: Sensors = self._init_sensors()
 
-    @override
     def connect(self) -> None:
         try:
             self._pair_sys.connect()
@@ -44,7 +44,6 @@ class RakudaRobot(ComposedRobot):
             self._pair_sys.disconnect()
             raise e
 
-    @override
     def disconnect(self) -> None:
         self._pair_sys.disconnect()
 
@@ -57,7 +56,6 @@ class RakudaRobot(ComposedRobot):
         for audio in self._sensors.audio or []:
             audio.disconnect()
 
-    @override
     def teleoperation(self, max_seconds: float | None = None) -> None:
         """Start teleoperation for Rakuda robot."""
         if not self.is_connected:
@@ -75,11 +73,11 @@ class RakudaRobot(ComposedRobot):
         if max_frame <= 0:
             raise ValueError("max_frame must be greater than 0.")
 
-        leader_obs = []
-        follower_obs = []
-        camera_obs: Dict[str, List] = DefaultDict(list)
-        tactile_obs: Dict[str, List] = DefaultDict(list)
-        audio_obs: Dict[str, List] = DefaultDict(list)
+        leader_obs: List[NDArray[np.float32]] = []
+        follower_obs: List[NDArray[np.float32]] = []
+        camera_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
+        tactile_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
+        audio_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
 
         get_obs_interval = 1.0 / fps
         frame_count = 0
@@ -119,7 +117,7 @@ class RakudaRobot(ComposedRobot):
             logger.error(f"An error occurred during recording: {e}")
             raise e
 
-        # proccess observations to numpy arrays
+        # process observations to numpy arrays
         leader_obs_np = np.array(leader_obs)
         follower_obs_np = np.array(follower_obs)
         arms: RakudaArmObs = RakudaArmObs(leader=leader_obs_np, follower=follower_obs_np)
@@ -173,7 +171,7 @@ class RakudaRobot(ComposedRobot):
         arm_obs_queue: queue.Queue[RakudaArmObs] = queue.Queue(maxsize=teleop_hz * 2)
         stop_event = threading.Event()
 
-        def teleop_worker():
+        def teleop_worker() -> None:
             interval = 1.0 / teleop_hz
             while not stop_event.is_set():
                 start_time = time.perf_counter()
@@ -190,11 +188,11 @@ class RakudaRobot(ComposedRobot):
         teleop_thread = threading.Thread(target=teleop_worker, daemon=True)
         teleop_thread.start()
 
-        leader_obs = []
-        follower_obs = []
-        camera_obs: Dict[str, List] = DefaultDict(list)
-        tactile_obs: Dict[str, List] = DefaultDict(list)
-        audio_obs: Dict[str, List] = DefaultDict(list)
+        leader_obs: List[NDArray[np.float32]] = []
+        follower_obs: List[NDArray[np.float32]] = []
+        camera_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
+        tactile_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
+        audio_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
 
         get_obs_interval = 1.0 / fps
         max_processing_time = max_processing_time_ms / 1000.0
@@ -204,7 +202,7 @@ class RakudaRobot(ComposedRobot):
 
         logger.info(f"Starting parallel recording: {max_frame} frames at {fps}Hz")
         logger.info(
-            f"""Target interval: {get_obs_interval * 1000:.1f}ms, 
+            f"""Target interval: {get_obs_interval * 1000:.1f}ms,
             Max processing time: {max_processing_time_ms}ms"""
         )
 
@@ -221,6 +219,238 @@ class RakudaRobot(ComposedRobot):
                         break
                 except queue.Empty:
                     logger.warning("No arm_obs available in time.")
+                    continue
+
+                # センサデータは並列取得
+                try:
+                    with ThreadPoolExecutor(max_workers=4) as executor:
+                        # Camera futures
+                        camera_futures: Dict[str, Future[NDArray[np.float32] | None]] = {}
+                        if self._sensors.cameras:
+                            for cam in self._sensors.cameras:
+                                if cam.is_connected:
+                                    camera_futures[cam.name] = executor.submit(
+                                        cam.async_read, timeout_ms=5
+                                    )
+
+                        # Tactile futures
+                        tactile_futures: Dict[str, Future[NDArray[np.float32] | None]] = {}
+                        if self._sensors.tactile:
+                            for tac in self._sensors.tactile:
+                                if tac.is_connected:
+                                    tactile_futures[tac.name] = executor.submit(
+                                        tac.async_read, timeout_ms=5
+                                    )
+
+                        # Audio futures
+                        audio_futures: Dict[str, Future[NDArray[np.float32] | None]] = {}
+                        if self._sensors.audio:
+                            for audio in self._sensors.audio:
+                                if audio.is_connected:
+                                    audio_futures[audio.name] = executor.submit(
+                                        audio.async_read, timeout_ms=5
+                                    )
+
+                        timeout = max_processing_time * 0.5
+
+                        camera_data: Dict[str, NDArray[np.float32] | None] = {}
+                        for cam_name, future in camera_futures.items():
+                            try:
+                                camera_data[cam_name] = future.result(timeout=timeout / 2)
+                            except Exception as e:
+                                logger.warning(
+                                    f"Camera {cam_name} failed in frame {frame_count}: {e}"
+                                )
+                                camera_data[cam_name] = None
+
+                        tactile_data: Dict[str, NDArray[np.float32] | None] = {}
+                        for tac_name, future in tactile_futures.items():
+                            try:
+                                tactile_data[tac_name] = future.result(timeout=timeout / 2)
+                            except Exception as e:
+                                logger.warning(
+                                    f"Tactile {tac_name} failed in frame {frame_count}: {e}"
+                                )
+                                tactile_data[tac_name] = None
+
+                        audio_data: Dict[str, NDArray[np.float32] | None] = {}
+                        for audio_name, future in audio_futures.items():
+                            try:
+                                audio_data[audio_name] = future.result(timeout=timeout / 2)
+                            except Exception as e:
+                                logger.warning(
+                                    f"Audio {audio_name} failed in frame {frame_count}: {e}"
+                                )
+                                audio_data[audio_name] = None
+
+                    # 記録
+                    leader_obs.append(arm_obs.leader)
+                    follower_obs.append(arm_obs.follower)
+
+                    for cam_name, cam_frame in camera_data.items():
+                        camera_obs[cam_name].append(cam_frame)
+
+                    for tac_name, tac_frame in tactile_data.items():
+                        tactile_obs[tac_name].append(tac_frame)
+
+                    for audio_name, audio_frame in audio_data.items():
+                        audio_obs[audio_name].append(audio_frame)
+
+                    frame_count += 1
+
+                    # タイミング調整
+                    processing_time = time.perf_counter() - frame_start_time
+                    total_processing_time += processing_time
+
+                    if processing_time > max_processing_time:
+                        skipped_frames += 1
+                        logger.warning(
+                            f"""Frame {frame_count} took {processing_time * 1000:.1f}ms
+                            (>{max_processing_time_ms}ms), skipping"""
+                        )
+                        continue
+
+                    elapsed = time.perf_counter() - frame_start_time
+                    sleep_time = max(0, get_obs_interval - elapsed)
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+
+                except Exception as e:
+                    logger.error(f"Unexpected error in frame {frame_count}: {e}")
+                    continue
+
+        except KeyboardInterrupt:
+            logger.info("Recording interrupted by user.")
+        except Exception as e:
+            logger.error(f"An error occurred during parallel recording: {e}")
+            raise e
+        finally:
+            stop_event.set()
+            teleop_thread.join(timeout=1.0)
+
+        avg_processing_time = total_processing_time / max(1, frame_count) * 1000
+        logger.info(f"Recording completed: {frame_count} frames, {skipped_frames} skipped")
+        logger.info(f"Average processing time: {avg_processing_time:.1f}ms")
+
+        leader_obs_np = np.array(leader_obs)
+        follower_obs_np = np.array(follower_obs)
+        arms: RakudaArmObs = RakudaArmObs(leader=leader_obs_np, follower=follower_obs_np)
+
+        camera_obs_np: Dict[str, NDArray[np.float32] | None] = {}
+        for cam_name, frames in camera_obs.items():
+            if frames and all(frame is not None for frame in frames):
+                camera_obs_np[cam_name] = np.array(frames)
+            else:
+                camera_obs_np[cam_name] = None
+
+        tactile_obs_np: Dict[str, NDArray[np.float32] | None] = {}
+        for tac_name, frames in tactile_obs.items():
+            if frames and all(frame is not None for frame in frames):
+                tactile_obs_np[tac_name] = np.array(frames).transpose(0, 3, 1, 2)
+            else:
+                tactile_obs_np[tac_name] = None
+
+        audio_obs_np: Dict[str, NDArray[np.float32] | None] = {}
+        for audio_name, frames in audio_obs.items():
+            if frames and all(frame is not None for frame in frames):
+                audio_obs_np[audio_name] = np.array(frames)
+            else:
+                audio_obs_np[audio_name] = None
+
+        sensors_obs = RakudaSensorObs(
+            cameras=camera_obs_np, tactile=tactile_obs_np, audio=audio_obs_np
+        )
+        return RakudaObs(arms=arms, sensors=sensors_obs)
+
+    def record_with_fixed_leader(
+        self,
+        max_frame: int,
+        leader_action: NDArray[np.float32],
+        fps: int = 20,
+        teleop_hz: int = 100,
+        max_processing_time_ms: float = 40,
+    ) -> RakudaObs:
+        """
+        leaderは提供されたシーケンスを使用して再生し、follower及び他のobsを収集する。
+        """
+        if not self.is_connected:
+            self.connect()
+
+        if max_frame <= 0:
+            raise ValueError("max_frame must be greater than 0.")
+
+        if len(leader_action) != max_frame:
+            raise ValueError("Length of leader_action must match max_frame.")
+
+        # follower_obsを高頻度で取得するためのキュー
+        follower_obs_queue: queue.Queue[NDArray[np.float32]] = queue.Queue(maxsize=teleop_hz * 2)
+        stop_event = threading.Event()
+
+        def control_worker():
+            interval = 1.0 / teleop_hz
+            start_time = time.perf_counter()
+
+            while not stop_event.is_set():
+                loop_start = time.perf_counter()
+                t = loop_start - start_time
+
+                # 線形補間
+                # max_frameを超えた場合は最後のフレームを使用
+                idx_float = t * fps
+                if idx_float >= max_frame - 1:
+                    action = leader_action[-1]
+                else:
+                    idx0 = int(np.floor(idx_float))
+                    idx1 = min(idx0 + 1, max_frame - 1)
+                    alpha = idx_float - idx0
+                    action = (1 - alpha) * leader_action[idx0] + alpha * leader_action[idx1]
+
+                # フォロワーに送信
+                self.send_frame_action(action)
+
+                # フォロワーの状態を取得
+                try:
+                    # get_observationはleaderも取得するが、followerのみ使用
+                    current_obs = self._pair_sys.get_observation()
+                    follower_obs_queue.put(current_obs.follower, timeout=interval)
+                except queue.Full:
+                    pass
+                except Exception as e:
+                    logger.error(f"Error in control_worker: {e}")
+
+                elapsed = time.perf_counter() - loop_start
+                sleep_time = max(0, interval - elapsed)
+                time.sleep(sleep_time)
+
+        control_thread = threading.Thread(target=control_worker, daemon=True)
+        control_thread.start()
+
+        leader_obs = []
+        follower_obs = []
+        camera_obs: Dict[str, List] = defaultdict(list)
+        tactile_obs: Dict[str, List] = defaultdict(list)
+
+        get_obs_interval = 1.0 / fps
+        max_processing_time = max_processing_time_ms / 1000.0
+        frame_count = 0
+        skipped_frames = 0
+        total_processing_time = 0.0
+
+        logger.info(f"Starting fixed leader recording: {max_frame} frames at {fps}Hz")
+
+        try:
+            while frame_count < max_frame:
+                frame_start_time = time.perf_counter()
+
+                # 最新のfollower_obsを取得
+                try:
+                    while True:
+                        current_follower = follower_obs_queue.get(timeout=get_obs_interval)
+                        while not follower_obs_queue.empty():
+                            current_follower = follower_obs_queue.get_nowait()
+                        break
+                except queue.Empty:
+                    logger.warning("No follower_obs available in time.")
                     continue
 
                 # センサデータは並列取得
@@ -286,8 +516,9 @@ class RakudaRobot(ComposedRobot):
                                 audio_data[audio_name] = None
 
                     # 記録
-                    leader_obs.append(arm_obs.leader)
-                    follower_obs.append(arm_obs.follower)
+                    # leaderは提供されたアクションを使用
+                    leader_obs.append(leader_action[frame_count])
+                    follower_obs.append(current_follower)
 
                     for cam_name, cam_frame in camera_data.items():
                         camera_obs[cam_name].append(cam_frame)
@@ -307,7 +538,7 @@ class RakudaRobot(ComposedRobot):
                     if processing_time > max_processing_time:
                         skipped_frames += 1
                         logger.warning(
-                            f"""Frame {frame_count} took {processing_time * 1000:.1f}ms 
+                            f"""Frame {frame_count} took {processing_time * 1000:.1f}ms
                             (>{max_processing_time_ms}ms), skipping"""
                         )
                         continue
@@ -328,7 +559,7 @@ class RakudaRobot(ComposedRobot):
             raise e
         finally:
             stop_event.set()
-            teleop_thread.join(timeout=1.0)
+            control_thread.join(timeout=1.0)
 
         avg_processing_time = total_processing_time / max(1, frame_count) * 1000
         logger.info(f"Recording completed: {frame_count} frames, {skipped_frames} skipped")
@@ -364,7 +595,6 @@ class RakudaRobot(ComposedRobot):
         )
         return RakudaObs(arms=arms, sensors=sensors_obs)
 
-    @override
     def get_observation(self) -> RakudaObs:
         """get_observation get the current observation from the robot system and sensors."""
         if not self.is_connected:
@@ -444,7 +674,7 @@ class RakudaRobot(ComposedRobot):
         leader_action: NDArray[np.float32],
         teleop_hz: int = 100,
     ) -> None:
-        """send
+        """send leader action sequence to Rakuda robot with interpolation.
 
         Args:
             max_frame (int): max frame to send
@@ -635,7 +865,7 @@ class RakudaRobot(ComposedRobot):
     def robot_system(self) -> RakudaPairSys:
         return self._pair_sys
 
-    def __del__(self):
+    def __del__(self) -> None:
         try:
             self.disconnect()
         except Exception:

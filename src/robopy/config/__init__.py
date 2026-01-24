@@ -1,3 +1,8 @@
+from .robot_config.koch_config import (
+    KochConfig,
+    KochObservation,
+    KochSensorConfig,
+)
 from .robot_config.rakuda_config import (
     RakudaArmObs,
     RakudaConfig,
@@ -21,6 +26,9 @@ __all__ = [
     "RakudaSensorConfigs",
     "RakudaSensorObs",
     "RakudaSensorParams",
+    "KochConfig",
+    "KochSensorConfig",
+    "KochObservation",
     "CameraParams",
     "TactileParams",
     "SensorsParams",

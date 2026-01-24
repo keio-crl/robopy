@@ -1,9 +1,10 @@
-from logging import INFO, basicConfig
+from logging import INFO, getLogger
 
 from robopy.config import RakudaConfig
-from robopy.utils import MetaDataConfig, RakudaExpHandler
+from robopy.utils import H5Handler, MetaDataConfig, RakudaExpHandler
 
-basicConfig(level=INFO)
+logger = getLogger(__name__)
+logger.setLevel(INFO)
 
 
 def test_exp_handler_import():
@@ -32,16 +33,17 @@ def test_rakuda_exp_send():
         action = handler.record(max_frames=200).arms.leader
         handler.send(max_frame=200, fps=10, leader_action=action)
     except Exception as e:
+        handler.close()
         raise e
     except KeyboardInterrupt:
-        handler.robot.disconnect()
+        handler.close()
 
 
 if __name__ == "__main__":
     handler = RakudaExpHandler(
         rakuda_config=RakudaConfig(
-            leader_port="/dev/ttyUSB0",
-            follower_port="/dev/ttyUSB1",
+            leader_port="/dev/ttyUSB1",
+            follower_port="/dev/ttyUSB0",
             # sensors=RakudaSensorParams(
             #    tactile=[
             #        TactileParams(serial_num="D20542", name="left"),
@@ -56,4 +58,13 @@ if __name__ == "__main__":
         ),
         fps=10,
     )
-    handler.record_save(max_frames=100, save_path="test_01")
+    try:
+        action = H5Handler.load_single_array(
+            file_path="./data/test_01/1_1/rakuda_observations.h5", dataset_name="arm/leader"
+        )
+        handler.record_save_with_fixed_leader(
+            max_frame=action.shape[0], leader_action=action, save_path="test_no_tactile"
+        )
+    except Exception as e:
+        handler.close()
+        raise e

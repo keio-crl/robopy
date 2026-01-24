@@ -18,5 +18,6 @@
 		"TC002"
 	], // Linter・Formatter無効化設定
 	"editor.tabSize": 4,
-	"ruff.lineLength": 100
+	"ruff.lineLength": 100,
+	"python-envs.pythonProjects": []
 }

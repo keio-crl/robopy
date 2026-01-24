@@ -7,8 +7,6 @@ This module provides structured access to the control table of various Dynamixel
 motor series using Enums and dataclasses, enhancing type safety and code clarity.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, Literal, TypedDict
