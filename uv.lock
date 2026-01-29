@@ -1068,6 +1068,18 @@ wheels = [
 ]
 
 [[package]]
+name = "mkdocs-section-index"
+version = "0.3.10"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mkdocs" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/93/40/4aa9d3cfa2ac6528b91048847a35f005b97ec293204c02b179762a85b7f2/mkdocs_section_index-0.3.10.tar.gz", hash = "sha256:a82afbda633c82c5568f0e3b008176b9b365bf4bd8b6f919d6eff09ee146b9f8", size = 14446, upload-time = "2025-04-05T20:56:45.387Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/01/53/76c109e6f822a6d19befb0450c87330b9a6ce52353de6a9dda7892060a1f/mkdocs_section_index-0.3.10-py3-none-any.whl", hash = "sha256:bc27c0d0dc497c0ebaee1fc72839362aed77be7318b5ec0c30628f65918e4776", size = 8796, upload-time = "2025-04-05T20:56:43.975Z" },
+]
+
+[[package]]
 name = "mkdocstrings"
 version = "0.30.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1759,7 +1771,7 @@ wheels = [
 
 [[package]]
 name = "robopy"
-version = "0.2.0"
+version = "0.3.2"
 source = { editable = "." }
 dependencies = [
     { name = "blosc2" },
@@ -1789,8 +1801,10 @@ dev = [
 ]
 docs = [
     { name = "mkdocs" },
+    { name = "mkdocs-autorefs" },
     { name = "mkdocs-git-revision-date-localized-plugin" },
     { name = "mkdocs-material" },
+    { name = "mkdocs-section-index" },
     { name = "mkdocstrings", extra = ["python"] },
 ]
 linux = [
@@ -1826,8 +1840,10 @@ dev = [
 ]
 docs = [
     { name = "mkdocs", specifier = ">=1.6.1" },
+    { name = "mkdocs-autorefs", specifier = ">=1.2.0" },
     { name = "mkdocs-git-revision-date-localized-plugin", specifier = ">=1.2.0" },
     { name = "mkdocs-material", specifier = ">=9.5.0" },
+    { name = "mkdocs-section-index", specifier = ">=0.3.0" },
     { name = "mkdocstrings", extras = ["python"], specifier = ">=0.24.0" },
 ]
 linux = [{ name = "pyrealsense2", specifier = ">=2.54.2" }]
