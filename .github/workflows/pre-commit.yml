@@ -30,6 +30,9 @@ jobs:
       - name: Set up Python
         run: uv python install
 
+      - name: Install system dependencies (PortAudio for pyaudio)
+        run: sudo apt-get update && sudo apt-get install -y portaudio19-dev
+
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
