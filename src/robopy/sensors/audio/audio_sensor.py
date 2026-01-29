@@ -54,7 +54,7 @@ class AudioSensor(Sensor):
 
         # Calculate frames_per_buffer
         frames_per_buffer = self.sample_rate // self.fps
-        logger.info(
+        logger.debug(
             f"Opening audio stream: sample_rate={self.sample_rate}, "
             f"fps={self.fps}, frames_per_buffer={frames_per_buffer}"
         )
@@ -63,7 +63,7 @@ class AudioSensor(Sensor):
         self._is_connected = True
         self.callback_active = True
 
-        logger.info(f"Opening audio stream with callback for Audio sensor {self.name}")
+        logger.debug(f"Opening audio stream with callback for Audio sensor {self.name}")
 
         self.stream = self.pyaudio_instance.open(
             format=pyaudio.paFloat32,
@@ -79,13 +79,13 @@ class AudioSensor(Sensor):
         try:
             if not self.stream.is_active():
                 self.stream.start_stream()
-                logger.info(f"Audio stream started for Audio sensor {self.name}")
+                logger.debug(f"Audio stream started for Audio sensor {self.name}")
             else:
-                logger.info(f"Audio stream is already active for Audio sensor {self.name}")
+                logger.debug(f"Audio stream is already active for Audio sensor {self.name}")
         except Exception as e:
             logger.error(f"Failed to start audio stream: {e}")
 
-        logger.info(
+        logger.debug(
             f"Stream active: {self.stream.is_active()}, latency: {self.stream.get_input_latency()}"
         )
 
@@ -93,7 +93,7 @@ class AudioSensor(Sensor):
         self._start_capture_thread()
 
         # Wait for initial audio frame
-        logger.info(f"Waiting for initial audio frame from Audio sensor {self.name}...")
+        logger.debug(f"Waiting for initial audio frame from Audio sensor {self.name}...")
         initial_timeout = 2.0  # 2 seconds for initial frame
         if not self.new_frame_event.wait(timeout=initial_timeout):
             logger.warning(f"Initial frame timeout for Audio sensor {self.name}")
@@ -126,11 +126,11 @@ class AudioSensor(Sensor):
         if self.pyaudio_instance is None:
             return None
 
-        logger.info(f"Searching for input devices for Audio sensor {self.name}...")
+        logger.debug(f"Searching for input devices for Audio sensor {self.name}...")
 
         # List available devices
         device_count = self.pyaudio_instance.get_device_count()
-        logger.info(f"Found {device_count} audio devices")
+        logger.debug(f"Found {device_count} audio devices")
 
         for i in range(device_count):
             try:
@@ -138,7 +138,9 @@ class AudioSensor(Sensor):
                 device_name = device_info["name"]
                 max_input_channels = device_info["maxInputChannels"]
 
-                logger.info(f"Device {i}: {device_name} (max input channels: {max_input_channels})")
+                logger.debug(
+                    f"Device {i}: {device_name} (max input channels: {max_input_channels})"
+                )
 
                 # Use the first device with input capability
                 if max_input_channels > 0:
@@ -167,8 +169,8 @@ class AudioSensor(Sensor):
             if self.latest_frame is not None and self.frame_ready:
                 return self.latest_frame.copy()
 
-        # If no frame is available, return a dummy frame
-        logger.warning(f"No audio frame available for {self.name}, returning dummy frame")
+            # If no frame is available, return a dummy frame
+            logger.warning(f"No audio frame available for {self.name}, returning dummy frame")
         return np.zeros((self.n_mels, self.n_mels), dtype=np.float32)
 
     @override
@@ -228,16 +230,12 @@ class AudioSensor(Sensor):
 
     def _audio_callback(self, in_data, frame_count, time_info, status):
         """Audio stream callback function"""
-        # 最初に呼ばれた時に必ずログ出力
+        # 最初に呼ばれた時の初期化
         if not hasattr(self, "_callback_count"):
-            logger.info("========== AUDIO CALLBACK INITIALIZED ==========")
             self._callback_count = 0
-            logger.info(
-                f"_is_connected: {self._is_connected}, callback_active: {self.callback_active}"
-            )
 
         if not self._is_connected or not self.callback_active:
-            logger.warning(
+            logger.debug(
                 f"Callback returning early: "
                 f"_is_connected={self._is_connected}, "
                 f"callback_active={self.callback_active}"
@@ -247,11 +245,11 @@ class AudioSensor(Sensor):
         try:
             audio_data = np.frombuffer(in_data, dtype=np.float32)
 
-            # デバッグ: 最初の数回のコールバックでログ出力
+            # デバッグ: 最初の数回のコールバックのみ
             self._callback_count += 1
 
             if self._callback_count <= 5:
-                logger.info(
+                logger.debug(
                     f"[AUDIO CALLBACK #{self._callback_count}] "
                     f"data shape={audio_data.shape}, "
                     f"mean={np.mean(audio_data):.6f}, "
@@ -263,15 +261,7 @@ class AudioSensor(Sensor):
             # 音声レベルをチェック (RMS)
             rms = np.sqrt(np.mean(audio_data**2))
             if self._callback_count <= 5:
-                logger.info(f"[AUDIO CALLBACK #{self._callback_count}] RMS: {rms:.6f}")
-
-            # 定期的にコールバックが呼ばれていることを確認（20回ごと）
-            if self._callback_count % 20 == 0:
-                buffer_size = self.audio_buffer.qsize()
-                logger.info(
-                    f"[AUDIO CALLBACK #{self._callback_count}] "
-                    f"buffer size: {buffer_size}, RMS: {rms:.6f}"
-                )
+                logger.debug(f"[AUDIO CALLBACK #{self._callback_count}] RMS: {rms:.6f}")
 
             # バッファにデータを追加（非ブロッキング）
             try:
@@ -282,7 +272,7 @@ class AudioSensor(Sensor):
                     self.audio_buffer.get_nowait()
                     self.audio_buffer.put_nowait(audio_data)
                     if self._callback_count <= 20:
-                        logger.warning("Audio buffer full, discarding old data")
+                        logger.debug("Audio buffer full, discarding old data")
                 except queue.Empty:
                     pass
 
@@ -301,7 +291,7 @@ class AudioSensor(Sensor):
         self.stop_event = Event()
         self.thread = Thread(target=self._capture_loop, daemon=True)
         self.thread.start()
-        logger.info(f"Capture thread for Audio sensor {self.name} started.")
+        logger.debug(f"Capture thread for Audio sensor {self.name} started.")
 
     def _stop_capture_thread(self) -> None:
         if self.stop_event:
@@ -312,14 +302,14 @@ class AudioSensor(Sensor):
 
         self.thread = None
         self.stop_event = None
-        logger.info(f"Capture thread for Audio sensor {self.name} stopped.")
+        logger.debug(f"Capture thread for Audio sensor {self.name} stopped.")
 
     def _capture_loop(self) -> None:
         """Background thread loop for continuous frame capture."""
         if self.stop_event is None:
             raise RuntimeError("Stop event is not initialized.")
 
-        logger.info(f"[CAPTURE LOOP] Started for Audio sensor {self.name}")
+        logger.debug(f"[CAPTURE LOOP] Started for Audio sensor {self.name}")
         frame_count = 0
         empty_count = 0
 
@@ -330,9 +320,9 @@ class AudioSensor(Sensor):
                 new_data = self.audio_buffer.get(timeout=0.1)
 
                 if new_data is not None:
-                    # デバッグ: 最初の数回のフレームでログ出力
+                    # デバッグ: 最初の数回のフレームのみ
                     if frame_count < 5:
-                        logger.info(
+                        logger.debug(
                             f"[CAPTURE LOOP] Processing frame #{frame_count}: "
                             f"new_data shape={new_data.shape}, "
                             f"buffer_data shape={self.buffer_data.shape}, "
@@ -362,9 +352,9 @@ class AudioSensor(Sensor):
                         log_mel_spectrogram = librosa.power_to_db(mel_spectrogram, ref=1.0)
                         processed_frame = np.flipud(log_mel_spectrogram)
 
-                        # デバッグ: 最初の数回のフレームで統計情報をログ出力
+                        # デバッグ: 最初の数回のフレームのみ
                         if frame_count < 3:
-                            logger.info(
+                            logger.debug(
                                 f"Processed spectrogram: "
                                 f"shape={processed_frame.shape}, "
                                 f"min={np.min(processed_frame):.2f}, "
@@ -380,17 +370,11 @@ class AudioSensor(Sensor):
                     self.new_frame_event.set()
                     frame_count += 1
 
-                    # 定期的にフレーム処理のログを出力（10フレームごと）
-                    if frame_count % 10 == 0:
-                        logger.info(
-                            f"Audio sensor {self.name} captured frame {frame_count}, "
-                            f"shape: {processed_frame.shape}"
-                        )
-                    else:
-                        logger.debug(
-                            f"Audio sensor {self.name} captured frame {frame_count}, "
-                            f"shape: {processed_frame.shape}"
-                        )
+                    # フレーム処理の詳細はDEBUGのみ
+                    logger.debug(
+                        f"Audio sensor {self.name} captured frame {frame_count}, "
+                        f"shape: {processed_frame.shape}"
+                    )
                 else:
                     logger.warning(f"Audio sensor {self.name} returned None frame")
 
@@ -399,7 +383,7 @@ class AudioSensor(Sensor):
                 empty_count += 1
                 buffer_size = self.audio_buffer.qsize()
                 if empty_count % 20 == 0:  # Every 2 seconds (20 * 0.1s)
-                    logger.warning(
+                    logger.debug(
                         f"[CAPTURE LOOP] {self.name}: No data received for "
                         f"{empty_count * 0.1:.1f} seconds "
                         f"(buffer size: {buffer_size})"
