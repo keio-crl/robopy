@@ -2,7 +2,7 @@
 
 [ENG](README_EN.md) | 日本語
 
-**Robopy**は、ロボット制御のためのPython interfaceです。Rakuda と Koch robot（実装中）に対応し、カメラと触覚センサーを統合したデータ収集をサポートします。
+**Robopy**は、ロボット制御のためのPython interfaceです。Rakuda と Koch robot（実装中）に対応し、カメラ・触覚・音声センサーを統合したデータ収集をサポートします。
 
 ## 🚀 Quick Start
 
@@ -30,7 +30,7 @@ uv add pyrealsense2
 
     handler = RakudaExpHandler(
         rakuda_config=config,
-        fps=10 # データを収集するフレームレート (max 30)
+        fps=10 # データを収集するフレームレート (max 20)
     )
 
     # データ記録と保存
@@ -67,7 +67,7 @@ if __name__ == "__main__":
 ## 🤖 主な特徴
 
 - **🔄 マルチロボット対応**: [`RakudaRobot`](src/robopy/robots/rakuda/rakuda_robot.py)、KochRobotをサポート
-- **📷 センサー統合**: RealSenseカメラ、DIGIT触覚センサーの統一インターフェース
+- **📷 センサー統合**: RealSenseカメラ、DIGIT触覚センサー、音声センサーの統一インターフェース
 - **⚡ 高性能データ収集**: 並列処理による30Hz高速データキャプチャ
 - **🎬 可視化機能**: データのアニメーション生成機能
 - **🛠 シンプルな依存関係**: ROSなどのC/C++ベースのライブラリ不要
@@ -130,6 +130,9 @@ finally:
         "tactile": {
             "left": np.ndarray,  # (frames, C, H, W) - 触覚データ
             "right": np.ndarray, # (frames, C, H, W) - 触覚データ
+        },
+        "audio": {
+            "mic": np.ndarray,   # (frames, C, H, W) - 音声データ
         }
     }
 }
