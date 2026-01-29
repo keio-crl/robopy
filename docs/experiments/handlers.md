@@ -33,7 +33,7 @@ Rakudaロボット用の基本的な実験ハンドラーの作成方法：
 
         handler = RakudaExpHandler(
             rakuda_config=config,
-            fps=10 # データを収集するフレームレート (max 30)
+            fps=10 # データを収集するフレームレート (max 20)
         )
 
         # データ記録と保存
@@ -64,7 +64,7 @@ Rakudaロボット用の基本的な実験ハンドラーの作成方法：
 
         handler = RakudaExpHandler(
             rakuda_config=config,
-            fps=10 # データを収集するフレームレート (max 30)
+            fps=10 # データを収集するフレームレート (max 20)
         )
 
         # データ記録と保存
