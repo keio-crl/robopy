@@ -74,7 +74,7 @@ def _downsample_4d_array(
         Resized array with shape (T, C, target_h, target_w).
     """
     target_h, target_w = target_size
-    T, C, H, W = data.shape
+    T, C, _H, _W = data.shape
     resized = np.empty((T, C, target_h, target_w), dtype=data.dtype)
 
     for t in range(T):
@@ -152,7 +152,7 @@ def _downsample_audio_obs(obs, target_size: tuple[int, int] = TARGET_SIZE) -> No
             obs.sensors.audio[name] = resized
         elif data.ndim == 3:
             # (T, H, W) format: resize each frame
-            T, H, W = data.shape
+            T, H, _W = data.shape
             resized = np.empty((T, target_h, target_w), dtype=data.dtype)
 
             for t in range(T):
@@ -550,6 +550,7 @@ def _create_metadata(obs, config: RakudaConfig, save_path: str) -> None:
         config: Robot configuration.
         save_path: Path to save the metadata file.
     """
+    assert config.sensors is not None
     print("📝 Creating metadata file...")
     metadata = {
         "task_details": {
@@ -610,6 +611,7 @@ def main() -> bool:
 
     # Create configuration
     config = create_test_config()
+    assert config.sensors is not None
     print("✅ Configuration created")
     print(f"   - Leader port: {config.leader_port}")
     print(f"   - Follower port: {config.follower_port}")
