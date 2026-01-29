@@ -112,6 +112,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
     ) -> tuple[
         Dict[str, NDArray[np.float32]],
         Dict[str, NDArray[np.float32]],
+        Dict[str, NDArray[np.float32]],
         NDArray[np.float32],
         NDArray[np.float32],
     ]:

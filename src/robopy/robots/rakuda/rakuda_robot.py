@@ -297,6 +297,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                         audio_obs[audio_name].append(audio_frame)
 
                     frame_count += 1
+                    logger.info("Recording progress: %s/%s frames", frame_count, max_frame)
 
                     # タイミング調整
                     processing_time = time.perf_counter() - frame_start_time
@@ -429,6 +430,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
         follower_obs = []
         camera_obs: Dict[str, List] = defaultdict(list)
         tactile_obs: Dict[str, List] = defaultdict(list)
+        audio_obs: Dict[str, List] = defaultdict(list)
 
         get_obs_interval = 1.0 / fps
         max_processing_time = max_processing_time_ms / 1000.0

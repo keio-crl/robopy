@@ -55,9 +55,6 @@ python_version = "3.12"
 ignore_missing_imports = true
 check_untyped_defs = true
 files = ["src", "tests"]
-plugins = [
-    "numpy.typing.mypy_plugin",
-]
 
 [tool.pytest.ini_options]
 testpaths = ["src", "tests"]

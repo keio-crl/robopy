@@ -2,7 +2,7 @@ import queue
 import time
 from logging import getLogger
 from threading import Event, Lock, Thread
-from typing import override
+from typing import Any, override
 
 import librosa
 import numpy as np
@@ -39,11 +39,11 @@ class AudioSensor(Sensor):
         self.hop_length = config.hop_length
         self.fmax = config.fmax
 
-        self.pyaudio_instance = None
-        self.stream = None
+        self.pyaudio_instance: Any = None
+        self.stream: Any = None
 
         # Audio buffer and thread management
-        self.audio_buffer = queue.Queue(maxsize=2)
+        self.audio_buffer: queue.Queue[NDArray | None] = queue.Queue(maxsize=2)
         self.buffer_data = np.zeros(self.sample_rate, dtype=np.float32)  # 1秒分のバッファ
         self.buffer_lock = Lock()
         self.callback_active = True  # Flag to control audio callback
@@ -53,7 +53,8 @@ class AudioSensor(Sensor):
         self.pyaudio_instance = pyaudio.PyAudio()
 
         # Calculate frames_per_buffer
-        frames_per_buffer = self.sample_rate // self.fps
+        fps_val = self.fps if self.fps is not None else 30
+        frames_per_buffer = self.sample_rate // fps_val
         logger.debug(
             f"Opening audio stream: sample_rate={self.sample_rate}, "
             f"fps={self.fps}, frames_per_buffer={frames_per_buffer}"
@@ -73,6 +74,7 @@ class AudioSensor(Sensor):
             frames_per_buffer=frames_per_buffer,
             stream_callback=self._audio_callback,
         )
+        assert self.stream is not None
 
         # PyAudioのstream_callbackモードでは自動的に開始されるが、
         # 念のため明示的にstartを呼ぶ
@@ -85,9 +87,8 @@ class AudioSensor(Sensor):
         except Exception as e:
             logger.error(f"Failed to start audio stream: {e}")
 
-        logger.debug(
-            f"Stream active: {self.stream.is_active()}, latency: {self.stream.get_input_latency()}"
-        )
+        stream = self.stream
+        logger.debug(f"Stream active: {stream.is_active()}, latency: {stream.get_input_latency()}")
 
         # Start capture thread and wait for initial frame
         self._start_capture_thread()
