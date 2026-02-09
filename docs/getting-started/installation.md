@@ -2,7 +2,7 @@
 
 ## :material-check-circle: 前提条件
 
-- Python 3.12以上
+- Python 3.11以上
 - Linux環境（RealSenseカメラ使用時）
 - UV パッケージマネージャー（推奨）
 
@@ -15,7 +15,7 @@
 
 ```bash
 # 基本パッケージのインストール
-uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.0
+uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.2
 # RealSenseサポート（Linux）
 uv add pyrealsense2
 
@@ -41,10 +41,16 @@ pip install pyrealsense2
 | `blosc2` | >=3.8.0 | データ圧縮 |
 | `digit-interface` | >=0.2.1 | タクタイルセンサー |
 | `dynamixel-sdk` | >=3.7.31 | Dynamixelモーター制御 |
-| `matplotlib` | >=3.10.6 | データ可視化 |
-| `numpy` | >=2.2.6 | 数値計算 |
-| `opencv-python` | >=4.12.0.88 | 画像処理 |
+| `h5py` | >=3.15.1 | HDF5データ保存 |
+| `imageio` | >=2.37.0 | 画像入出力 |
+| `librosa` | >=0.11.0 | 音声処理 |
+| `matplotlib` | >=3.10.3 | データ可視化 |
+| `numpy` | >=1.26.0 | 数値計算 |
+| `opencv-python` | >=4.10 | 画像処理 |
+| `pyaudio` | >=0.2.14 | 音声入力 |
+| `pyyaml` | >=6.0.2 | 設定ファイル |
 | `rich` | >=14.1.0 | コンソール出力 |
+| `tqdm` | >=4.67.1 | 進捗バー |
 
 ### オプション依存関係
 
@@ -160,6 +166,6 @@ pip install --force-reinstall robopy
 # Pythonバージョンの確認
 python --version
 
-# 3.12以上が必要
-python -c "import sys; print(sys.version_info >= (3, 12))"
+# 3.11以上が必要
+python -c "import sys; print(sys.version_info >= (3, 11))"
 ```

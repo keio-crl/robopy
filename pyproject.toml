@@ -1,6 +1,6 @@
 [project]
 name = "robopy"
-version = "0.2.0"
+version = "0.3.2"
 description = "A Python library for controlling robots with Dynamixel actuators and Intel RealSense cameras."
 readme = "README.md"
 authors = [{ name = "tetsugo", email = "tetsugou2002@gmail.com" }]
@@ -12,9 +12,11 @@ dependencies = [
     "dynamixel-sdk>=3.7.31",
     "h5py>=3.15.1",
     "imageio>=2.37.0",
+    "librosa>=0.11.0",
     "matplotlib>=3.10.3",
     "numpy>=1.26.0",
     "opencv-python>=4.10",
+    "pyaudio>=0.2.14",
     "pyyaml>=6.0.2",
     "rich>=14.1.0",
     "tqdm>=4.67.1",
@@ -34,6 +36,8 @@ dev = [
 docs = [
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.5.0",
+    "mkdocs-section-index>=0.3.0",
+    "mkdocs-autorefs>=1.2.0",
     "mkdocstrings[python]>=0.24.0",
     "mkdocs-git-revision-date-localized-plugin>=1.2.0",
 ]
@@ -51,9 +55,6 @@ python_version = "3.12"
 ignore_missing_imports = true
 check_untyped_defs = true
 files = ["src", "tests"]
-plugins = [
-    "numpy.typing.mypy_plugin",
-]
 
 [tool.pytest.ini_options]
 testpaths = ["src", "tests"]

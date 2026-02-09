@@ -1,14 +1,14 @@
 # Robopy
 [日本語](README.md) | ENG
 
-**Robopy** is a Python interface for robot control. It supports Rakuda and Koch robots (under development) with integrated data collection from cameras and tactile sensors.
+**Robopy** is a Python interface for robot control. It supports Rakuda and Koch robots (under development) with integrated data collection from camera, tactile, and audio sensors.
 
 ## 🚀 Quick Start
 
 ### Installation
 
 ```bash
-uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.1
+uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.2
 # RealSense support (Linux)
 uv add pyrealsense2
 ```
@@ -24,7 +24,7 @@ handler = RakudaExpHandler(
     follower_port="/dev/ttyUSB1",    # Follower arm port
     left_digit_serial="D20542",      # Left tactile sensor serial number
     right_digit_serial="D20537",     # Right tactile sensor serial number
-    fps=20                           # Recording frequency
+    fps=20                           # Recording frequency (max 20)
 )
 
 # Interactive recording and saving
@@ -38,7 +38,7 @@ handler = RakudaExpHandler(
 ## 🤖 Key Features
 
 - **🔄 Multi-robot Support**: Supports [`RakudaRobot`](src/robopy/robots/rakuda/rakuda_robot.py) and KochRobot
-- **📷 Sensor Integration**: Unified interface for RealSense cameras and DIGIT tactile sensors
+- **📷 Sensor Integration**: Unified interface for RealSense cameras, DIGIT tactile sensors, and audio sensors
 - **⚡ High-performance Data Collection**: 30Hz high-speed data capture with parallel processing
 - **🎬 Visualization Features**: Data animation generation functionality
 - **🛠 Simple Dependencies**: No need for C/C++ based libraries like ROS
@@ -60,7 +60,7 @@ handler = RakudaExpHandler(
 
     handler = RakudaExpHandler(
         rakuda_config=config,
-        fps=10 # Data collection frame rate (max 30)
+        fps=10 # Data collection frame rate (max 20)
     )
 
     # データ記録と保存
@@ -105,6 +105,9 @@ The recorded data is of type [`RakudaObs`](src/robopy/config/robot_config/rakuda
         "tactile": {
             "left": np.ndarray,  # (frames, C, H, W) - Tactile data
             "right": np.ndarray, # (frames, C, H, W) - Tactile data
+        },
+        "audio": {
+            "mic": np.ndarray,   # (frames, C, H, W) - Audio data
         }
     }
 }

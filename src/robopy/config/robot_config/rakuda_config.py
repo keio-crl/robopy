@@ -4,7 +4,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 from numpy.typing import NDArray
 
-from robopy.config.sensor_config.params_config import CameraParams, TactileParams
+from robopy.config.sensor_config.params_config import AudioParams, CameraParams, TactileParams
 from robopy.config.sensor_config.visual_config.camera_config import RealsenseCameraConfig
 
 
@@ -22,12 +22,14 @@ class RakudaConfig:
 class RakudaSensorParams:
     cameras: List[CameraParams] = field(default_factory=list)
     tactile: List[TactileParams] = field(default_factory=list)
+    audio: List[AudioParams] = field(default_factory=list)
 
 
 @dataclass
 class RakudaSensorConfigs:
     cameras: List[RealsenseCameraConfig]
     tactile: List[TactileParams]
+    audio: List[AudioParams]
 
 
 @dataclass
@@ -40,6 +42,7 @@ class RakudaArmObs:
 class RakudaSensorObs:
     cameras: Dict[str, NDArray[np.float32] | None]
     tactile: Dict[str, NDArray[np.float32] | None]
+    audio: Dict[str, NDArray[np.float32] | None]
 
 
 @dataclass
@@ -47,7 +50,7 @@ class RakudaObs:
     """
     Overall observation structure for Rakuda robot.
     arms: Observations from the robot arms (leader and follower).
-    sensors: Observations from the sensors (cameras and tactile).
+    sensors: Observations from the sensors (cameras, tactile and audio).
     """
 
     arms: RakudaArmObs

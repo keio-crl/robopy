@@ -9,7 +9,7 @@ from robopy.config import RakudaConfig, RakudaObs
 from robopy.config.robot_config.rakuda_config import RakudaSensorParams
 from robopy.config.sensor_config.params_config import CameraParams
 from robopy.robots import RakudaRobot
-from robopy.utils.worker.rakuda_save_woker import RakudaSaveWorker
+from robopy.utils.worker.rakuda_save_worker import RakudaSaveWorker
 
 from .exp_handler import ExpHandler
 from .meta_data_config import MetaDataConfig
@@ -123,13 +123,15 @@ class RakudaExpHandler(ExpHandler[RakudaObs, RakudaRobot, RakudaConfig, RakudaSa
             config = RakudaConfig(
                 leader_port=leader_port_num,
                 follower_port=follower_port_num,
-                sensors=RakudaSensorParams(cameras=cameras, tactile=[]),
+                sensors=RakudaSensorParams(cameras=cameras, tactile=[], audio=[]),
             )
         else:
             if len(config.sensors.cameras) == 0:
                 config.sensors.cameras = cameras  # default camera
             if len(config.sensors.tactile) == 0:
                 config.sensors.tactile = []  # default no tactile
+            if len(config.sensors.audio) == 0:
+                config.sensors.audio = []  # default no audio
 
         return config
 
@@ -140,6 +142,7 @@ class RakudaExpHandler(ExpHandler[RakudaObs, RakudaRobot, RakudaConfig, RakudaSa
         - Arm positions (leader, follower)
         - Camera images
         - Tactile sensor readings
+        - Audio sensor readings
 
         Args:
             obs: Recorded observation containing arms and sensors data.
@@ -150,7 +153,8 @@ class RakudaExpHandler(ExpHandler[RakudaObs, RakudaRobot, RakudaConfig, RakudaSa
                 "arms": {"leader": shape, "follower": shape},
                 "sensors": {
                     "cameras": {"camera_name": shape, ...},
-                    "tactile": {"sensor_name": shape, ...}
+                    "tactile": {"sensor_name": shape, ...},
+                    "audio": {"sensor_name": shape, ...}
                 }
             }
         """
@@ -180,5 +184,12 @@ class RakudaExpHandler(ExpHandler[RakudaObs, RakudaRobot, RakudaConfig, RakudaSa
                 for tactile_name, tactile_data in obs.sensors.tactile.items():
                     if tactile_data is not None:
                         data_shape["sensors"]["tactile"][tactile_name] = list(tactile_data.shape)
+
+            # Extract audio sensor shapes
+            if obs.sensors.audio is not None:
+                data_shape["sensors"]["audio"] = {}
+                for audio_name, audio_data in obs.sensors.audio.items():
+                    if audio_data is not None:
+                        data_shape["sensors"]["audio"][audio_name] = list(audio_data.shape)
 
         return data_shape

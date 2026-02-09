@@ -42,6 +42,10 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
                 tactile_data = cast(Dict[str, NDArray[np.float32]], task.data)
                 logger.debug(f"Processing tactile save task to {task.save_path}")
                 return self._executor.submit(self._save_tactile_data, tactile_data, task.save_path)
+            case "audio":
+                audio_data = cast(Dict[str, NDArray[np.float32]], task.data)
+                logger.debug(f"Processing audio save task to {task.save_path}")
+                return self._executor.submit(self._save_audio_data, audio_data, task.save_path)
             case "arm_obs":
                 arm_data = cast(tuple[NDArray[np.float32], NDArray[np.float32]], task.data)
                 logger.debug(f"Processing arm_obs save task to {task.save_path}")
@@ -53,16 +57,26 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
                 )
             case "animation":
                 data = cast(
-                    tuple[Dict[str, NDArray[np.float32]], Dict[str, NDArray[np.float32]]],
+                    tuple[
+                        Dict[str, NDArray[np.float32]],
+                        Dict[str, NDArray[np.float32]],
+                        Dict[str, NDArray[np.float32]],
+                    ],
                     task.data,
                 )
-                camera_data, tactile_data = data
+                camera_data, tactile_data, audio_data = data
                 logger.debug(f"Processing animation save task to {task.save_path}")
-                if camera_data is not None and tactile_data is not None and task.fps is not None:
+                if (
+                    camera_data is not None
+                    and tactile_data is not None
+                    and audio_data is not None
+                    and task.fps is not None
+                ):
                     return self._executor.submit(
                         self.make_rakuda_obs_animation,
                         camera_data,
                         tactile_data,
+                        audio_data,
                         task.save_path,
                         task.fps,
                     )
@@ -98,6 +112,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
     ) -> tuple[
         Dict[str, NDArray[np.float32]],
         Dict[str, NDArray[np.float32]],
+        Dict[str, NDArray[np.float32]],
         NDArray[np.float32],
         NDArray[np.float32],
     ]:
@@ -108,7 +123,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
             save_dir (str): Directory to save the data.
 
         Returns:
-            tuple: (camera_data, tactile_data, leader, follower)
+            tuple: (camera_data, tactile_data, audio_data, leader, follower)
 
         Raises:
             RuntimeError: If failed to process observation data.
@@ -129,13 +144,18 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
             tactile_data = {
                 name: data for name, data in sensors_data.tactile.items() if data is not None
             }
+
+            audio_data = {
+                name: data for name, data in sensors_data.audio.items() if data is not None
+            }
+
             if not camera_data:
                 raise ValueError("Camera data is missing.")
 
             leader = obs.arms.leader
             follower = obs.arms.follower
 
-            return camera_data, tactile_data, leader, follower
+            return camera_data, tactile_data, audio_data, leader, follower
 
         except Exception as e:
             raise RuntimeError(f"Failed to process Rakuda observation data: {e}")
@@ -144,15 +164,18 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
     def make_rakuda_obs_animation(
         camera_data: Dict[str, NDArray[np.float32]],
         tactile_data: Dict[str, NDArray[np.float32]],
+        audio_data: Dict[str, NDArray[np.float32]],
         save_dir: str,
         fps: int,
     ) -> None:
-        """Generate and save animation from camera and tactile sensor data.
+        """Generate and save animation from camera, tactile and audio sensor data.
 
         Args:
             camera_data (Dict[str, NDArray[np.float32]]): Camera data.
                 Shape: (frames, C, H, W)
             tactile_data (Dict[str, NDArray[np.float32]]): Tactile sensor data.
+                Shape: (frames, C, H, W)
+            audio_data (Dict[str, NDArray[np.float32]]): Audio sensor data.
                 Shape: (frames, C, H, W)
             save_dir (str): Directory to save the animation file.
             fps (int): Frames per second for the animation.
@@ -169,13 +192,17 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
             data = data.transpose(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
             tactile_data[name] = np.clip(data / 255.0, 0, 1)
 
+        for name, data in audio_data.items():
+            data = data.transpose(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
+            audio_data[name] = np.clip(data / 255.0, 0, 1)
+
         num_frames = list(processed_camera.values())[0].shape[0]
 
-        all_fig_num = len(processed_camera) + len(tactile_data)
+        all_fig_num = len(processed_camera) + len(tactile_data) + len(audio_data)
         rows = all_fig_num // 3 + int(all_fig_num % 3 != 0)
         cols = min(all_fig_num, 3)
 
-        # Layout: multiple columns for cameras and tactile sensors
+        # Layout: multiple columns for cameras, tactile and audio sensors
         fig = plt.figure(figsize=(5 * cols, 5 * rows))
         axes = fig.subplots(rows, cols)
         if rows == 1 and cols == 1:
@@ -196,6 +223,13 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
                 idx = len(processed_camera) + t_index
                 im = axes[idx].imshow(tactile[i], animated=True)
                 axes[idx].set_title(f"Tactile Sensor: {name}")
+                axes[idx].axis("off")
+                frame_artists.append(im)
+
+            for a_index, (name, audio) in enumerate(audio_data.items()):
+                idx = len(processed_camera) + len(tactile_data) + a_index
+                im = axes[idx].imshow(audio[i], animated=True)
+                axes[idx].set_title(f"Audio Sensor: {name}")
                 axes[idx].axis("off")
                 frame_artists.append(im)
 
@@ -317,6 +351,27 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
             BLOSCHandler.save(data, file_path)
             logger.info(f"Tactile data for {name} saved to {file_path}")
 
+    def _save_audio_data(self, audio_data: Dict[str, NDArray[np.float32]], save_path: str) -> None:
+        """Save audio sensor data using BLOSC compression.
+
+        Args:
+            audio_data (Dict[str, NDArray[np.float32]]): Audio sensor data by name.
+            save_path (str): Base path to save the audio data files.
+        """
+        for name, data in audio_data.items():
+            if data is None:
+                continue
+            # Save each audio sensor's data using BLOSC compression
+            file_path = os.path.join(save_path, "audio", name, f"{name}_audio_data.blosc")
+            if not os.path.exists(os.path.dirname(file_path)):
+                os.makedirs(os.path.dirname(file_path))
+            logger.info(f"audio data shape: {data.shape}")
+            # Ensure array is C-contiguous before saving
+            if not data.flags.c_contiguous:
+                data = np.ascontiguousarray(data)
+            BLOSCHandler.save(data, file_path)
+            logger.info(f"Audio data for {name} saved to {file_path}")
+
     def _save_array_safe(self, data: NDArray[np.float32], file_path: str) -> None:
         """Safely save array with BLOSC, ensuring C-contiguous memory layout.
 
@@ -342,6 +397,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
         self,
         camera_data: Dict[str, NDArray[np.float32]],
         tactile_data: Dict[str, NDArray[np.float32]],
+        audio_data: Dict[str, NDArray[np.float32]],
         leader: NDArray[np.float32],
         follower: NDArray[np.float32],
     ) -> HierarchicalTaskData:
@@ -350,6 +406,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
         Args:
             camera_data (Dict[str, NDArray[np.float32]]): Camera data by name.
             tactile_data (Dict[str, NDArray[np.float32]]): Tactile sensor data by name.
+            audio_data (Dict[str, NDArray[np.float32]]): Audio sensor data by name.
             leader (NDArray[np.float32]): Leader arm positions.
             follower (NDArray[np.float32]): Follower arm positions.
 
@@ -359,6 +416,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
         hierarchical_data: HierarchicalTaskData = {
             "camera": {},
             "tactile": {},
+            "audio": {},
             "arm": {
                 "leader": leader,
                 "follower": follower,
@@ -375,6 +433,11 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
             if data is not None:
                 hierarchical_data["tactile"][name] = data
 
+        # Add audio data to hierarchy
+        for name, data in audio_data.items():
+            if data is not None:
+                hierarchical_data["audio"][name] = data
+
         return hierarchical_data
 
     def save_all_obs(self, obs: RakudaObs, save_path: str, save_gif: bool) -> None:
@@ -387,7 +450,9 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
             save_path (str): Directory path to save the data.
             save_gif (bool): Whether to generate GIF animation.
         """
-        camera_data, tactile_data, leader, follower = self.prepare_rakuda_obs(obs, save_path)
+        camera_data, tactile_data, audio_data, leader, follower = self.prepare_rakuda_obs(
+            obs, save_path
+        )
         table = Table(title="Rakuda Observation Save Summary")
         table.add_column("Data name", style="cyan", no_wrap=True)
         table.add_column("Shape", style="magenta")
@@ -398,6 +463,8 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
             table.add_row(f"Camera: {name}", str(data.shape))
         for name, data in tactile_data.items():
             table.add_row(f"Tactile Sensor: {name}", str(data.shape))
+        for name, data in audio_data.items():
+            table.add_row(f"Audio Sensor: {name}", str(data.shape))
         console.print(table)
 
         if not os.path.exists(save_path):
@@ -405,7 +472,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
 
         # Build hierarchical data structure for HDF5 format
         hierarchical_data = self._build_hierarchical_data(
-            camera_data, tactile_data, leader, follower
+            camera_data, tactile_data, audio_data, leader, follower
         )
 
         # Save as single HDF5 file (unified format)
@@ -433,7 +500,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
             self.enqueue_save_task(
                 SaveTask(
                     task_type="animation",
-                    data=(camera_data, tactile_data),
+                    data=(camera_data, tactile_data, audio_data),
                     save_path=os.path.join(save_path, "rakuda_obs_animation.gif"),
                     fps=self.fps,
                 )

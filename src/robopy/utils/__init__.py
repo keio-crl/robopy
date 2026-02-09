@@ -7,7 +7,7 @@ from .exp_interface.meta_data_config import MetaDataConfig
 from .find_usb_port import find_port
 from .h5_handler import H5Handler
 from .worker.koch_save_worker import KochSaveWorker
-from .worker.rakuda_save_woker import RakudaSaveWorker
+from .worker.rakuda_save_worker import RakudaSaveWorker
 from .worker.save_worker import SaveWorker
 
 if TYPE_CHECKING:
