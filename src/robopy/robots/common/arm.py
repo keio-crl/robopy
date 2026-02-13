@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
 
 from robopy.motor.dynamixel_bus import DynamixelBus
+from robopy.motor.feetech_bus import FeetechBus
+
+MotorBus = DynamixelBus | FeetechBus
 
 
 class Arm(ABC):
@@ -14,7 +17,7 @@ class Arm(ABC):
 
     @property
     @abstractmethod
-    def motors(self) -> DynamixelBus | None:
+    def motors(self) -> MotorBus | None:
         """Abstract property for motors"""
         pass
 

@@ -1,7 +1,7 @@
 [project]
 name = "robopy"
 version = "0.3.2"
-description = "A Python library for controlling robots with Dynamixel actuators and Intel RealSense cameras."
+description = "A Python library for controlling robots with Dynamixel and Feetech actuators and Intel RealSense cameras."
 readme = "README.md"
 authors = [{ name = "tetsugo", email = "tetsugou2002@gmail.com" }]
 requires-python = ">=3.11"
@@ -19,6 +19,7 @@ dependencies = [
     "pyaudio>=0.2.14",
     "pyyaml>=6.0.2",
     "rich>=14.1.0",
+    "feetech-servo-sdk>=1.0.0",
     "tqdm>=4.67.1",
 ]
 
