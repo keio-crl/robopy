@@ -57,6 +57,30 @@
         - connect
         - disconnect
         - teleoperation
+        - forward_kinematics
+        - inverse_kinematics
+        - send_frame_action
+        - send_ee_frame_action
+        - send_ee
+
+## :material-robot: So101Robot
+
+::: robopy.robots.so101.so101_robot.So101Robot
+    options:
+      show_root_heading: true
+      show_source: false
+      members:
+        - __init__
+        - connect
+        - disconnect
+        - teleoperation
+        - forward_kinematics
+        - inverse_kinematics
+        - send_frame_action
+        - send_ee_frame_action
+        - send_ee
+
+::: robopy.config.robot_config.so101_config.So101Config
 
 ## 使用例
 
