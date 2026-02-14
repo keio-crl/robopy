@@ -3,7 +3,7 @@ import threading
 import time
 from collections import defaultdict
 from logging import getLogger
-from typing import DefaultDict, Dict, List
+from typing import ClassVar, DefaultDict, Dict, List
 
 import numpy as np
 from numpy.typing import NDArray
@@ -19,6 +19,8 @@ from robopy.config.sensor_config.visual_config.camera_config import (
     RealsenseCameraConfig,
     WebCameraConfig,
 )
+from robopy.kinematics import EEPose, IKConfig, IKResult, IKSolver, so101_chain
+from robopy.kinematics.chain import KinematicChain
 from robopy.robots.common.composed import ComposedRobot
 from robopy.sensors.visual.realsense_camera import RealsenseCamera
 from robopy.sensors.visual.web_camera import WebCamera
@@ -30,6 +32,8 @@ logger = getLogger(__name__)
 
 
 class So101Robot(ComposedRobot[So101PairSys, Sensors, So101Obs]):
+    _kinematic_chain: ClassVar[KinematicChain | None] = None
+
     def __init__(self, cfg: So101Config) -> None:
         super().__init__()
         self.config = self._init_config(cfg)
@@ -37,6 +41,7 @@ class So101Robot(ComposedRobot[So101PairSys, Sensors, So101Obs]):
         self._robot_system = So101PairSys(self.config)
         self._sensors = self._init_sensors()
         self._cameras: List[WebCamera | RealsenseCamera] = list(self._sensors.cameras or [])
+        self._ik_solver: IKSolver | None = None
 
     def connect(self) -> None:
         try:
@@ -391,6 +396,173 @@ class So101Robot(ComposedRobot[So101PairSys, Sensors, So101Obs]):
                 follower_goals[follower_name] = float(leader_action[i])
 
         self._robot_system.send_follower_action(follower_goals)
+
+    # ------------------------------------------------------------------
+    # Kinematics: FK / IK / EE-space actions
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def kinematic_chain(cls) -> KinematicChain:
+        """Get the SO-101 kinematic chain (lazy-initialised, shared)."""
+        if cls._kinematic_chain is None:
+            cls._kinematic_chain = so101_chain()
+        return cls._kinematic_chain
+
+    @classmethod
+    def forward_kinematics(cls, joint_angles_deg: NDArray[np.float32]) -> EEPose:
+        """Compute FK from joint angles (degrees) to end-effector pose.
+
+        Args:
+            joint_angles_deg: (5,) or (6,) array of joint angles in degrees.
+                If 6 values are given the last element (gripper) is ignored.
+
+        Returns:
+            EEPose with position in metres and orientation in radians.
+        """
+        angles = np.asarray(joint_angles_deg, dtype=np.float64)
+        if len(angles) == 6:
+            angles = angles[:5]
+        if len(angles) != 5:
+            raise ValueError(f"Expected 5 or 6 joint angles, got {len(angles)}")
+
+        angles_rad = np.deg2rad(angles)
+        chain = cls.kinematic_chain()
+        pose = chain.forward_kinematics(angles_rad)
+        return EEPose.from_array(pose)
+
+    def _get_ik_solver(self) -> IKSolver:
+        """Get or create the IK solver instance."""
+        if self._ik_solver is None:
+            self._ik_solver = IKSolver(self.kinematic_chain())
+        return self._ik_solver
+
+    def inverse_kinematics(
+        self,
+        target_pose: EEPose | NDArray[np.float32],
+        current_joint_angles_deg: NDArray[np.float32],
+        ik_config: IKConfig | None = None,
+    ) -> IKResult:
+        """Solve IK for a target end-effector pose.
+
+        Args:
+            target_pose: Desired EE pose (EEPose or (5,) array
+                ``[x, y, z, pitch, roll]``).
+            current_joint_angles_deg: (5,) or (6,) current joint angles in
+                degrees used as the initial guess.
+            ik_config: Optional override for solver parameters.
+
+        Returns:
+            IKResult with ``joint_angles_rad`` in radians.
+        """
+        if isinstance(target_pose, EEPose):
+            target = target_pose.to_array()
+        else:
+            target = np.asarray(target_pose, dtype=np.float64)
+
+        current = np.asarray(current_joint_angles_deg, dtype=np.float64)
+        if len(current) == 6:
+            current = current[:5]
+        current_rad = np.deg2rad(current)
+
+        solver = self._get_ik_solver()
+        if ik_config is not None:
+            solver = IKSolver(self.kinematic_chain(), ik_config)
+
+        return solver.solve(target, current_rad)
+
+    def send_ee_frame_action(
+        self,
+        ee_action: NDArray[np.float32],
+        current_joint_angles_deg: NDArray[np.float32] | None = None,
+        gripper_deg: float = 0.0,
+    ) -> None:
+        """Send a single end-effector pose action to the robot.
+
+        Args:
+            ee_action: (5,) array ``[x, y, z, pitch, roll]`` **or** (6,) array
+                ``[x, y, z, pitch, roll, gripper_deg]``.
+            current_joint_angles_deg: (5,) or (6,) current joint angles in
+                degrees.  If *None* the current follower positions are read.
+            gripper_deg: Gripper angle in degrees (used when *ee_action* is
+                5-dimensional).
+        """
+        if not self.is_connected:
+            raise ConnectionError("So101Robot is not connected. Call connect() first.")
+
+        ee = np.asarray(ee_action, dtype=np.float64)
+        if len(ee) == 6:
+            gripper_deg = float(ee[5])
+            ee = ee[:5]
+
+        if current_joint_angles_deg is None:
+            obs = self.get_arm_observation()
+            current_joint_angles_deg = obs.follower
+
+        result = self.inverse_kinematics(ee, current_joint_angles_deg)
+
+        if not result.success:
+            logger.warning(
+                "IK did not converge (best-effort). pos_err=%.4f m, ori_err=%.4f rad",
+                result.position_error,
+                result.orientation_error,
+            )
+
+        joint_deg = np.rad2deg(result.joint_angles_rad).astype(np.float32)
+        full_action = np.append(joint_deg, np.float32(gripper_deg))
+        self.send_frame_action(full_action)
+
+    def send_ee(
+        self,
+        max_frame: int,
+        fps: int,
+        ee_actions: NDArray[np.float32],
+        teleop_hz: int = 100,
+    ) -> None:
+        """Send a trajectory of end-effector poses to the robot.
+
+        Each row of *ee_actions* is converted to joint angles via IK.  The
+        previous frame's solution is used as the seed for the next frame so
+        that the resulting joint trajectory is smooth.
+
+        Args:
+            max_frame: Number of frames in the trajectory.
+            fps: Playback frame-rate.
+            ee_actions: (max_frame, 5) or (max_frame, 6) end-effector poses.
+                If 6 columns, the last column is the gripper angle in degrees.
+            teleop_hz: Motor command rate.
+        """
+        if not self.is_connected:
+            raise ConnectionError("So101Robot is not connected. Call connect() first.")
+
+        if ee_actions.shape[0] != max_frame:
+            raise ValueError("ee_actions length must match max_frame.")
+
+        obs = self.get_arm_observation()
+        current_joints = obs.follower  # (6,) degrees
+
+        joint_actions = np.zeros((max_frame, 6), dtype=np.float32)
+        for i in range(max_frame):
+            ee = ee_actions[i]
+            if len(ee) >= 6:
+                gripper = float(ee[5])
+                ee_5 = ee[:5]
+            else:
+                gripper = float(current_joints[5]) if len(current_joints) > 5 else 0.0
+                ee_5 = ee
+
+            result = self.inverse_kinematics(ee_5, current_joints)
+            joint_deg = np.rad2deg(result.joint_angles_rad).astype(np.float32)
+            joint_actions[i, :5] = joint_deg
+            joint_actions[i, 5] = gripper
+
+            # Use this solution as seed for the next frame
+            current_joints = joint_actions[i]
+
+        self.send(max_frame, fps, joint_actions, teleop_hz)
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
 
     def _init_config(self, cfg: So101Config) -> So101Config:
         if cfg.sensors is None:
