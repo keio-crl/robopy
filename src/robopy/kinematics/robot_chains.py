@@ -1,60 +1,89 @@
 """Factory functions creating KinematicChain for each supported robot."""
 
+import math
+
 from .chain import KinematicChain, RevoluteJoint
-from .transforms import translation
+from .transforms import translation, urdf_transform
+
+# Shorthand constants used in the URDF RPY values.
+_PI = math.pi
+_HALF_PI = math.pi / 2
 
 
 def so101_chain() -> KinematicChain:
     """Create the kinematic chain for the SO-101 robot (5-DOF, excluding gripper).
 
-    Parameters are derived from the SO-101 URDF
+    All parameters are taken **directly** from the SO-101 URDF
     (``SO-ARM100/Simulation/SO101/so101_new_calib.urdf``).
 
-    Joint axes follow the URDF convention:
-        shoulder_pan / wrist_roll → Y-axis rotation,
-        shoulder_lift / elbow_flex / wrist_flex → X-axis rotation.
+    In the URDF every revolute joint has ``axis xyz="0 0 1"`` (local Z).
+    The joint-origin RPY rotations orient each link frame so that the
+    local Z-axis points in the correct physical direction.
     """
     joints = [
         RevoluteJoint(
             name="shoulder_pan",
-            parent_to_joint=translation(0.0388, 0.0, 0.0624),
-            axis="y",
+            # origin xyz="0.0388 0 0.0624" rpy="π 0 -π"
+            parent_to_joint=urdf_transform(
+                xyz=(0.0388, 0.0, 0.0624),
+                rpy=(_PI, 0.0, -_PI),
+            ),
+            axis="z",
             lower_limit_rad=-1.91986,  # -110 deg
             upper_limit_rad=1.91986,  # +110 deg
         ),
         RevoluteJoint(
             name="shoulder_lift",
-            parent_to_joint=translation(-0.0304, -0.0183, -0.0542),
-            axis="x",
+            # origin xyz="-0.0304 -0.0183 -0.0542" rpy="-π/2 -π/2 0"
+            parent_to_joint=urdf_transform(
+                xyz=(-0.0304, -0.0183, -0.0542),
+                rpy=(-_HALF_PI, -_HALF_PI, 0.0),
+            ),
+            axis="z",
             lower_limit_rad=-1.74533,  # -100 deg
             upper_limit_rad=1.74533,  # +100 deg
         ),
         RevoluteJoint(
             name="elbow_flex",
-            parent_to_joint=translation(-0.11257, -0.028, 0.0),
-            axis="x",
+            # origin xyz="-0.11257 -0.028 0" rpy="0 0 π/2"
+            parent_to_joint=urdf_transform(
+                xyz=(-0.11257, -0.028, 0.0),
+                rpy=(0.0, 0.0, _HALF_PI),
+            ),
+            axis="z",
             lower_limit_rad=-1.69,  # -96.8 deg
             upper_limit_rad=1.69,  # +96.8 deg
         ),
         RevoluteJoint(
             name="wrist_flex",
-            parent_to_joint=translation(-0.1349, 0.0052, 0.0),
-            axis="x",
+            # origin xyz="-0.1349 0.0052 0" rpy="0 0 -π/2"
+            parent_to_joint=urdf_transform(
+                xyz=(-0.1349, 0.0052, 0.0),
+                rpy=(0.0, 0.0, -_HALF_PI),
+            ),
+            axis="z",
             lower_limit_rad=-1.65806,  # -95 deg
             upper_limit_rad=1.65806,  # +95 deg
         ),
         RevoluteJoint(
             name="wrist_roll",
-            parent_to_joint=translation(0.0, -0.0611, 0.0181),
-            axis="y",
+            # origin xyz="0 -0.0611 0.0181" rpy="π/2 0.0487 π"
+            parent_to_joint=urdf_transform(
+                xyz=(0.0, -0.0611, 0.0181),
+                rpy=(_HALF_PI, 0.0487, _PI),
+            ),
+            axis="z",
             lower_limit_rad=-2.74385,  # -157.2 deg
             upper_limit_rad=2.84121,  # +162.8 deg
         ),
     ]
 
-    # Fixed transform from wrist_roll frame to end-effector tip
-    # (gripper_frame_joint offset from the URDF).
-    ee_fixed = translation(-0.0079, 0.0, -0.0981)
+    # Fixed transform: gripper_frame_joint
+    # origin xyz="-0.0079 -0.000218 -0.0981" rpy="0 π 0"
+    ee_fixed = urdf_transform(
+        xyz=(-0.0079, -0.000218, -0.0981),
+        rpy=(0.0, _PI, 0.0),
+    )
 
     return KinematicChain(joints=joints, ee_fixed_transform=ee_fixed)
 
