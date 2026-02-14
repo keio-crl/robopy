@@ -143,6 +143,7 @@ nav:
     - Data handling: utils/data-handling.md
   - API Reference:
     - Robot: api/robots.md
+    - SpaceMouse: api/spacemouse.md
     - Kinematics: api/kinematics.md
     - Sensor: api/sensors.md
     - Setting: api/config.md

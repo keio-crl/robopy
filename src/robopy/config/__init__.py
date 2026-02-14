@@ -1,3 +1,4 @@
+from .input_config.spacemouse_config import SpaceMouseConfig
 from .robot_config.koch_config import (
     KochConfig,
     KochObservation,
@@ -20,6 +21,7 @@ from .sensor_config.visual_config.camera_config import (
 )
 
 __all__ = [
+    "SpaceMouseConfig",
     "RakudaConfig",
     "RakudaArmObs",
     "RakudaObs",

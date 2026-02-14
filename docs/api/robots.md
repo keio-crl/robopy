@@ -82,6 +82,21 @@
 
 ::: robopy.config.robot_config.so101_config.So101Config
 
+## :material-gamepad-variant: So101SpaceMouseController
+
+SpaceMouseを使用したEE空間テレオペレーション。詳細は[SpaceMouse API](spacemouse.md)を参照。
+
+::: robopy.robots.so101.so101_spacemouse.So101SpaceMouseController
+    options:
+      show_root_heading: true
+      show_source: false
+      members:
+        - __init__
+        - connect
+        - disconnect
+        - teleoperation
+        - record_parallel
+
 ## 使用例
 
 ### 基本的なRakudaRobotの使用
