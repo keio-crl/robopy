@@ -131,6 +131,7 @@ nav:
   - Robot:
     - Rakuda: robots/rakuda.md
     - Koch: robots/koch.md
+    - SO-101: robots/so101.md
   - Sensor:
     - Cameras: sensors/cameras.md
     - Tactile: sensors/tactile.md
@@ -142,6 +143,7 @@ nav:
     - Data handling: utils/data-handling.md
   - API Reference:
     - Robot: api/robots.md
+    - Kinematics: api/kinematics.md
     - Sensor: api/sensors.md
     - Setting: api/config.md
     - Utils: api/utils.md
