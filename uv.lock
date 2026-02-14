@@ -443,6 +443,15 @@ wheels = [
 ]
 
 [[package]]
+name = "feetech-servo-sdk"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyserial" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5f/8e/c53d6f9a8bf3a86a635b58eeb675723f1b040f1665a0681467756c8989aa/feetech-servo-sdk-1.0.0.tar.gz", hash = "sha256:d4d3832e4b1b22a8222133a414db9f868224c2fb639426a1b11d96ddfe84e69c", size = 8392, upload-time = "2022-11-08T03:44:45.269Z" }
+
+[[package]]
 name = "filelock"
 version = "3.20.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1777,6 +1786,7 @@ dependencies = [
     { name = "blosc2" },
     { name = "digit-interface" },
     { name = "dynamixel-sdk" },
+    { name = "feetech-servo-sdk" },
     { name = "h5py" },
     { name = "imageio" },
     { name = "librosa" },
@@ -1816,6 +1826,7 @@ requires-dist = [
     { name = "blosc2", specifier = ">=3.8.0" },
     { name = "digit-interface", specifier = ">=0.2.1" },
     { name = "dynamixel-sdk", specifier = ">=3.7.31" },
+    { name = "feetech-servo-sdk", specifier = ">=1.0.0" },
     { name = "h5py", specifier = ">=3.15.1" },
     { name = "imageio", specifier = ">=2.37.0" },
     { name = "librosa", specifier = ">=0.11.0" },

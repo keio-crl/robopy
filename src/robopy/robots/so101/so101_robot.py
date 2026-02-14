@@ -9,36 +9,36 @@ import numpy as np
 from numpy.typing import NDArray
 from rich.progress import Progress
 
-from robopy.config.robot_config.koch_config import (
-    KOCH_MOTOR_MAPPING,
-    KochConfig,
-    KochSensorConfig,
+from robopy.config.robot_config.so101_config import (
+    SO101_MOTOR_MAPPING,
+    So101Config,
+    So101SensorConfig,
 )
 from robopy.config.sensor_config.sensors import Sensors
 from robopy.config.sensor_config.visual_config.camera_config import (
     RealsenseCameraConfig,
     WebCameraConfig,
 )
-from robopy.kinematics import EEPose, IKConfig, IKResult, IKSolver, koch_chain
+from robopy.kinematics import EEPose, IKConfig, IKResult, IKSolver, so101_chain
 from robopy.kinematics.chain import KinematicChain
 from robopy.robots.common.composed import ComposedRobot
 from robopy.sensors.visual.realsense_camera import RealsenseCamera
 from robopy.sensors.visual.web_camera import WebCamera
-from robopy.utils.worker.koch_save_worker import KochArmObs, KochObs
+from robopy.utils.worker.so101_save_worker import So101ArmObs, So101Obs
 
-from .koch_pair_sys import KochPairSys
+from .so101_pair_sys import So101PairSys
 
 logger = getLogger(__name__)
 
 
-class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
+class So101Robot(ComposedRobot[So101PairSys, Sensors, So101Obs]):
     _kinematic_chain: ClassVar[KinematicChain | None] = None
 
-    def __init__(self, cfg: KochConfig) -> None:
+    def __init__(self, cfg: So101Config) -> None:
         super().__init__()
         self.config = self._init_config(cfg)
         self._sensor_configs = self.config.sensors
-        self._robot_system = KochPairSys(self.config)
+        self._robot_system = So101PairSys(self.config)
         self._sensors = self._init_sensors()
         self._cameras: List[WebCamera | RealsenseCamera] = list(self._sensors.cameras or [])
         self._ik_solver: IKSolver | None = None
@@ -46,8 +46,8 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
     def connect(self) -> None:
         try:
             self._robot_system.connect()
-        except Exception as exc:  # pragma: no cover - hardware interaction
-            logger.error("Failed to connect Koch robot system: %s", exc)
+        except Exception as exc:
+            logger.error("Failed to connect SO-101 robot system: %s", exc)
             self._robot_system.disconnect()
             raise
 
@@ -56,7 +56,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
                 continue
             try:
                 cam.connect()
-            except Exception as exc:  # pragma: no cover - hardware interaction
+            except Exception as exc:
                 logger.error("Failed to connect camera %s: %s", cam.name, exc)
                 cam.disconnect()
                 raise
@@ -70,7 +70,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
     def teleoperation(self, max_seconds: float | None = None) -> None:
         """Start teleoperation mode where leader controls follower."""
         if not self.is_connected:
-            raise ConnectionError("KochRobot is not connected. Call connect() first.")
+            raise ConnectionError("So101Robot is not connected. Call connect() first.")
 
         if self._robot_system.leader is None:
             raise ConnectionError("Leader arm is not available. Cannot start teleoperation.")
@@ -84,7 +84,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
 
         self._robot_system.teleoperate()
 
-    def record(self, max_frame: int, fps: int = 5) -> KochObs:
+    def record(self, max_frame: int, fps: int = 5) -> So101Obs:
         if max_frame <= 0:
             raise ValueError("max_frame must be greater than 0.")
         if fps <= 0:
@@ -121,7 +121,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
                     time.sleep(sleep_time)
                 frame_start = time.perf_counter()
 
-        except KeyboardInterrupt:  # pragma: no cover - manual interruption
+        except KeyboardInterrupt:
             logger.info("Recording interrupted by user.")
             raise
         except Exception as exc:
@@ -130,7 +130,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
 
         leader_arr = np.asarray(leader_obs, dtype=np.float32)
         follower_arr = np.asarray(follower_obs, dtype=np.float32)
-        arms = KochArmObs(leader=leader_arr, follower=follower_arr)
+        arms = So101ArmObs(leader=leader_arr, follower=follower_arr)
 
         camera_obs_np: Dict[str, NDArray[np.uint8] | NDArray[np.float32] | None] = {}
         for cam_name, frames in camera_obs.items():
@@ -139,7 +139,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
             else:
                 camera_obs_np[cam_name] = None
 
-        return KochObs(arms=arms, cameras=camera_obs_np)
+        return So101Obs(arms=arms, cameras=camera_obs_np)
 
     def record_parallel(
         self,
@@ -148,7 +148,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
         teleop_hz: int = 25,
         max_processing_time_ms: float | None = None,
         is_async: bool = True,
-    ) -> KochObs:
+    ) -> So101Obs:
         if max_frame <= 0:
             raise ValueError("max_frame must be greater than 0.")
         if fps <= 0:
@@ -160,7 +160,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
         if max_processing_time_ms is None:
             max_processing_time_ms = 1000.0 / fps * 0.9
 
-        arm_obs_queue: queue.Queue[KochArmObs] = queue.Queue(maxsize=teleop_hz * 2)
+        arm_obs_queue: queue.Queue[So101ArmObs] = queue.Queue(maxsize=teleop_hz * 2)
         stop_event = threading.Event()
 
         def teleop_worker() -> None:
@@ -193,7 +193,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
         total_processing_time = 0.0
 
         logger.info(
-            "Starting Koch parallel recording: frames=%s, fps=%s, teleop_hz=%s",
+            "Starting SO-101 parallel recording: frames=%s, fps=%s, teleop_hz=%s",
             max_frame,
             fps,
             teleop_hz,
@@ -201,7 +201,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
 
         try:
             with Progress() as progress:
-                task = progress.add_task("[green]Recording Koch Robot...", total=max_frame)
+                task = progress.add_task("[green]Recording SO-101 Robot...", total=max_frame)
                 while frame_count < max_frame:
                     frame_start = time.perf_counter()
 
@@ -243,7 +243,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
                         time.sleep(sleep_time)
                 progress.remove_task(task)
 
-        except KeyboardInterrupt:  # pragma: no cover - manual interruption
+        except KeyboardInterrupt:
             logger.info("Recording interrupted by user.")
             raise
         except Exception as exc:
@@ -258,7 +258,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
 
         avg_processing_time = total_processing_time / frame_count * 1000.0
         logger.info(
-            "Koch parallel recording completed: frames=%s, skipped=%s, avg_proc=%.1f ms",
+            "SO-101 parallel recording completed: frames=%s, skipped=%s, avg_proc=%.1f ms",
             frame_count,
             skipped_frames,
             avg_processing_time,
@@ -266,7 +266,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
 
         leader_arr = np.asarray(leader_obs, dtype=np.float32)
         follower_arr = np.asarray(follower_obs, dtype=np.float32)
-        arms = KochArmObs(leader=leader_arr, follower=follower_arr)
+        arms = So101ArmObs(leader=leader_arr, follower=follower_arr)
 
         camera_obs_np: Dict[str, NDArray[np.uint8] | NDArray[np.float32] | None] = {}
         for cam_name, frames in camera_obs.items():
@@ -275,7 +275,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
             else:
                 camera_obs_np[cam_name] = None
 
-        return KochObs(arms=arms, cameras=camera_obs_np)
+        return So101Obs(arms=arms, cameras=camera_obs_np)
 
     def record_with_fixed_leader(
         self,
@@ -284,28 +284,23 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
         fps: int = 20,
         teleop_hz: int = 100,
         max_processing_time_ms: float = 40,
-    ) -> KochObs:
-        """Placeholder for future fixed-leader recording support.
+    ) -> So101Obs:
+        """Placeholder for future fixed-leader recording support."""
+        raise NotImplementedError("record_with_fixed_leader is not implemented for So101Robot yet.")
 
-        Currently KochRobot does not implement this feature. This method
-        exists to satisfy the ComposedRobot protocol and will be
-        implemented when Koch supports fixed-leader playback.
-        """
-        raise NotImplementedError("record_with_fixed_leader is not implemented for KochRobot yet.")
-
-    def get_observation(self) -> KochObs:
+    def get_observation(self) -> So101Obs:
         if not self.is_connected:
-            raise ConnectionError("KochRobot is not connected. Call connect() first.")
+            raise ConnectionError("So101Robot is not connected. Call connect() first.")
 
         arm_obs_dict = self._robot_system.get_observation()
         arms = self._to_arm_obs(arm_obs_dict)
         camera_data = self.sensors_observation(async_mode=False)
 
-        return KochObs(arms=arms, cameras=camera_data)
+        return So101Obs(arms=arms, cameras=camera_data)
 
-    def get_arm_observation(self) -> KochArmObs:
+    def get_arm_observation(self) -> So101ArmObs:
         if not self.is_connected:
-            raise ConnectionError("KochRobot is not connected. Call connect() first.")
+            raise ConnectionError("So101Robot is not connected. Call connect() first.")
 
         arm_obs_dict = self._robot_system.get_observation()
         return self._to_arm_obs(arm_obs_dict)
@@ -314,7 +309,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
         self, *, async_mode: bool = True, timeout_ms: float = 16.0
     ) -> Dict[str, NDArray[np.float32] | NDArray[np.uint8] | None]:
         if not self.is_connected:
-            raise ConnectionError("KochRobot is not connected. Call connect() first.")
+            raise ConnectionError("So101Robot is not connected. Call connect() first.")
 
         return self._capture_camera_data(async_mode=async_mode, timeout_ms=timeout_ms)
 
@@ -326,7 +321,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
         teleop_hz: int = 100,
     ) -> None:
         if not self.is_connected:
-            raise ConnectionError("KochRobot is not connected. Call connect() first.")
+            raise ConnectionError("So101Robot is not connected. Call connect() first.")
 
         if max_frame <= 0:
             raise ValueError("max_frame must be greater than 0.")
@@ -335,12 +330,10 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
         if leader_action.ndim != 2:
             raise ValueError("leader_action must be a 2D array.")
 
-        # Get leader motor names from mapping if leader is not connected
         if self._robot_system.leader is not None and self._robot_system.leader.motors is not None:
             leader_motor_names = list(self._robot_system.leader.motors.motors.keys())
         else:
-            # Use motor mapping keys as leader motor names when leader is not connected
-            leader_motor_names = list(KOCH_MOTOR_MAPPING.keys())
+            leader_motor_names = list(SO101_MOTOR_MAPPING.keys())
 
         if leader_action.shape[1] != len(leader_motor_names):
             raise ValueError(
@@ -374,7 +367,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
 
             self.send_frame_action(leader_action[-1])
 
-        except KeyboardInterrupt:  # pragma: no cover - manual interruption
+        except KeyboardInterrupt:
             logger.info("Send interrupted by user.")
             self._robot_system.disconnect()
         except Exception as exc:
@@ -384,12 +377,10 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
     def send_frame_action(self, leader_action: NDArray[np.float32]) -> None:
         follower_goals: Dict[str, float] = {}
 
-        # Get leader motor names from mapping if leader is not connected
         if self._robot_system.leader is not None and self._robot_system.leader.motors is not None:
             leader_motor_names = list(self._robot_system.leader.motors.motors.keys())
         else:
-            # Use motor mapping keys as leader motor names when leader is not connected
-            leader_motor_names = list(KOCH_MOTOR_MAPPING.keys())
+            leader_motor_names = list(SO101_MOTOR_MAPPING.keys())
 
         if len(leader_action) != len(leader_motor_names):
             raise ValueError(
@@ -398,7 +389,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
             )
 
         for i, motor_name in enumerate(leader_motor_names):
-            follower_name = KOCH_MOTOR_MAPPING.get(motor_name)
+            follower_name = SO101_MOTOR_MAPPING.get(motor_name)
             if follower_name is not None:
                 follower_goals[follower_name] = float(leader_action[i])
 
@@ -406,18 +397,13 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
 
     # ------------------------------------------------------------------
     # Kinematics: FK / IK / EE-space actions
-    #
-    # WARNING: Koch has no official URDF.  The kinematic parameters used
-    # here are rough estimates from MuJoCo menagerie and CAD drawings.
-    # See ``robopy.kinematics.robot_chains.koch_chain`` for details and
-    # TODO(physical-params) markers.
     # ------------------------------------------------------------------
 
     @classmethod
     def kinematic_chain(cls) -> KinematicChain:
-        """Get the Koch kinematic chain (lazy-initialised, shared)."""
+        """Get the SO-101 kinematic chain (lazy-initialised, shared)."""
         if cls._kinematic_chain is None:
-            cls._kinematic_chain = koch_chain()
+            cls._kinematic_chain = so101_chain()
         return cls._kinematic_chain
 
     @classmethod
@@ -499,7 +485,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
                 5-dimensional).
         """
         if not self.is_connected:
-            raise ConnectionError("KochRobot is not connected. Call connect() first.")
+            raise ConnectionError("So101Robot is not connected. Call connect() first.")
 
         ee = np.asarray(ee_action, dtype=np.float64)
         if len(ee) == 6:
@@ -544,7 +530,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
             teleop_hz: Motor command rate.
         """
         if not self.is_connected:
-            raise ConnectionError("KochRobot is not connected. Call connect() first.")
+            raise ConnectionError("So101Robot is not connected. Call connect() first.")
 
         if ee_actions.shape[0] != max_frame:
             raise ValueError("ee_actions length must match max_frame.")
@@ -576,9 +562,9 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _init_config(self, cfg: KochConfig) -> KochConfig:
+    def _init_config(self, cfg: So101Config) -> So101Config:
         if cfg.sensors is None:
-            cfg.sensors = KochSensorConfig()
+            cfg.sensors = So101SensorConfig()
         return cfg
 
     def _init_sensors(self) -> Sensors:
@@ -597,7 +583,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
         return Sensors(cameras=cameras, tactile=None)
 
     @property
-    def sensor_configs(self) -> KochSensorConfig:
+    def sensor_configs(self) -> So101SensorConfig:
         return self._sensor_configs
 
     @property
@@ -609,29 +595,20 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
         return self._sensors
 
     @property
-    def robot_system(self) -> KochPairSys:
+    def robot_system(self) -> So101PairSys:
         return self._robot_system
 
-    def __del__(self) -> None:  # pragma: no cover - best effort cleanup
+    def __del__(self) -> None:
         try:
             self.disconnect()
         except Exception:
             pass
 
-    def _teleoperate_step(self, *, record: bool) -> KochArmObs | None:
+    def _teleoperate_step(self, *, record: bool) -> So101ArmObs | None:
         arm_obs = self._robot_system.teleope_step(if_record=record)
         if arm_obs is None or not record:
             return None
         return self._to_arm_obs(arm_obs)
-
-        if record:
-            arm_obs_dict = self._robot_system.teleope_step(if_record=True)
-            if arm_obs_dict is None:
-                return None
-            return self._to_arm_obs(arm_obs_dict)
-
-        self._robot_system.teleope_step(if_record=False)
-        return None
 
     def _capture_camera_data(
         self, *, async_mode: bool, timeout_ms: float
@@ -671,14 +648,14 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
 
         return camera_data
 
-    def _to_arm_obs(self, arm_data: object) -> KochArmObs:
-        if isinstance(arm_data, KochArmObs):
+    def _to_arm_obs(self, arm_data: object) -> So101ArmObs:
+        if isinstance(arm_data, So101ArmObs):
             return arm_data
         if isinstance(arm_data, dict):
             leader = np.asarray(arm_data["leader"], dtype=np.float32)
             follower = np.asarray(arm_data["follower"], dtype=np.float32)
-            return KochArmObs(leader=leader, follower=follower)
+            return So101ArmObs(leader=leader, follower=follower)
 
         leader = np.asarray(getattr(arm_data, "leader"), dtype=np.float32)
         follower = np.asarray(getattr(arm_data, "follower"), dtype=np.float32)
-        return KochArmObs(leader=leader, follower=follower)
+        return So101ArmObs(leader=leader, follower=follower)
