@@ -24,10 +24,15 @@ logger = logging.getLogger(__name__)
 
 
 def _apply_deadzone(value: float, deadzone: float) -> float:
-    """Zero out values whose absolute magnitude is below *deadzone*."""
+    """Zero out values below *deadzone* and remap the rest to [0, 1].
+
+    Uses linear remapping from the deadzone boundary so that the output
+    transitions smoothly from 0 instead of jumping discontinuously.
+    """
     if abs(value) < deadzone:
         return 0.0
-    return value
+    sign = 1.0 if value > 0 else -1.0
+    return sign * (abs(value) - deadzone) / (1.0 - deadzone)
 
 
 class So101SpaceMouseController:
@@ -69,6 +74,10 @@ class So101SpaceMouseController:
             position_weight=1.0,
             orientation_weight=0.5,  # Increased from 0.1
         )
+
+        # EMA-filtered SpaceMouse axes: [x, y, z, pitch, roll]
+        self._filtered_axes = np.zeros(5, dtype=np.float64)
+        self._filter_initialized = False
 
     @property
     def robot(self) -> So101Robot:
@@ -122,6 +131,7 @@ class So101SpaceMouseController:
 
         end_time = (time.perf_counter() + max_seconds) if max_seconds is not None else None
 
+        self._reset_filter()
         logger.info("SpaceMouse teleoperation started. Press Ctrl+C to stop.")
         try:
             while True:
@@ -228,6 +238,7 @@ class So101SpaceMouseController:
                 time.sleep(max(0.0, dt - elapsed))
 
         # Start control thread
+        self._reset_filter()
         control_thread = threading.Thread(target=control_worker, daemon=True)
         control_thread.start()
 
@@ -333,6 +344,11 @@ class So101SpaceMouseController:
     # Private helpers
     # ------------------------------------------------------------------
 
+    def _reset_filter(self) -> None:
+        """Reset the input smoothing filter state for a new session."""
+        self._filtered_axes[:] = 0.0
+        self._filter_initialized = False
+
     def _control_step(
         self,
         target_ee: NDArray[np.float64],
@@ -353,6 +369,20 @@ class So101SpaceMouseController:
         sz = _apply_deadzone(sm.z, cfg.deadzone)
         sp = _apply_deadzone(sm.pitch, cfg.deadzone)
         sr = _apply_deadzone(sm.roll, cfg.deadzone)
+
+        # Exponential moving average smoothing to reduce input jitter
+        raw_axes = np.array([sx, sy, sz, sp, sr])
+        if not self._filter_initialized:
+            self._filtered_axes = raw_axes.copy()
+            self._filter_initialized = True
+        elif cfg.input_smoothing > 0.0:
+            alpha = 1.0 - cfg.input_smoothing
+            self._filtered_axes = (
+                alpha * raw_axes + cfg.input_smoothing * self._filtered_axes
+            )
+        else:
+            self._filtered_axes = raw_axes.copy()
+        sx, sy, sz, sp, sr = self._filtered_axes
 
         # Compute EE delta
         target_ee = target_ee.copy()
@@ -385,6 +415,13 @@ class So101SpaceMouseController:
             )
 
         joint_deg = np.rad2deg(result.joint_angles_rad).astype(np.float32)
+
+        # Clamp per-joint velocity to prevent vibration from IK jumps
+        prev_joint_deg = current_joints_for_ik[:5]
+        delta = joint_deg - prev_joint_deg
+        max_step = np.float32(cfg.max_joint_delta_deg)
+        joint_deg = prev_joint_deg + np.clip(delta, -max_step, max_step)
+
         full_action = np.append(joint_deg, np.float32(gripper_deg))
 
         # Send to follower

@@ -32,6 +32,26 @@ def _mock_reader(
     return reader
 
 
+def _make_controller(
+    robot: MagicMock,
+    cfg: SpaceMouseConfig | None = None,
+    state: SpaceMouseState | None = None,
+    reader: MagicMock | None = None,
+):
+    """Create a controller with mocked internals, bypassing ``__init__``."""
+    from robopy.kinematics.ik_solver import IKConfig
+    from robopy.robots.so101.so101_spacemouse import So101SpaceMouseController
+
+    ctrl = So101SpaceMouseController.__new__(So101SpaceMouseController)
+    ctrl._robot = robot
+    ctrl._sm_config = cfg or SpaceMouseConfig()
+    ctrl._reader = reader if reader is not None else _mock_reader(state)
+    ctrl._ik_config = IKConfig()
+    ctrl._filtered_axes = np.zeros(5, dtype=np.float64)
+    ctrl._filter_initialized = False
+    return ctrl
+
+
 def _mock_robot(
     follower_joints: np.ndarray | None = None,
 ) -> MagicMock:
@@ -104,13 +124,15 @@ class TestApplyDeadzone:
     def test_above_deadzone(self) -> None:
         from robopy.robots.so101.so101_spacemouse import _apply_deadzone
 
-        assert _apply_deadzone(0.5, 0.05) == 0.5
-        assert _apply_deadzone(-0.5, 0.05) == -0.5
+        # Output is remapped: (|value| - deadzone) / (1 - deadzone)
+        assert _apply_deadzone(0.5, 0.05) == pytest.approx((0.5 - 0.05) / 0.95)
+        assert _apply_deadzone(-0.5, 0.05) == pytest.approx(-(0.5 - 0.05) / 0.95)
 
     def test_at_deadzone(self) -> None:
         from robopy.robots.so101.so101_spacemouse import _apply_deadzone
 
-        assert _apply_deadzone(0.05, 0.05) == 0.05
+        # Exactly at boundary remaps to 0.0
+        assert _apply_deadzone(0.05, 0.05) == pytest.approx(0.0)
         assert _apply_deadzone(0.04999, 0.05) == 0.0
 
 
@@ -122,14 +144,9 @@ class TestApplyDeadzone:
 class TestControlStep:
     def test_zero_input_no_movement(self) -> None:
         """When SpaceMouse is centred, EE target should not change."""
-        from robopy.robots.so101.so101_spacemouse import So101SpaceMouseController
-
         robot = _mock_robot()
         cfg = SpaceMouseConfig()
-        ctrl = So101SpaceMouseController.__new__(So101SpaceMouseController)
-        ctrl._robot = robot
-        ctrl._sm_config = cfg
-        ctrl._reader = _mock_reader(SpaceMouseState())  # all zeros
+        ctrl = _make_controller(robot, cfg=cfg, state=SpaceMouseState())
 
         target_ee = np.array([0.0, 0.0, 0.2, 0.0, 0.0], dtype=np.float64)
         gripper = 50.0
@@ -143,14 +160,9 @@ class TestControlStep:
 
     def test_positive_x_input(self) -> None:
         """Full positive x should advance target_ee[0]."""
-        from robopy.robots.so101.so101_spacemouse import So101SpaceMouseController
-
         robot = _mock_robot()
-        cfg = SpaceMouseConfig(linear_speed=0.10, deadzone=0.0)
-        ctrl = So101SpaceMouseController.__new__(So101SpaceMouseController)
-        ctrl._robot = robot
-        ctrl._sm_config = cfg
-        ctrl._reader = _mock_reader(SpaceMouseState(x=1.0))
+        cfg = SpaceMouseConfig(linear_speed=0.10, deadzone=0.0, input_smoothing=0.0)
+        ctrl = _make_controller(robot, cfg=cfg, state=SpaceMouseState(x=1.0))
 
         target_ee = np.array([0.0, 0.0, 0.2, 0.0, 0.0], dtype=np.float64)
         dt = 0.02  # 50 Hz
@@ -164,14 +176,9 @@ class TestControlStep:
 
     def test_button_gripper_close(self) -> None:
         """Left button should decrease gripper angle."""
-        from robopy.robots.so101.so101_spacemouse import So101SpaceMouseController
-
         robot = _mock_robot()
-        cfg = SpaceMouseConfig(gripper_speed=50.0, deadzone=0.0)
-        ctrl = So101SpaceMouseController.__new__(So101SpaceMouseController)
-        ctrl._robot = robot
-        ctrl._sm_config = cfg
-        ctrl._reader = _mock_reader(SpaceMouseState(buttons=[True, False]))
+        cfg = SpaceMouseConfig(gripper_speed=50.0, deadzone=0.0, input_smoothing=0.0)
+        ctrl = _make_controller(robot, cfg=cfg, state=SpaceMouseState(buttons=[True, False]))
 
         target_ee = np.zeros(5, dtype=np.float64)
         dt = 0.02
@@ -183,14 +190,9 @@ class TestControlStep:
 
     def test_button_gripper_open(self) -> None:
         """Right button should increase gripper angle."""
-        from robopy.robots.so101.so101_spacemouse import So101SpaceMouseController
-
         robot = _mock_robot()
-        cfg = SpaceMouseConfig(gripper_speed=50.0, deadzone=0.0)
-        ctrl = So101SpaceMouseController.__new__(So101SpaceMouseController)
-        ctrl._robot = robot
-        ctrl._sm_config = cfg
-        ctrl._reader = _mock_reader(SpaceMouseState(buttons=[False, True]))
+        cfg = SpaceMouseConfig(gripper_speed=50.0, deadzone=0.0, input_smoothing=0.0)
+        ctrl = _make_controller(robot, cfg=cfg, state=SpaceMouseState(buttons=[False, True]))
 
         target_ee = np.zeros(5, dtype=np.float64)
         dt = 0.02
@@ -202,14 +204,9 @@ class TestControlStep:
 
     def test_gripper_clamp_min(self) -> None:
         """Gripper should not go below 0."""
-        from robopy.robots.so101.so101_spacemouse import So101SpaceMouseController
-
         robot = _mock_robot()
-        cfg = SpaceMouseConfig(gripper_speed=1000.0, deadzone=0.0)
-        ctrl = So101SpaceMouseController.__new__(So101SpaceMouseController)
-        ctrl._robot = robot
-        ctrl._sm_config = cfg
-        ctrl._reader = _mock_reader(SpaceMouseState(buttons=[True, False]))
+        cfg = SpaceMouseConfig(gripper_speed=1000.0, deadzone=0.0, input_smoothing=0.0)
+        ctrl = _make_controller(robot, cfg=cfg, state=SpaceMouseState(buttons=[True, False]))
 
         target_ee = np.zeros(5, dtype=np.float64)
 
@@ -219,14 +216,9 @@ class TestControlStep:
 
     def test_gripper_clamp_max(self) -> None:
         """Gripper should not exceed 100."""
-        from robopy.robots.so101.so101_spacemouse import So101SpaceMouseController
-
         robot = _mock_robot()
-        cfg = SpaceMouseConfig(gripper_speed=1000.0, deadzone=0.0)
-        ctrl = So101SpaceMouseController.__new__(So101SpaceMouseController)
-        ctrl._robot = robot
-        ctrl._sm_config = cfg
-        ctrl._reader = _mock_reader(SpaceMouseState(buttons=[False, True]))
+        cfg = SpaceMouseConfig(gripper_speed=1000.0, deadzone=0.0, input_smoothing=0.0)
+        ctrl = _make_controller(robot, cfg=cfg, state=SpaceMouseState(buttons=[False, True]))
 
         target_ee = np.zeros(5, dtype=np.float64)
 
@@ -236,14 +228,9 @@ class TestControlStep:
 
     def test_angular_input(self) -> None:
         """Pitch and roll inputs should move target orientation."""
-        from robopy.robots.so101.so101_spacemouse import So101SpaceMouseController
-
         robot = _mock_robot()
-        cfg = SpaceMouseConfig(angular_speed=0.5, deadzone=0.0)
-        ctrl = So101SpaceMouseController.__new__(So101SpaceMouseController)
-        ctrl._robot = robot
-        ctrl._sm_config = cfg
-        ctrl._reader = _mock_reader(SpaceMouseState(pitch=1.0, roll=-1.0))
+        cfg = SpaceMouseConfig(angular_speed=0.5, deadzone=0.0, input_smoothing=0.0)
+        ctrl = _make_controller(robot, cfg=cfg, state=SpaceMouseState(pitch=1.0, roll=-1.0))
 
         target_ee = np.zeros(5, dtype=np.float64)
         dt = 0.02
@@ -257,14 +244,9 @@ class TestControlStep:
 
     def test_deadzone_filters_small_inputs(self) -> None:
         """Inputs below the deadzone should be zeroed."""
-        from robopy.robots.so101.so101_spacemouse import So101SpaceMouseController
-
         robot = _mock_robot()
-        cfg = SpaceMouseConfig(deadzone=0.1)
-        ctrl = So101SpaceMouseController.__new__(So101SpaceMouseController)
-        ctrl._robot = robot
-        ctrl._sm_config = cfg
-        ctrl._reader = _mock_reader(SpaceMouseState(x=0.05, y=0.09, z=-0.08))
+        cfg = SpaceMouseConfig(deadzone=0.1, input_smoothing=0.0)
+        ctrl = _make_controller(robot, cfg=cfg, state=SpaceMouseState(x=0.05, y=0.09, z=-0.08))
 
         target_ee = np.zeros(5, dtype=np.float64)
         dt = 0.02
@@ -281,29 +263,19 @@ class TestControlStep:
 
 class TestTeleoperation:
     def test_not_connected_raises(self) -> None:
-        from robopy.robots.so101.so101_spacemouse import So101SpaceMouseController
-
         robot = _mock_robot()
         robot.is_connected = False
-        ctrl = So101SpaceMouseController.__new__(So101SpaceMouseController)
-        ctrl._robot = robot
-        ctrl._sm_config = SpaceMouseConfig()
         reader = _mock_reader()
         reader.is_running = False
-        ctrl._reader = reader
+        ctrl = _make_controller(robot, reader=reader)
 
         with pytest.raises(ConnectionError):
             ctrl.teleoperation(max_seconds=1.0)
 
     def test_timed_teleoperation(self) -> None:
         """Timed teleoperation should exit after max_seconds."""
-        from robopy.robots.so101.so101_spacemouse import So101SpaceMouseController
-
         robot = _mock_robot()
-        ctrl = So101SpaceMouseController.__new__(So101SpaceMouseController)
-        ctrl._robot = robot
-        ctrl._sm_config = SpaceMouseConfig(control_hz=100)
-        ctrl._reader = _mock_reader()
+        ctrl = _make_controller(robot, cfg=SpaceMouseConfig(control_hz=100))
 
         start = time.perf_counter()
         ctrl.teleoperation(max_seconds=0.15)
@@ -320,38 +292,23 @@ class TestTeleoperation:
 
 class TestRecordParallel:
     def test_invalid_max_frame(self) -> None:
-        from robopy.robots.so101.so101_spacemouse import So101SpaceMouseController
-
         robot = _mock_robot()
-        ctrl = So101SpaceMouseController.__new__(So101SpaceMouseController)
-        ctrl._robot = robot
-        ctrl._sm_config = SpaceMouseConfig()
-        ctrl._reader = _mock_reader()
+        ctrl = _make_controller(robot)
 
         with pytest.raises(ValueError, match="max_frame"):
             ctrl.record_parallel(max_frame=0)
 
     def test_invalid_fps(self) -> None:
-        from robopy.robots.so101.so101_spacemouse import So101SpaceMouseController
-
         robot = _mock_robot()
-        ctrl = So101SpaceMouseController.__new__(So101SpaceMouseController)
-        ctrl._robot = robot
-        ctrl._sm_config = SpaceMouseConfig()
-        ctrl._reader = _mock_reader()
+        ctrl = _make_controller(robot)
 
         with pytest.raises(ValueError, match="fps"):
             ctrl.record_parallel(max_frame=10, fps=0)
 
     def test_record_returns_so101_obs(self) -> None:
         """A short recording should return valid So101Obs."""
-        from robopy.robots.so101.so101_spacemouse import So101SpaceMouseController
-
         robot = _mock_robot()
-        ctrl = So101SpaceMouseController.__new__(So101SpaceMouseController)
-        ctrl._robot = robot
-        ctrl._sm_config = SpaceMouseConfig(control_hz=200)
-        ctrl._reader = _mock_reader()
+        ctrl = _make_controller(robot, cfg=SpaceMouseConfig(control_hz=200))
 
         obs = ctrl.record_parallel(max_frame=3, fps=30, control_hz=200)
 
@@ -361,16 +318,11 @@ class TestRecordParallel:
         assert isinstance(obs.cameras, dict)
 
     def test_record_not_connected(self) -> None:
-        from robopy.robots.so101.so101_spacemouse import So101SpaceMouseController
-
         robot = _mock_robot()
         robot.is_connected = False
-        ctrl = So101SpaceMouseController.__new__(So101SpaceMouseController)
-        ctrl._robot = robot
-        ctrl._sm_config = SpaceMouseConfig()
         reader = _mock_reader()
         reader.is_running = False
-        ctrl._reader = reader
+        ctrl = _make_controller(robot, reader=reader)
 
         with pytest.raises(ConnectionError):
             ctrl.record_parallel(max_frame=5)
