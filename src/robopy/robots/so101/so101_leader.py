@@ -52,8 +52,9 @@ class So101Leader(Arm):
         if self._motors is None:
             logger.warning("Leader motors are not initialized. Cannot enable torque.")
             return
-        # Enable torque only on gripper for leader (to provide resistance)
-        self._motors.write(STSControlTable.TORQUE_ENABLE, "gripper", 1)
+        # Leader arm should have torque disabled to allow free movement during teleoperation
+        # No torque is enabled for any motors including gripper
+        logger.debug("Leader arm torque_enable called, but keeping all motors free to move.")
 
     def torque_disable(self) -> None:
         if self._motors is None:
