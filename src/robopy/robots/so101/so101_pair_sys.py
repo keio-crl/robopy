@@ -1,15 +1,16 @@
 # robopy/robots/so101/so101_pair_sys.py
 
+import json
 import logging
 import os
-import pickle
 import time
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 import numpy as np
 from numpy.typing import NDArray
 
 from robopy.config.robot_config.so101_config import SO101_MOTOR_MAPPING, So101Config
+from robopy.motor.feetech_bus import MotorCalibration
 from robopy.motor.feetech_control_table import STSControlTable
 from robopy.robots.so101.calibration import run_arm_calibration
 
@@ -56,27 +57,24 @@ class So101PairSys(Robot):
             try:
                 if os.path.exists(self.calibration_path):
                     logger.info(f"Loading calibration from '{self.calibration_path}'...")
-                    with open(self.calibration_path, "rb") as f:
-                        calibration = pickle.load(f)
+                    calibration = self._load_calibration()
                 else:
                     logger.info("Calibration file not found. Starting new calibration procedure.")
                     calibration = self.run_calibration()
-
-                    os.makedirs(os.path.dirname(self.calibration_path), exist_ok=True)
-                    logger.info(f"Saving calibration to '{self.calibration_path}'...")
-                    with open(self.calibration_path, "wb") as f:
-                        pickle.dump(calibration, f)
+                    self._save_calibration(calibration)
             except (OSError, IOError, PermissionError) as e:
                 logger.error(f"File operation error: {e}")
                 raise ConnectionError(f"Calibration file error: {e}")
-            except (pickle.PickleError, EOFError) as e:
+            except (json.JSONDecodeError, KeyError, TypeError) as e:
                 logger.error(f"Calibration data corrupted: {e}")
                 raise ConnectionError(f"Calibration data error: {e}")
 
-            # Apply calibration to each arm
+            # Apply calibration to each arm and write to motor EEPROM
             if self._leader is not None and self._leader.motors is not None:
                 self._leader.motors.set_calibration(calibration["leader"])
+                self._leader.motors.write_calibration_to_motors()
             self._follower.motors.set_calibration(calibration["follower"])
+            self._follower.motors.write_calibration_to_motors()
             logger.info("Calibration successfully applied to both arms.")
 
             self.follower.torque_enable()
@@ -98,9 +96,9 @@ class So101PairSys(Robot):
             self.disconnect()
             raise ConnectionError(f"Connection failed due to unexpected error: {e}")
 
-    def run_calibration(self) -> Dict[str, Dict[str, Tuple[int, bool]]]:
+    def run_calibration(self) -> Dict[str, Dict[str, MotorCalibration]]:
         """Orchestrates the calibration process for both arms."""
-        all_calibration_data = {}
+        all_calibration_data: Dict[str, Dict[str, MotorCalibration]] = {}
 
         if self._leader is not None:
             leader_calib = run_arm_calibration(self._leader, arm_type="leader")
@@ -113,6 +111,33 @@ class So101PairSys(Robot):
 
         logger.info("Both SO-101 arms have been calibrated.")
         return all_calibration_data
+
+    def _save_calibration(self, calibration: Dict[str, Dict[str, MotorCalibration]]) -> None:
+        """Saves calibration data as JSON."""
+        os.makedirs(os.path.dirname(self.calibration_path), exist_ok=True)
+        logger.info(f"Saving calibration to '{self.calibration_path}'...")
+
+        serializable: Dict[str, Any] = {}
+        for arm_name, arm_calib in calibration.items():
+            serializable[arm_name] = {
+                motor_name: calib.to_dict() for motor_name, calib in arm_calib.items()
+            }
+
+        with open(self.calibration_path, "w") as f:
+            json.dump(serializable, f, indent=4)
+
+    def _load_calibration(self) -> Dict[str, Dict[str, MotorCalibration]]:
+        """Loads calibration data from JSON."""
+        with open(self.calibration_path) as f:
+            raw = json.load(f)
+
+        calibration: Dict[str, Dict[str, MotorCalibration]] = {}
+        for arm_name, arm_data in raw.items():
+            calibration[arm_name] = {
+                motor_name: MotorCalibration.from_dict(motor_data)
+                for motor_name, motor_data in arm_data.items()
+            }
+        return calibration
 
     def disconnect(self) -> None:
         """Disconnects from all devices."""
