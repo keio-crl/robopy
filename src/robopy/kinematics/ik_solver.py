@@ -145,7 +145,7 @@ class IKSolver:
         pos_err = float(np.linalg.norm(error[:3]))
         ori_err = float(np.linalg.norm(error[3:]))
 
-        logger.warning(
+        logger.debug(
             "IK did not converge after %d iterations. "
             "Position error: %.6f m, Orientation error: %.6f rad",
             cfg.max_iterations,
