@@ -94,7 +94,7 @@ from robopy.robots.so101.so101_spacemouse import So101SpaceMouseController
 
 config = So101Config(
     follower_port="/dev/ttyACM0",
-    calibration_path="calibration/so101_calib.pkl",
+    calibration_path="calibration/so101_calib.json",
 )
 
 robot = So101Robot(cfg=config)
