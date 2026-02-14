@@ -50,6 +50,7 @@ class SpaceMouseReader:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._is_running = False
+        self._device = None
 
     @property
     def is_running(self) -> bool:
@@ -69,12 +70,13 @@ class SpaceMouseReader:
                 "Install it with: pip install pyspacemouse"
             ) from exc
 
-        success = pyspacemouse.open()
-        if not success:
+        try:
+            self._device = pyspacemouse.open()
+        except Exception as exc:
             raise RuntimeError(
                 "Failed to open SpaceMouse device. "
                 "Check that the device is connected and permissions are set."
-            )
+            ) from exc
 
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._poll_loop, daemon=True)
@@ -92,12 +94,12 @@ class SpaceMouseReader:
             self._thread.join(timeout=2.0)
             self._thread = None
 
-        try:
-            import pyspacemouse
-
-            pyspacemouse.close()
-        except Exception:
-            pass
+        if self._device is not None:
+            try:
+                self._device.close()
+            except Exception:
+                pass
+            self._device = None
 
         self._is_running = False
         logger.info("SpaceMouseReader stopped.")
@@ -118,11 +120,13 @@ class SpaceMouseReader:
 
     def _poll_loop(self) -> None:
         """Background polling loop."""
-        import pyspacemouse
+        if self._device is None:
+            logger.error("Device not initialized in poll loop")
+            return
 
         while not self._stop_event.is_set():
             try:
-                raw = pyspacemouse.read()
+                raw = self._device.read()
 
                 buttons = [False, False]
                 if hasattr(raw, "buttons") and raw.buttons:
