@@ -1,7 +1,7 @@
 import logging
 
 from robopy.config.robot_config.so101_config import So101Config
-from robopy.motor.feetech_bus import FeetechBus, FeetechMotor
+from robopy.motor.feetech_bus import FeetechBus, FeetechMotor, NormMode
 from robopy.motor.feetech_control_table import STSControlTable
 from robopy.robots.common.arm import Arm
 
@@ -31,7 +31,7 @@ class So101Leader(Arm):
                     "elbow_flex": FeetechMotor(3, "elbow_flex", "sts3215"),
                     "wrist_flex": FeetechMotor(4, "wrist_flex", "sts3215"),
                     "wrist_roll": FeetechMotor(5, "wrist_roll", "sts3215"),
-                    "gripper": FeetechMotor(6, "gripper", "sts3215"),
+                    "gripper": FeetechMotor(6, "gripper", "sts3215", NormMode.RANGE_0_100),
                 },
             )
         self._is_connected = False

@@ -9,9 +9,10 @@ by the SO-100/SO-101 robot arms).
 """
 
 import logging
+from dataclasses import asdict, dataclass
 from enum import Enum
 from types import TracebackType
-from typing import Any, Dict, List, Tuple, Type
+from typing import Any, Dict, List, Type
 
 import numpy as np
 import scservo_sdk as scs
@@ -33,6 +34,31 @@ NUM_READ_RETRY = 10
 NUM_WRITE_RETRY = 2
 
 
+class NormMode(Enum):
+    """Normalization mode for converting raw motor positions to user-facing values."""
+
+    DEGREES = "degrees"
+    RANGE_0_100 = "range_0_100"
+
+
+@dataclass
+class MotorCalibration:
+    """Calibration data for a single motor, matching lerobot's format."""
+
+    id: int
+    drive_mode: int
+    homing_offset: int
+    range_min: int
+    range_max: int
+
+    def to_dict(self) -> Dict[str, int]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, int]) -> "MotorCalibration":
+        return cls(**d)
+
+
 class FeetechCommError(ConnectionError):
     """Exception representing a Feetech communication error."""
 
@@ -45,10 +71,17 @@ class FeetechCommError(ConnectionError):
 class FeetechMotor:
     """Class that holds the definition and state of an individual Feetech motor."""
 
-    def __init__(self, motor_id: int, motor_name: str, model_name: str) -> None:
+    def __init__(
+        self,
+        motor_id: int,
+        motor_name: str,
+        model_name: str,
+        norm_mode: NormMode = NormMode.DEGREES,
+    ) -> None:
         self.id = motor_id
         self.motor_name = motor_name
         self.model_name = model_name
+        self.norm_mode = norm_mode
 
         definition = get_feetech_model_definition(model_name)
         self.control_table: type[Enum] = definition["control_table"]
@@ -70,8 +103,7 @@ class FeetechBus:
         self.port_handler = scs.PortHandler(port)
         self.packet_handler = scs.PacketHandler(SCS_PROTOCOL_VERSION)
         self.motors = motors
-        # Calibration data: {motor_name: (homing_offset, inverted)}
-        self.calibration: Dict[str, Tuple[int, bool]] = {}
+        self.calibration: Dict[str, MotorCalibration] = {}
 
     def open(self, baudrate: int = BAUDRATE) -> None:
         """Opens the communication port."""
@@ -98,10 +130,113 @@ class FeetechBus:
     ) -> None:
         self.close()
 
-    def set_calibration(self, calibration_data: Dict[str, Tuple[int, bool]]) -> None:
+    def set_calibration(self, calibration_data: Dict[str, MotorCalibration]) -> None:
         """Sets the calibration data for the motors."""
         self.calibration = calibration_data
         logger.info("Feetech calibration data set.")
+
+    def write_calibration_to_motors(self) -> None:
+        """Writes calibration values (homing_offset, min/max limits) to motor EEPROM."""
+        for name, calib in self.calibration.items():
+            if name not in self.motors:
+                continue
+            self.write(STSControlTable.HOMING_OFFSET, name, calib.homing_offset)
+            self.write(STSControlTable.MIN_POSITION_LIMIT, name, calib.range_min)
+            self.write(STSControlTable.MAX_POSITION_LIMIT, name, calib.range_max)
+
+    def reset_calibration_on_motors(self) -> None:
+        """Resets calibration registers on all motors to defaults."""
+        for name in self.motors:
+            self.write(STSControlTable.HOMING_OFFSET, name, 0)
+            self.write(STSControlTable.MIN_POSITION_LIMIT, name, 0)
+            self.write(STSControlTable.MAX_POSITION_LIMIT, name, 4095)
+
+    def set_half_turn_homings(self) -> Dict[str, int]:
+        """Computes and writes homing offsets so each motor's midpoint reads as 2047.
+
+        Returns the homing offset for each motor.
+        """
+        self.reset_calibration_on_motors()
+
+        positions = self.sync_read(STSControlTable.PRESENT_POSITION, list(self.motors.keys()))
+
+        homing_offsets: Dict[str, int] = {}
+        for name in self.motors:
+            raw_pos = int(positions[name])
+            resolution = self.motors[name].resolution
+            half_turn = (resolution - 1) // 2  # 2047 for 4096-step motors
+            offset = raw_pos - half_turn
+            homing_offsets[name] = offset
+            self.write(STSControlTable.HOMING_OFFSET, name, offset)
+
+        return homing_offsets
+
+    def record_ranges_of_motion(
+        self, motor_names: List[str]
+    ) -> tuple[Dict[str, int], Dict[str, int]]:
+        """Interactively records min/max positions for the specified motors.
+
+        The user moves each joint through its full range of motion while this
+        method tracks the extremes. Press Enter to finish.
+        """
+        import sys
+        import termios
+        import tty
+
+        range_mins: Dict[str, int] = {}
+        range_maxes: Dict[str, int] = {}
+
+        # Initialize with current positions
+        positions = self.sync_read(STSControlTable.PRESENT_POSITION, motor_names)
+        for name in motor_names:
+            val = int(positions[name])
+            range_mins[name] = val
+            range_maxes[name] = val
+
+        # Set stdin to non-blocking to detect Enter
+        old_settings = termios.tcgetattr(sys.stdin)
+        try:
+            tty.setcbreak(sys.stdin.fileno())
+            print("\nRecording ranges... Move all joints through their full range.")
+            print("Press Enter when done.\n")
+
+            import select
+
+            while True:
+                positions = self.sync_read(STSControlTable.PRESENT_POSITION, motor_names)
+                for name in motor_names:
+                    val = int(positions[name])
+                    if val < range_mins[name]:
+                        range_mins[name] = val
+                    if val > range_maxes[name]:
+                        range_maxes[name] = val
+
+                # Display current tracking
+                parts = []
+                for name in motor_names:
+                    parts.append(
+                        f"  {name}: min={range_mins[name]}, "
+                        f"cur={int(positions[name])}, max={range_maxes[name]}"
+                    )
+                print("\r" + " | ".join(parts) + "    ", end="", flush=True)
+
+                # Check if Enter was pressed
+                if select.select([sys.stdin], [], [], 0.02)[0]:
+                    sys.stdin.read(1)
+                    break
+        finally:
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+            print()
+
+        # Validate that all motors were moved
+        for name in motor_names:
+            if range_mins[name] == range_maxes[name]:
+                raise ValueError(
+                    f"Motor '{name}' was not moved during range recording "
+                    f"(min == max == {range_mins[name]})."
+                )
+
+        return range_mins, range_maxes
 
     def _split_into_byte_chunks(self, value: int, length: int) -> List[int]:
         """Converts an integer value into a list of bytes for transmission (little-endian)."""
@@ -223,21 +358,32 @@ class FeetechBus:
         values: NDArray[np.int32],
         motor_names: List[str],
     ) -> NDArray[np.float32]:
-        """Converts raw motor steps (int32) to calibrated degrees (float32)."""
-        values = values.astype(np.int32)
+        """Converts raw motor steps to normalized values using range-based normalization.
+
+        For DEGREES mode: (raw - mid) * 360 / max_resolution
+        For RANGE_0_100 mode: linear mapping [range_min, range_max] -> [0, 100]
+        """
+        float_values = values.astype(np.float32)
         for i, name in enumerate(motor_names):
             if name not in self.calibration:
                 continue
-            homing_offset, inverted = self.calibration[name]
-            if inverted:
-                values[i] *= -1
-            values[i] += homing_offset
+            calib = self.calibration[name]
+            motor = self.motors[name]
 
-        # Convert from steps to degrees
-        float_values = values.astype(np.float32)
-        for i, name in enumerate(motor_names):
-            resolution = self.motors[name].resolution
-            float_values[i] = float_values[i] / (resolution / 2) * 180
+            if motor.norm_mode == NormMode.RANGE_0_100:
+                bounded = float(np.clip(float_values[i], calib.range_min, calib.range_max))
+                if calib.range_max != calib.range_min:
+                    norm = (bounded - calib.range_min) / (calib.range_max - calib.range_min) * 100
+                else:
+                    norm = 0.0
+                if calib.drive_mode:
+                    norm = 100 - norm
+                float_values[i] = norm
+            else:
+                # NormMode.DEGREES
+                mid = (calib.range_min + calib.range_max) / 2.0
+                max_res = motor.resolution - 1  # 4095
+                float_values[i] = (float_values[i] - mid) * 360.0 / max_res
 
         return float_values
 
@@ -246,24 +392,30 @@ class FeetechBus:
         values: NDArray[np.float32],
         motor_names: List[str],
     ) -> NDArray[np.int32]:
-        """Converts calibrated degrees (float32) back to raw motor steps (int32)."""
-        # Convert from degrees to steps
-        step_values = values.astype(np.float32)
-        for i, name in enumerate(motor_names):
-            resolution = self.motors[name].resolution
-            step_values[i] = step_values[i] / 180 * (resolution / 2)
+        """Converts normalized values back to raw motor steps.
 
-        int_values = np.round(step_values).astype(np.int32)
-
+        Inverse of _apply_calibration.
+        """
+        step_values = values.copy().astype(np.float64)
         for i, name in enumerate(motor_names):
             if name not in self.calibration:
                 continue
-            homing_offset, inverted = self.calibration[name]
-            int_values[i] -= homing_offset
-            if inverted:
-                int_values[i] *= -1
+            calib = self.calibration[name]
+            motor = self.motors[name]
 
-        return int_values
+            if motor.norm_mode == NormMode.RANGE_0_100:
+                bounded = float(np.clip(step_values[i], 0.0, 100.0))
+                if calib.drive_mode:
+                    bounded = 100 - bounded
+                raw = bounded / 100.0 * (calib.range_max - calib.range_min) + calib.range_min
+                step_values[i] = raw
+            else:
+                # NormMode.DEGREES
+                mid = (calib.range_min + calib.range_max) / 2.0
+                max_res = motor.resolution - 1  # 4095
+                step_values[i] = step_values[i] * max_res / 360.0 + mid
+
+        return np.round(step_values).astype(np.int32)
 
     def read(self, item: Enum, motor_name: str) -> Any:
         """Reads a value from a specific control table item for a single motor."""
