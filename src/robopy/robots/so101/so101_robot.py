@@ -286,9 +286,7 @@ class So101Robot(ComposedRobot[So101PairSys, Sensors, So101Obs]):
         max_processing_time_ms: float = 40,
     ) -> So101Obs:
         """Placeholder for future fixed-leader recording support."""
-        raise NotImplementedError(
-            "record_with_fixed_leader is not implemented for So101Robot yet."
-        )
+        raise NotImplementedError("record_with_fixed_leader is not implemented for So101Robot yet.")
 
     def get_observation(self) -> So101Obs:
         if not self.is_connected:
@@ -498,7 +496,7 @@ class So101Robot(ComposedRobot[So101PairSys, Sensors, So101Obs]):
             obs = self.get_arm_observation()
             current_joint_angles_deg = obs.follower
 
-        result = self.inverse_kinematics(ee, current_joint_angles_deg)
+        result = self.inverse_kinematics(ee.astype(np.float32), current_joint_angles_deg)
 
         if not result.success:
             logger.warning(

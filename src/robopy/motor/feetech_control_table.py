@@ -56,9 +56,7 @@ class STSControlTable(Enum):
     D_COEFFICIENT = FeetechControlItem(22, 1, Dtype.UINT8, "R/W")
     I_COEFFICIENT = FeetechControlItem(23, 1, Dtype.UINT8, "R/W")
     PROTECTION_CURRENT = FeetechControlItem(28, 2, Dtype.UINT16, "R/W")
-    HOMING_OFFSET = FeetechControlItem(
-        31, 2, Dtype.INT16, "R/W", sign_magnitude_bit=11
-    )
+    HOMING_OFFSET = FeetechControlItem(31, 2, Dtype.INT16, "R/W", sign_magnitude_bit=11)
     OPERATING_MODE = FeetechControlItem(33, 1, Dtype.UINT8, "R/W")
     PROTECTIVE_TORQUE = FeetechControlItem(34, 1, Dtype.UINT8, "R/W")
     PROTECTION_TIME = FeetechControlItem(35, 1, Dtype.UINT8, "R/W")
@@ -68,21 +66,37 @@ class STSControlTable(Enum):
     TORQUE_ENABLE = FeetechControlItem(40, 1, Dtype.UINT8, "R/W")
     ACCELERATION = FeetechControlItem(41, 1, Dtype.UINT8, "R/W")
     GOAL_POSITION = FeetechControlItem(
-        42, 2, Dtype.INT16, "R/W",
-        calibration_required=True, sign_magnitude_bit=15,
+        42,
+        2,
+        Dtype.INT16,
+        "R/W",
+        calibration_required=True,
+        sign_magnitude_bit=15,
     )
     GOAL_VELOCITY = FeetechControlItem(
-        46, 2, Dtype.INT16, "R/W", sign_magnitude_bit=15,
+        46,
+        2,
+        Dtype.INT16,
+        "R/W",
+        sign_magnitude_bit=15,
     )
     TORQUE_LIMIT = FeetechControlItem(48, 2, Dtype.UINT16, "R/W")
     LOCK = FeetechControlItem(55, 1, Dtype.UINT8, "R/W")
     PRESENT_POSITION = FeetechControlItem(
-        56, 2, Dtype.INT16, "R",
-        calibration_required=True, sign_magnitude_bit=15,
+        56,
+        2,
+        Dtype.INT16,
+        "R",
+        calibration_required=True,
+        sign_magnitude_bit=15,
     )
     PRESENT_VELOCITY = FeetechControlItem(58, 2, Dtype.INT16, "R")
     PRESENT_LOAD = FeetechControlItem(
-        60, 2, Dtype.INT16, "R", sign_magnitude_bit=10,
+        60,
+        2,
+        Dtype.INT16,
+        "R",
+        sign_magnitude_bit=10,
     )
     PRESENT_VOLTAGE = FeetechControlItem(62, 1, Dtype.UINT8, "R")
     PRESENT_TEMPERATURE = FeetechControlItem(63, 1, Dtype.UINT8, "R")

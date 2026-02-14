@@ -510,7 +510,7 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
             obs = self.get_arm_observation()
             current_joint_angles_deg = obs.follower
 
-        result = self.inverse_kinematics(ee, current_joint_angles_deg)
+        result = self.inverse_kinematics(ee.astype(np.float32), current_joint_angles_deg)
 
         if not result.success:
             logger.warning(
