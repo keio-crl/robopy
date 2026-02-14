@@ -15,6 +15,7 @@ from rich.progress import Progress
 
 from robopy.config.input_config.spacemouse_config import SpaceMouseConfig
 from robopy.input.spacemouse import SpaceMouseReader
+from robopy.kinematics.ik_solver import IKConfig
 from robopy.utils.worker.so101_save_worker import So101ArmObs, So101Obs
 
 from .so101_robot import So101Robot
@@ -56,6 +57,18 @@ class So101SpaceMouseController:
         self._robot = robot
         self._sm_config = spacemouse_config or SpaceMouseConfig()
         self._reader = SpaceMouseReader()
+
+        # Custom IK config for smoother wrist control
+        # Increase orientation weight for better convergence
+        self._ik_config = IKConfig(
+            max_iterations=100,
+            position_tolerance=1e-4,
+            orientation_tolerance=5e-3,  # Relaxed from 1e-3
+            damping=0.05,
+            step_scale=0.5,
+            position_weight=1.0,
+            orientation_weight=0.5,  # Increased from 0.1
+        )
 
     @property
     def robot(self) -> So101Robot:
@@ -349,6 +362,10 @@ class So101SpaceMouseController:
         target_ee[3] += sp * cfg.angular_speed * dt
         target_ee[4] += sr * cfg.angular_speed * dt
 
+        # Wrap orientation angles to [-pi, pi] to prevent accumulation issues
+        target_ee[3] = (target_ee[3] + np.pi) % (2 * np.pi) - np.pi
+        target_ee[4] = (target_ee[4] + np.pi) % (2 * np.pi) - np.pi
+
         # Gripper: left button = close, right button = open
         if sm.buttons[0]:
             gripper_deg = max(0.0, gripper_deg - cfg.gripper_speed * dt)
@@ -356,7 +373,9 @@ class So101SpaceMouseController:
             gripper_deg = min(100.0, gripper_deg + cfg.gripper_speed * dt)
 
         # IK → joint angles (degrees)
-        result = self._robot.inverse_kinematics(target_ee, current_joints_for_ik)
+        result = self._robot.inverse_kinematics(
+            target_ee, current_joints_for_ik, ik_config=self._ik_config
+        )
 
         if not result.success:
             logger.debug(
