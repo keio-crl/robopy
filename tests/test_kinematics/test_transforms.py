@@ -9,6 +9,7 @@ from robopy.kinematics.transforms import (
     rot_y,
     rot_z,
     translation,
+    urdf_transform,
 )
 
 
@@ -85,3 +86,27 @@ class TestPoseFromMatrix:
         pose = pose_from_matrix(T)
         np.testing.assert_allclose(pose[3], 0.0, atol=1e-14)  # pitch
         np.testing.assert_allclose(pose[4], angle, atol=1e-14)  # roll
+
+
+class TestUrdfTransform:
+    """Tests for the URDF-style transform builder."""
+
+    def test_zero_rpy_is_pure_translation(self):
+        T = urdf_transform(xyz=(1.0, 2.0, 3.0), rpy=(0.0, 0.0, 0.0))
+        np.testing.assert_allclose(T, translation(1.0, 2.0, 3.0), atol=1e-14)
+
+    def test_zero_xyz_is_pure_rotation(self):
+        T = urdf_transform(xyz=(0.0, 0.0, 0.0), rpy=(0.0, np.pi / 2, 0.0))
+        expected = rot_y(np.pi / 2)
+        np.testing.assert_allclose(T, expected, atol=1e-14)
+
+    def test_rpy_order_is_zyx(self):
+        """URDF convention: R = Rz(yaw) @ Ry(pitch) @ Rx(roll)."""
+        roll, pitch, yaw = 0.1, 0.2, 0.3
+        T = urdf_transform(xyz=(0.0, 0.0, 0.0), rpy=(roll, pitch, yaw))
+        R_expected = (rot_z(yaw) @ rot_y(pitch) @ rot_x(roll))[:3, :3]
+        np.testing.assert_allclose(T[:3, :3], R_expected, atol=1e-14)
+
+    def test_identity(self):
+        T = urdf_transform(xyz=(0.0, 0.0, 0.0), rpy=(0.0, 0.0, 0.0))
+        np.testing.assert_allclose(T, np.eye(4), atol=1e-14)

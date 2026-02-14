@@ -52,6 +52,19 @@ def translation(x: float, y: float, z: float) -> NDArray[np.float64]:
     return T
 
 
+def urdf_transform(
+    xyz: tuple[float, float, float],
+    rpy: tuple[float, float, float],
+) -> NDArray[np.float64]:
+    """Create a 4x4 transform from URDF joint origin (xyz, rpy).
+
+    The URDF convention is ``T = Translation(xyz) @ Rz(yaw) @ Ry(pitch) @ Rx(roll)``.
+    """
+    x, y, z = xyz
+    roll, pitch, yaw = rpy
+    return translation(x, y, z) @ rot_z(yaw) @ rot_y(pitch) @ rot_x(roll)
+
+
 def pose_from_matrix(T: NDArray[np.float64]) -> NDArray[np.float64]:
     """Extract (x, y, z, pitch, roll) from a 4x4 homogeneous matrix.
 
