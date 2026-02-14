@@ -1,7 +1,6 @@
 """Tests for robopy.kinematics.ik_solver."""
 
 import numpy as np
-import pytest
 
 from robopy.kinematics.chain import KinematicChain, RevoluteJoint
 from robopy.kinematics.ik_solver import IKConfig, IKResult, IKSolver
@@ -70,7 +69,9 @@ class TestIKSolverSimple:
             recovered_pose = chain.forward_kinematics(result.joint_angles_rad)
 
             np.testing.assert_allclose(
-                recovered_pose[:3], target_pose[:3], atol=1e-3,
+                recovered_pose[:3],
+                target_pose[:3],
+                atol=1e-3,
                 err_msg="Position mismatch in FK→IK→FK roundtrip",
             )
 
@@ -114,7 +115,9 @@ class TestIKSolverSO101:
             recovered_pose = chain.forward_kinematics(result.joint_angles_rad)
 
             np.testing.assert_allclose(
-                recovered_pose[:3], target_pose[:3], atol=5e-3,
+                recovered_pose[:3],
+                target_pose[:3],
+                atol=5e-3,
                 err_msg="SO-101 FK→IK→FK position mismatch",
             )
 
@@ -161,6 +164,8 @@ class TestIKSolverKoch:
             recovered_pose = chain.forward_kinematics(result.joint_angles_rad)
 
             np.testing.assert_allclose(
-                recovered_pose[:3], target_pose[:3], atol=5e-3,
+                recovered_pose[:3],
+                target_pose[:3],
+                atol=5e-3,
                 err_msg="Koch FK→IK→FK position mismatch",
             )

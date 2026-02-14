@@ -67,9 +67,7 @@ class IKSolver:
     scipy required.
     """
 
-    def __init__(
-        self, chain: KinematicChain, config: IKConfig | None = None
-    ) -> None:
+    def __init__(self, chain: KinematicChain, config: IKConfig | None = None) -> None:
         self._chain = chain
         self._config = config or IKConfig()
 
@@ -94,13 +92,15 @@ class IKSolver:
         cfg = self._config
         q = initial_angles_rad.copy().astype(np.float64)
 
-        W = np.diag([
-            cfg.position_weight,
-            cfg.position_weight,
-            cfg.position_weight,
-            cfg.orientation_weight,
-            cfg.orientation_weight,
-        ])
+        W = np.diag(
+            [
+                cfg.position_weight,
+                cfg.position_weight,
+                cfg.position_weight,
+                cfg.orientation_weight,
+                cfg.orientation_weight,
+            ]
+        )
 
         lower = self._chain.lower_limits_rad + cfg.joint_limit_margin_rad
         upper = self._chain.upper_limits_rad - cfg.joint_limit_margin_rad

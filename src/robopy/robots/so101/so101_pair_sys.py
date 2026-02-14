@@ -187,9 +187,7 @@ class So101PairSys(Robot):
                         logger.warning(f"No mapping found for leader motor '{leader_motor}'")
 
                 if follower_goals:
-                    self._follower.motors.sync_write(
-                        STSControlTable.GOAL_POSITION, follower_goals
-                    )
+                    self._follower.motors.sync_write(STSControlTable.GOAL_POSITION, follower_goals)
 
                 time.sleep(0.01)  # 100Hz update rate
 

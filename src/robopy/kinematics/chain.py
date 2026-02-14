@@ -79,9 +79,7 @@ class KinematicChain:
             4x4 homogeneous transformation matrix.
         """
         if len(joint_angles_rad) != self._n_joints:
-            raise ValueError(
-                f"Expected {self._n_joints} joint angles, got {len(joint_angles_rad)}"
-            )
+            raise ValueError(f"Expected {self._n_joints} joint angles, got {len(joint_angles_rad)}")
 
         T = np.eye(4)
         for i, joint in enumerate(self._joints):
@@ -90,9 +88,7 @@ class KinematicChain:
         T = T @ self._ee_fixed
         return T
 
-    def forward_kinematics(
-        self, joint_angles_rad: NDArray[np.float64]
-    ) -> NDArray[np.float64]:
+    def forward_kinematics(self, joint_angles_rad: NDArray[np.float64]) -> NDArray[np.float64]:
         """Compute end-effector pose as (x, y, z, pitch, roll).
 
         Args:
@@ -134,8 +130,6 @@ class KinematicChain:
 
         return J
 
-    def clamp_to_limits(
-        self, joint_angles_rad: NDArray[np.float64]
-    ) -> NDArray[np.float64]:
+    def clamp_to_limits(self, joint_angles_rad: NDArray[np.float64]) -> NDArray[np.float64]:
         """Clamp joint angles to their limits."""
         return np.clip(joint_angles_rad, self.lower_limits_rad, self.upper_limits_rad)

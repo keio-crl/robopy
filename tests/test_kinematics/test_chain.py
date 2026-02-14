@@ -11,7 +11,8 @@ def _simple_2dof_chain() -> KinematicChain:
     """A simple 2-joint planar chain for testing.
 
     Joint layout (all rotations about Z):
-      base → translate(0.1, 0, 0) → rot_z(q0) → translate(0.2, 0, 0) → rot_z(q1) → EE at (0.15, 0, 0)
+      base → translate(0.1, 0, 0) → rot_z(q0) → translate(0.2, 0, 0) → rot_z(q1) →
+      EE at (0.15, 0, 0)
     """
     joints = [
         RevoluteJoint(
