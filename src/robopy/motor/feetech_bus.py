@@ -202,6 +202,10 @@ class FeetechBus:
 
             import select
 
+            # Track if this is the first iteration
+            first_iteration = True
+            num_display_lines = len(motor_names)
+
             while True:
                 positions = self.sync_read(STSControlTable.PRESENT_POSITION, motor_names)
                 for name in motor_names:
@@ -211,14 +215,21 @@ class FeetechBus:
                     if val > range_maxes[name]:
                         range_maxes[name] = val
 
-                # Display current tracking
-                parts = []
+                # Move cursor up to overwrite previous output (except on first iteration)
+                if not first_iteration:
+                    # Move cursor up by num_display_lines
+                    print(f"\033[{num_display_lines}A", end="")
+                first_iteration = False
+
+                # Display current tracking - one line per motor
                 for name in motor_names:
-                    parts.append(
-                        f"  {name}: min={range_mins[name]}, "
-                        f"cur={int(positions[name])}, max={range_maxes[name]}"
+                    # Clear the line and print motor info
+                    print(
+                        f"\033[K  {name:15s}: "
+                        f"min={range_mins[name]:4d}, "
+                        f"cur={int(positions[name]):4d}, "
+                        f"max={range_maxes[name]:4d}"
                     )
-                print("\r" + " | ".join(parts) + "    ", end="", flush=True)
 
                 # Check if Enter was pressed
                 if select.select([sys.stdin], [], [], 0.02)[0]:
