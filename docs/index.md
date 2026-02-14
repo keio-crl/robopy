@@ -1,6 +1,6 @@
 # Robopy Documentation
 
-**Robopy**は、ロボット制御のためのPython interfaceです。Rakuda、Koch、SO-101 robotに対応し、カメラと触覚センサーを統合したデータ収集をサポートします。Forward Kinematics / Inverse Kinematics によるエンドエフェクタ空間での制御も可能です。
+**Robopy**は、ロボット制御のためのPython interfaceです。Rakuda、Koch、SO-101 robotに対応し、カメラと触覚センサーを統合したデータ収集をサポートします。Forward Kinematics / Inverse Kinematics によるエンドエフェクタ空間での制御、SpaceMouse によるテレオペレーションとデータ収集も可能です。
 
 ## :material-book-open: ドキュメント構成
 
@@ -49,6 +49,7 @@
     詳細なAPI仕様
 
     [:octicons-arrow-right-24: ロボット](api/robots.md)
+    [:octicons-arrow-right-24: SpaceMouse](api/spacemouse.md)
     [:octicons-arrow-right-24: キネマティクス](api/kinematics.md)
     [:octicons-arrow-right-24: センサー](api/sensors.md)
 
