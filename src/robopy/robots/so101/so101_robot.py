@@ -130,7 +130,15 @@ class So101Robot(ComposedRobot[So101PairSys, Sensors, So101Obs]):
 
         leader_arr = np.asarray(leader_obs, dtype=np.float32)
         follower_arr = np.asarray(follower_obs, dtype=np.float32)
-        arms = So101ArmObs(leader=leader_arr, follower=follower_arr)
+
+        leader_ee = self.batch_forward_kinematics(leader_arr) if leader_arr.size > 0 else None
+        follower_ee = self.batch_forward_kinematics(follower_arr) if follower_arr.size > 0 else None
+        arms = So101ArmObs(
+            leader=leader_arr,
+            follower=follower_arr,
+            leader_ee=leader_ee,
+            follower_ee=follower_ee,
+        )
 
         camera_obs_np: Dict[str, NDArray[np.uint8] | NDArray[np.float32] | None] = {}
         for cam_name, frames in camera_obs.items():
@@ -266,7 +274,15 @@ class So101Robot(ComposedRobot[So101PairSys, Sensors, So101Obs]):
 
         leader_arr = np.asarray(leader_obs, dtype=np.float32)
         follower_arr = np.asarray(follower_obs, dtype=np.float32)
-        arms = So101ArmObs(leader=leader_arr, follower=follower_arr)
+
+        leader_ee = self.batch_forward_kinematics(leader_arr) if leader_arr.size > 0 else None
+        follower_ee = self.batch_forward_kinematics(follower_arr) if follower_arr.size > 0 else None
+        arms = So101ArmObs(
+            leader=leader_arr,
+            follower=follower_arr,
+            leader_ee=leader_ee,
+            follower_ee=follower_ee,
+        )
 
         camera_obs_np: Dict[str, NDArray[np.uint8] | NDArray[np.float32] | None] = {}
         for cam_name, frames in camera_obs.items():
@@ -405,6 +421,32 @@ class So101Robot(ComposedRobot[So101PairSys, Sensors, So101Obs]):
         if cls._kinematic_chain is None:
             cls._kinematic_chain = so101_chain()
         return cls._kinematic_chain
+
+    @classmethod
+    def batch_forward_kinematics(cls, joint_angles_deg: NDArray[np.float32]) -> NDArray[np.float32]:
+        """Compute FK for a batch of joint angle frames.
+
+        Args:
+            joint_angles_deg: (N, 5) or (N, 6) array of joint angles in
+                degrees.  If 6 columns the last column (gripper) is ignored.
+
+        Returns:
+            (N, 5) float32 array of EE poses ``[x, y, z, pitch, roll]``
+            (position in metres, orientation in radians).
+        """
+        arr = np.asarray(joint_angles_deg, dtype=np.float64)
+        if arr.ndim == 1:
+            arr = arr[np.newaxis, :]
+        if arr.shape[1] == 6:
+            arr = arr[:, :5]
+
+        chain = cls.kinematic_chain()
+        results = np.empty((arr.shape[0], 5), dtype=np.float32)
+        for i in range(arr.shape[0]):
+            angles_rad = np.deg2rad(arr[i])
+            pose = chain.forward_kinematics(angles_rad)
+            results[i] = EEPose.from_array(pose).to_array().astype(np.float32)
+        return results
 
     @classmethod
     def forward_kinematics(cls, joint_angles_deg: NDArray[np.float32]) -> EEPose:

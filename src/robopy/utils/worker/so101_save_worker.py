@@ -17,6 +17,8 @@ logger = getLogger(__name__)
 class So101ArmObs:
     leader: NDArray[np.float32]
     follower: NDArray[np.float32]
+    leader_ee: NDArray[np.float32] | None = None
+    follower_ee: NDArray[np.float32] | None = None
 
 
 @dataclass
@@ -42,11 +44,10 @@ class So101SaveWorker(SaveWorker[So101Obs]):
                     task.save_path,
                 )
             case "arm":
-                leader, follower = cast(tuple[NDArray[np.float32], NDArray[np.float32]], task.data)
+                arm_obs = cast(So101ArmObs, task.data)
                 return self._executor.submit(
-                    self.save_arm_datas,
-                    leader,
-                    follower,
+                    self._save_arm_obs,
+                    arm_obs,
                     task.save_path,
                 )
             case "gif":
@@ -59,14 +60,23 @@ class So101SaveWorker(SaveWorker[So101Obs]):
     def save_arm_datas(
         self, leader_obs: NDArray[np.float32], follower_obs: NDArray[np.float32], path: str
     ) -> None:
-        """Save arm data in HDF5 format."""
+        """Save arm data in HDF5 format (base class interface)."""
+        self._save_arm_obs(So101ArmObs(leader=leader_obs, follower=follower_obs), path)
+
+    def _save_arm_obs(self, arm_obs: So101ArmObs, path: str) -> None:
+        """Save arm data (joint angles and EE coordinates) in HDF5 format."""
         os.makedirs(path, exist_ok=True)
-        hierarchical_data = {
+        hierarchical_data: dict[str, dict[str, NDArray[np.float32]]] = {
             "arm": {
-                "leader": leader_obs,
-                "follower": follower_obs,
-            }
+                "leader": arm_obs.leader,
+                "follower": arm_obs.follower,
+            },
         }
+        if arm_obs.leader_ee is not None:
+            hierarchical_data["arm"]["leader_ee"] = arm_obs.leader_ee
+        if arm_obs.follower_ee is not None:
+            hierarchical_data["arm"]["follower_ee"] = arm_obs.follower_ee
+
         arm_h5_path = os.path.join(path, "so101_arm_observations.h5")
         H5Handler.save_hierarchical(hierarchical_data, arm_h5_path, compress=True)
         logger.info("Saved SO-101 arm observations to HDF5: %s", arm_h5_path)
@@ -74,9 +84,9 @@ class So101SaveWorker(SaveWorker[So101Obs]):
     def save_all_obs(self, obs: So101Obs, save_path: str, save_gif: bool) -> None:
         """Save observation data asynchronously."""
         os.makedirs(save_path, exist_ok=True)
-        camera_data, leader, follower = self._prepare_obs(obs, save_path)
+        camera_data, arm_obs = self._prepare_obs(obs, save_path)
 
-        hierarchical_data = self._build_hierarchical_data(camera_data, leader, follower)
+        hierarchical_data = self._build_hierarchical_data(camera_data, arm_obs)
         h5_path = os.path.join(save_path, "so101_observations.h5")
         self.enqueue_save_task(
             SaveTask(
@@ -89,7 +99,7 @@ class So101SaveWorker(SaveWorker[So101Obs]):
         self.enqueue_save_task(
             SaveTask(
                 task_type="arm",
-                data=(leader, follower),
+                data=arm_obs,
                 save_path=os.path.join(save_path, "arm"),
             )
         )
@@ -114,7 +124,7 @@ class So101SaveWorker(SaveWorker[So101Obs]):
     def _prepare_obs(
         self, obs: So101Obs, save_dir: str
     ) -> tuple[
-        Dict[str, NDArray[np.float32] | NDArray[np.uint8]], NDArray[np.float32], NDArray[np.float32]
+        Dict[str, NDArray[np.float32] | NDArray[np.uint8]], So101ArmObs
     ]:
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -123,9 +133,7 @@ class So101SaveWorker(SaveWorker[So101Obs]):
         if not camera_data:
             logger.warning("No camera data available.")
 
-        leader = obs.arms.leader
-        follower = obs.arms.follower
-        return camera_data, leader, follower
+        return camera_data, obs.arms
 
     def _save_camera_gif(self, frames: NDArray[np.float32] | NDArray[np.uint8], path: str) -> None:
         """Save camera frames as GIF."""
@@ -154,16 +162,19 @@ class So101SaveWorker(SaveWorker[So101Obs]):
     def _build_hierarchical_data(
         self,
         camera_data: Dict[str, NDArray[np.float32] | NDArray[np.uint8]],
-        leader: NDArray[np.float32],
-        follower: NDArray[np.float32],
+        arm_obs: So101ArmObs,
     ) -> HierarchicalTaskData:
         hierarchical_data: HierarchicalTaskData = {
             "arm": {
-                "leader": leader,
-                "follower": follower,
+                "leader": arm_obs.leader,
+                "follower": arm_obs.follower,
             },
             "camera": {},
         }
+        if arm_obs.leader_ee is not None:
+            hierarchical_data["arm"]["leader_ee"] = arm_obs.leader_ee
+        if arm_obs.follower_ee is not None:
+            hierarchical_data["arm"]["follower_ee"] = arm_obs.follower_ee
         for name, frames in camera_data.items():
             hierarchical_data["camera"][name] = frames
         return hierarchical_data

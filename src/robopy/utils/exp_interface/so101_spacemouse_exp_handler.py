@@ -107,6 +107,10 @@ class So101SpaceMouseExpHandler(
             "leader": list(obs.arms.leader.shape),
             "follower": list(obs.arms.follower.shape),
         }
+        if obs.arms.leader_ee is not None:
+            data_shape["arms"]["leader_ee"] = list(obs.arms.leader_ee.shape)
+        if obs.arms.follower_ee is not None:
+            data_shape["arms"]["follower_ee"] = list(obs.arms.follower_ee.shape)
 
         if obs.cameras:
             data_shape["sensors"] = {"cameras": {}}

@@ -329,7 +329,17 @@ class So101SpaceMouseController:
 
         leader_arr = np.asarray(leader_obs, dtype=np.float32)
         follower_arr = np.asarray(follower_obs, dtype=np.float32)
-        arms = So101ArmObs(leader=leader_arr, follower=follower_arr)
+
+        leader_ee = So101Robot.batch_forward_kinematics(leader_arr) if leader_arr.size > 0 else None
+        follower_ee = (
+            So101Robot.batch_forward_kinematics(follower_arr) if follower_arr.size > 0 else None
+        )
+        arms = So101ArmObs(
+            leader=leader_arr,
+            follower=follower_arr,
+            leader_ee=leader_ee,
+            follower_ee=follower_ee,
+        )
 
         camera_obs_np: Dict[str, NDArray[np.uint8] | NDArray[np.float32] | None] = {}
         for cam_name, frames in camera_obs.items():
