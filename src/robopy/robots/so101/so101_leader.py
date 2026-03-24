@@ -2,7 +2,6 @@ import logging
 
 from robopy.config.robot_config.so101_config import So101Config
 from robopy.motor.feetech_bus import FeetechBus, FeetechMotor, NormMode
-from robopy.motor.feetech_control_table import STSControlTable
 from robopy.robots.common.arm import Arm
 
 logger = logging.getLogger(__name__)

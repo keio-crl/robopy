@@ -6,8 +6,6 @@ This script helps identify why SpaceMouse input might not be accessible.
 
 from __future__ import annotations
 
-import sys
-
 
 def check_pyspacemouse_installed() -> bool:
     """Check if pyspacemouse is installed."""
@@ -44,12 +42,13 @@ def check_device_list() -> None:
             # 3Dconnexion vendor ID is 0x046d (Logitech) or 0x256f
             if vendor_id in [0x046D, 0x256F] or "3Dconnexion" in manufacturer:
                 spacemouse_found = True
-                print(f"\n*** SPACEMOUSE DEVICE FOUND ***")
+                print("\n*** SPACEMOUSE DEVICE FOUND ***")
                 print(f"  Vendor ID:     0x{vendor_id:04X}")
                 print(f"  Product ID:    0x{product_id:04X}")
                 print(f"  Manufacturer:  {manufacturer}")
                 print(f"  Product:       {product}")
-                print(f"  Path:          {device.get('path', b'').decode('utf-8', errors='ignore')}")
+                path = device.get("path", b"").decode("utf-8", errors="ignore")
+                print(f"  Path:          {path}")
                 print(f"  Usage Page:    {device.get('usage_page', 'N/A')}")
                 print(f"  Usage:         {device.get('usage', 'N/A')}")
 
@@ -85,7 +84,7 @@ def check_pyspacemouse_open() -> None:
         for i in range(5):
             state = device.read()
             print(
-                f"  Sample {i+1}: "
+                f"  Sample {i + 1}: "
                 f"x={state.x:.3f}, y={state.y:.3f}, z={state.z:.3f}, "
                 f"roll={state.roll:.3f}, pitch={state.pitch:.3f}, yaw={state.yaw:.3f}"
             )

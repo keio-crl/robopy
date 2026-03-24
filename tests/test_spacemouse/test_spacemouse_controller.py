@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import sys
 import time
-from collections import namedtuple
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -13,7 +11,6 @@ import pytest
 from robopy.config.input_config.spacemouse_config import SpaceMouseConfig
 from robopy.input.spacemouse import SpaceMouseReader, SpaceMouseState
 from robopy.kinematics import EEPose, IKResult
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -152,7 +149,7 @@ class TestControlStep:
         gripper = 50.0
         joints = np.zeros(6, dtype=np.float32)
 
-        new_ee, new_grip, new_joints = ctrl._control_step(target_ee, gripper, joints, dt=0.02)
+        new_ee, new_grip, _ = ctrl._control_step(target_ee, gripper, joints, dt=0.02)
 
         np.testing.assert_allclose(new_ee, target_ee, atol=1e-10)
         assert new_grip == pytest.approx(50.0)
@@ -183,7 +180,8 @@ class TestControlStep:
         target_ee = np.zeros(5, dtype=np.float64)
         dt = 0.02
 
-        _, new_grip, _ = ctrl._control_step(target_ee.copy(), 50.0, np.zeros(6, dtype=np.float32), dt)
+        joints = np.zeros(6, dtype=np.float32)
+        _, new_grip, _ = ctrl._control_step(target_ee.copy(), 50.0, joints, dt)
 
         expected = 50.0 - 50.0 * 0.02  # 49.0
         assert new_grip == pytest.approx(expected)
@@ -197,7 +195,8 @@ class TestControlStep:
         target_ee = np.zeros(5, dtype=np.float64)
         dt = 0.02
 
-        _, new_grip, _ = ctrl._control_step(target_ee.copy(), 50.0, np.zeros(6, dtype=np.float32), dt)
+        joints = np.zeros(6, dtype=np.float32)
+        _, new_grip, _ = ctrl._control_step(target_ee.copy(), 50.0, joints, dt)
 
         expected = 50.0 + 50.0 * 0.02  # 51.0
         assert new_grip == pytest.approx(expected)
@@ -210,7 +209,8 @@ class TestControlStep:
 
         target_ee = np.zeros(5, dtype=np.float64)
 
-        _, new_grip, _ = ctrl._control_step(target_ee.copy(), 1.0, np.zeros(6, dtype=np.float32), 0.02)
+        joints = np.zeros(6, dtype=np.float32)
+        _, new_grip, _ = ctrl._control_step(target_ee.copy(), 1.0, joints, 0.02)
 
         assert new_grip >= 0.0
 
@@ -222,7 +222,8 @@ class TestControlStep:
 
         target_ee = np.zeros(5, dtype=np.float64)
 
-        _, new_grip, _ = ctrl._control_step(target_ee.copy(), 99.0, np.zeros(6, dtype=np.float32), 0.02)
+        joints = np.zeros(6, dtype=np.float32)
+        _, new_grip, _ = ctrl._control_step(target_ee.copy(), 99.0, joints, 0.02)
 
         assert new_grip <= 100.0
 

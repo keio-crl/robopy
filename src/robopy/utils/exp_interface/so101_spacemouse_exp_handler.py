@@ -18,9 +18,7 @@ from .exp_handler import ExpHandler
 from .meta_data_config import MetaDataConfig
 
 
-class So101SpaceMouseExpHandler(
-    ExpHandler[So101Obs, So101Robot, So101Config, So101SaveWorker]
-):
+class So101SpaceMouseExpHandler(ExpHandler[So101Obs, So101Robot, So101Config, So101SaveWorker]):
     """Experiment handler using SpaceMouse for SO-101 data collection.
 
     This handler replaces the leader arm with a SpaceMouse device for
@@ -42,17 +40,13 @@ class So101SpaceMouseExpHandler(
         super().__init__(metadata_config, fps)
         self._config = so101_config
         self._robot = So101Robot(cfg=self._config)
-        self._controller = So101SpaceMouseController(
-            self._robot, spacemouse_config
-        )
+        self._controller = So101SpaceMouseController(self._robot, spacemouse_config)
         self._save_worker = So101SaveWorker(fps=self.fps)
 
         try:
             self._controller.connect()
         except Exception as exc:
-            raise RuntimeError(
-                f"Failed to connect SpaceMouse controller: {exc}"
-            ) from exc
+            raise RuntimeError(f"Failed to connect SpaceMouse controller: {exc}") from exc
 
     @property
     def robot(self) -> So101Robot:
@@ -85,9 +79,7 @@ class So101SpaceMouseExpHandler(
             self.close()
             raise RuntimeError("Recording stopped by user") from exc
         except Exception as exc:
-            raise RuntimeError(
-                f"Failed to record with SpaceMouse: {exc}"
-            ) from exc
+            raise RuntimeError(f"Failed to record with SpaceMouse: {exc}") from exc
 
         return obs
 
@@ -97,9 +89,7 @@ class So101SpaceMouseExpHandler(
         fps: int,
         leader_action: NDArray[np.float32],
     ) -> None:
-        self._robot.send(
-            max_frame=max_frame, fps=fps, leader_action=leader_action
-        )
+        self._robot.send(max_frame=max_frame, fps=fps, leader_action=leader_action)
 
     def _extract_data_shapes(self, obs: So101Obs) -> dict[str, Any]:
         data_shape: Dict[str, Dict[str, Any]] = {}
@@ -171,10 +161,7 @@ class So101SpaceMouseExpHandler(
 
                 obs = self.record(max_frames=max_frames, if_async=if_async)
 
-                print(
-                    "Recording finished. Print 1~9 to save data,"
-                    " or 'e' to record again"
-                )
+                print("Recording finished. Print 1~9 to save data, or 'e' to record again")
                 input_str = input()
 
                 if input_str.lower() == "e":

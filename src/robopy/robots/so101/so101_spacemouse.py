@@ -115,9 +115,7 @@ class So101SpaceMouseController:
                 the loop runs until interrupted (``KeyboardInterrupt``).
         """
         if not self.is_connected:
-            raise ConnectionError(
-                "Controller is not connected. Call connect() first."
-            )
+            raise ConnectionError("Controller is not connected. Call connect() first.")
 
         cfg = self._sm_config
         dt = 1.0 / cfg.control_hz
@@ -186,9 +184,7 @@ class So101SpaceMouseController:
             raise ValueError("fps must be greater than 0.")
 
         if not self.is_connected:
-            raise ConnectionError(
-                "Controller is not connected. Call connect() first."
-            )
+            raise ConnectionError("Controller is not connected. Call connect() first.")
 
         hz = control_hz or self._sm_config.control_hz
         dt = 1.0 / hz
@@ -257,14 +253,14 @@ class So101SpaceMouseController:
 
         logger.info(
             "SpaceMouse parallel recording: frames=%s, fps=%s, control_hz=%s",
-            max_frame, fps, hz,
+            max_frame,
+            fps,
+            hz,
         )
 
         try:
             with Progress() as progress:
-                task = progress.add_task(
-                    "[green]Recording SO-101 (SpaceMouse)...", total=max_frame
-                )
+                task = progress.add_task("[green]Recording SO-101 (SpaceMouse)...", total=max_frame)
                 while frame_count < max_frame:
                     frame_start = time.perf_counter()
 
@@ -324,7 +320,9 @@ class So101SpaceMouseController:
         avg_proc = total_processing_time / frame_count * 1000.0
         logger.info(
             "SpaceMouse recording completed: frames=%s, skipped=%s, avg_proc=%.1f ms",
-            frame_count, skipped_frames, avg_proc,
+            frame_count,
+            skipped_frames,
+            avg_proc,
         )
 
         leader_arr = np.asarray(leader_obs, dtype=np.float32)
@@ -377,9 +375,7 @@ class So101SpaceMouseController:
             self._filter_initialized = True
         elif cfg.input_smoothing > 0.0:
             alpha = 1.0 - cfg.input_smoothing
-            self._filtered_axes = (
-                alpha * raw_axes + cfg.input_smoothing * self._filtered_axes
-            )
+            self._filtered_axes = alpha * raw_axes + cfg.input_smoothing * self._filtered_axes
         else:
             self._filtered_axes = raw_axes.copy()
         sx, sy, sz, sp, sr = self._filtered_axes
@@ -404,7 +400,7 @@ class So101SpaceMouseController:
 
         # IK → joint angles (degrees)
         result = self._robot.inverse_kinematics(
-            target_ee, current_joints_for_ik, ik_config=self._ik_config
+            target_ee.astype(np.float32), current_joints_for_ik, ik_config=self._ik_config
         )
 
         if not result.success:

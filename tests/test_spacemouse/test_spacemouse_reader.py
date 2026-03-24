@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sys
 import time
-import types
 from collections import namedtuple
 from unittest.mock import MagicMock, patch
 
@@ -12,18 +11,15 @@ import pytest
 
 from robopy.input.spacemouse import SpaceMouseReader, SpaceMouseState
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-_RawState = namedtuple(
-    "_RawState", ["x", "y", "z", "roll", "pitch", "yaw", "buttons", "t"]
-)
+_RawState = namedtuple("_RawState", ["x", "y", "z", "roll", "pitch", "yaw", "buttons", "t"])
 
 
 def _make_mock_pyspacemouse(
-    raw_state: _RawState | None = None,
+    raw_state: object | None = None,
     open_success: bool = True,
 ) -> MagicMock:
     """Create a mock ``pyspacemouse`` module."""

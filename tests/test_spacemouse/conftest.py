@@ -6,6 +6,7 @@ that may not be available in the CI / test environment.
 """
 
 import sys
+import typing as _typing
 from unittest.mock import MagicMock
 
 
@@ -42,7 +43,5 @@ for _mod in _STUBS:
     _ensure_mock(_mod)
 
 # Python 3.11 doesn't have typing.override (added in 3.12)
-import typing as _typing
-
 if not hasattr(_typing, "override"):
     _typing.override = lambda fn: fn  # type: ignore[attr-defined]
