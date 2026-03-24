@@ -1783,13 +1783,15 @@ dependencies = [
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "opencv-python" },
-    { name = "pyaudio" },
     { name = "pyyaml" },
     { name = "rich" },
     { name = "tqdm" },
 ]
 
 [package.dev-dependencies]
+audio = [
+    { name = "pyaudio" },
+]
 dev = [
     { name = "codespell" },
     { name = "h5py-stubs" },
@@ -1822,13 +1824,13 @@ requires-dist = [
     { name = "matplotlib", specifier = ">=3.10.3" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "opencv-python", specifier = ">=4.10" },
-    { name = "pyaudio", specifier = ">=0.2.14" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "rich", specifier = ">=14.1.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
 ]
 
 [package.metadata.requires-dev]
+audio = [{ name = "pyaudio", specifier = ">=0.2.14" }]
 dev = [
     { name = "codespell", specifier = ">=2.2.6" },
     { name = "h5py-stubs", specifier = ">=0.1.2" },
