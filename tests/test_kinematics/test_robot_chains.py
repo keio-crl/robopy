@@ -35,7 +35,7 @@ class TestSO101Chain:
         # Expected from URDF: arm extended forward in +X, raised in +Z.
         np.testing.assert_allclose(pos[0], 0.391, atol=0.005)  # ~0.39 m forward
         assert pos[0] > 0.3, "Home x must be positive (arm forward)"
-        np.testing.assert_allclose(pos[1], 0.0, atol=0.005)    # centred in Y
+        np.testing.assert_allclose(pos[1], 0.0, atol=0.005)  # centred in Y
         np.testing.assert_allclose(pos[2], 0.227, atol=0.005)  # ~0.23 m high
 
     def test_fk_home_all_axes_z(self):

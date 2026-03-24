@@ -1,8 +1,5 @@
-
 from robopy.config.robot_config.so101_config import So101Config
 from robopy.robots.so101.so101_robot import So101Robot
-
-
 
 
 def main() -> None:

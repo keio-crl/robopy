@@ -11,11 +11,11 @@ config = So101Config(
 
 # SpaceMouseの速度をカスタマイズ
 spacemouse_config = SpaceMouseConfig(
-    linear_speed=0.25,   # 並進速度: 0.15 m/s (デフォルト: 0.10)
-    angular_speed=0.8,   # 回転速度: 0.8 rad/s (デフォルト: 0.5)
+    linear_speed=0.25,  # 並進速度: 0.15 m/s (デフォルト: 0.10)
+    angular_speed=0.8,  # 回転速度: 0.8 rad/s (デフォルト: 0.5)
     gripper_speed=80.0,  # グリッパー速度: 80 deg/s (デフォルト: 50.0)
-    deadzone=0.05,       # デッドゾーン (デフォルト: 0.05)
-    control_hz=50,       # 制御周波数: 50 Hz (デフォルト: 50)
+    deadzone=0.05,  # デッドゾーン (デフォルト: 0.05)
+    control_hz=50,  # 制御周波数: 50 Hz (デフォルト: 50)
 )
 
 robot = So101Robot(cfg=config)
