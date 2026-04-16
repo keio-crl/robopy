@@ -17,9 +17,11 @@ dependencies = [
     "numpy>=1.26.0",
     "opencv-python>=4.10",
     "pyaudio>=0.2.14",
+    "pyquaternion>=0.9.9",
     "pyyaml>=6.0.2",
     "rich>=14.1.0",
     "tqdm>=4.67.1",
+    "xarm-python-sdk>=1.17.0",
 ]
 
 [dependency-groups]
