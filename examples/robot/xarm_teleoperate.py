@@ -8,6 +8,14 @@ Prerequisites:
       ``XArmConfig.follower_ip``).
     * GELLO Dynamixel controller connected via USB — the port is auto-detected
       from ``/dev/serial/by-id/*`` when ``leader_port`` is left as ``None``.
+
+Simulator (recommended before running on the real robot):
+    Launch UFactory Studio in simulation mode, select xArm7 as the virtual
+    robot, then change ``follower_ip`` below to the simulator address
+    (typically ``127.0.0.1``). No other change is required — the GELLO leader
+    still connects to real USB hardware. See ``docs/robots/xarm.md`` for a
+    full setup walk-through and the pre-flight checklist for switching back
+    to the real robot.
 """
 
 from logging import INFO, getLogger
