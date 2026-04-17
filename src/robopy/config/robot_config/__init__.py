@@ -8,6 +8,7 @@ from .rakuda_config import (
     RakudaObs,
     RakudaSensorParams,
 )
+from .so101_config import SO101_MOTOR_MAPPING, So101Config
 
 __all__ = [
     "RakudaConfig",
@@ -16,4 +17,6 @@ __all__ = [
     "KochConfig",
     "RAKUDA_CONTROLTABLE_VALUES",
     "RAKUDA_MOTOR_MAPPING",
+    "So101Config",
+    "SO101_MOTOR_MAPPING",
 ]
