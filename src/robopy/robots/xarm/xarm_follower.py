@@ -233,11 +233,13 @@ class XArmFollower(XArmArm):
         with self._target_command_lock:
             if joint_state.shape[0] == 8:
                 self._target_command = {
+                    "mode": "joint",
                     "joints": joint_state[:7].copy(),
                     "gripper": float(joint_state[7]),
                 }
             elif joint_state.shape[0] == 7:
                 self._target_command = {
+                    "mode": "joint",
                     "joints": joint_state.copy(),
                     "gripper": None,
                 }
@@ -245,6 +247,48 @@ class XArmFollower(XArmArm):
                 raise ValueError(
                     f"Invalid joint_state length: {joint_state.shape[0]}"
                 )
+
+    def command_cartesian_absolute(
+        self,
+        pos_aa: NDArray[np.float32],
+        gripper: float | None = None,
+    ) -> None:
+        """Command an absolute EE pose: ``[x, y, z, rx, ry, rz]``.
+
+        Coordinates are in **millimetres** for position and **radians** for
+        axis-angle orientation -- matching the xArm SDK convention used by
+        ``set_position``. Workspace bounds are applied before sending.
+        """
+        pos_aa = np.asarray(pos_aa, dtype=np.float32)
+        if pos_aa.shape[0] != 6:
+            raise ValueError("pos_aa must be a 6-vector [x, y, z, rx, ry, rz].")
+        with self._target_command_lock:
+            self._target_command = {
+                "mode": "cartesian_abs",
+                "pose": pos_aa.copy(),
+                "gripper": gripper,
+            }
+
+    def command_cartesian_relative(
+        self,
+        delta: NDArray[np.float32],
+        gripper: float | None = None,
+    ) -> None:
+        """Command a relative EE movement: ``[dx, dy, dz, drx, dry, drz]``.
+
+        Position deltas are in **millimetres**, orientation deltas in
+        **radians**. The delta is applied to the current EE pose each control
+        cycle. Workspace bounds are applied after adding the delta.
+        """
+        delta = np.asarray(delta, dtype=np.float32)
+        if delta.shape[0] != 6:
+            raise ValueError("delta must be a 6-vector [dx, dy, dz, drx, dry, drz].")
+        with self._target_command_lock:
+            self._target_command = {
+                "mode": "cartesian_rel",
+                "delta": delta.copy(),
+                "gripper": gripper,
+            }
 
     # ---------------------------------------------------------- xArm helpers
     def _clear_error_states(self) -> None:
@@ -350,6 +394,23 @@ class XArmFollower(XArmArm):
         if ret in (1, 9):
             self._clear_error_states()
 
+    def _send_cartesian(self, pose: np.ndarray) -> None:
+        """Send a 6-DOF Cartesian pose ``[x, y, z, rx, ry, rz]`` (mm, rad)."""
+        if self._robot is None:
+            return
+        if self._workspace is not None:
+            pose[0] = float(np.clip(pose[0], self._workspace.min_x, self._workspace.max_x))
+            pose[1] = float(np.clip(pose[1], self._workspace.min_y, self._workspace.max_y))
+            pose[2] = float(np.clip(pose[2], self._workspace.min_z, self._workspace.max_z))
+        ret = self._robot.set_position(
+            x=pose[0], y=pose[1], z=pose[2],
+            roll=pose[3], pitch=pose[4], yaw=pose[5],
+            wait_motion=False, is_radian=True,
+            speed=self._cartesian_speed, mvacc=self._cartesian_mvacc, radius=0,
+        )
+        if ret in (1, 9):
+            self._clear_error_states()
+
     def _robot_thread(self) -> None:
         rate = _Rate(duration=1.0 / self._control_frequency)
         step_times: list[float] = []
@@ -359,18 +420,32 @@ class XArmFollower(XArmArm):
             s_t = time.time()
             self._last_state = self._update_last_state()
             with self._target_command_lock:
-                target_joints = np.asarray(
-                    self._target_command["joints"], dtype=np.float32
-                )
-                gripper_command: Optional[float] = self._target_command["gripper"]
+                cmd = dict(self._target_command)
 
-            joint_delta = target_joints - self._last_state.joints()
-            norm = float(np.linalg.norm(joint_delta))
-            if norm > self._max_delta and norm > 0.0:
-                delta = joint_delta / norm * self._max_delta
+            mode = cmd.get("mode", "joint")
+            gripper_command: Optional[float] = cmd.get("gripper")
+
+            if mode == "cartesian_abs":
+                self._send_cartesian(np.asarray(cmd["pose"], dtype=np.float32))
+            elif mode == "cartesian_rel":
+                if self._robot is not None:
+                    cur_cart = self._robot.get_position_aa(is_radian=True)[1]
+                else:
+                    cur_cart = [0.0] * 6
+                cur_arr = np.asarray(cur_cart, dtype=np.float32)
+                target = cur_arr + np.asarray(cmd["delta"], dtype=np.float32)
+                self._send_cartesian(target)
             else:
-                delta = joint_delta
-            self._set_position(self._last_state.joints() + delta)
+                target_joints = np.asarray(
+                    cmd.get("joints", np.zeros(7)), dtype=np.float32
+                )
+                joint_delta = target_joints - self._last_state.joints()
+                norm = float(np.linalg.norm(joint_delta))
+                if norm > self._max_delta and norm > 0.0:
+                    delta = joint_delta / norm * self._max_delta
+                else:
+                    delta = joint_delta
+                self._set_position(self._last_state.joints() + delta)
 
             if gripper_command is not None:
                 gripper_pos = self._gripper_open + float(gripper_command) * (
