@@ -1,4 +1,4 @@
-"""xArm robot modules (xArm7 + GELLO)."""
+"""xArm robot modules (xArm7 + GELLO / SpaceMouse)."""
 
 from .xarm_arm import XArmArm
 from .xarm_follower import XArmFollower
