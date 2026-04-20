@@ -6,7 +6,10 @@ from typing import Any, override
 
 import librosa
 import numpy as np
-import pyaudio
+try:
+    import pyaudio
+except ImportError:
+    pyaudio = None  # Handle case where PyAudio is not installed
 from numpy.typing import NDArray
 
 from robopy.config.sensor_config.params_config import AudioParams

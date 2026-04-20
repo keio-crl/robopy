@@ -12,6 +12,8 @@
 uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.3
 # RealSenseサポート（Linux）
 uv add pyrealsense2
+# Audioサポート
+uv add "pyaudio>=0.2.14"
 ```
 
 ### 基本的な使用例
