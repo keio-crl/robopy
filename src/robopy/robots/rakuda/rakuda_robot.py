@@ -4,7 +4,7 @@ import time
 from collections import defaultdict
 from concurrent.futures import Future, ThreadPoolExecutor
 from logging import getLogger
-from typing import Dict, List
+from typing import Callable, Dict, List
 
 import numpy as np
 from numpy.typing import NDArray
@@ -65,6 +65,88 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
             self._pair_sys.teleoperate(max_seconds=max_seconds)
         else:
             self._pair_sys.teleoperate()
+
+    def run_interpolated_policy(
+        self,
+        get_action_fn: Callable[[RakudaObs], NDArray[np.float32]],
+        max_steps: int,
+        policy_fps: int = 5,
+        teleop_hz: int = 100,
+    ) -> None:
+        """
+        Run a policy in a closed loop, interpolating actions between policy steps.
+
+        Args:
+            get_action_fn: A callback that takes the current observation and returns
+                           the next target leader action (NDArray).
+            max_steps: Number of policy steps to execute.
+            policy_fps: Frequency of policy updates (actions/sec).
+            teleop_hz: Frequency of the robot control loop (commands/sec).
+        """
+        if not self.is_connected:
+            self.connect()
+
+        # Configs
+        interval = 1.0 / teleop_hz
+        steps_per_action = int(teleop_hz / policy_fps)
+        if steps_per_action < 1:
+            steps_per_action = 1
+
+        logger.info(
+            f"Starting interpolated policy run: {max_steps} steps @ {policy_fps}Hz policy / {teleop_hz}Hz control"
+        )
+        
+        try:
+            # 1. Initial Observation
+            obs = self.get_observation()
+            # Start interpolation from the current actual position
+            current_command = obs.arms.leader.copy()
+
+            for step in range(max_steps):
+                step_start_time = time.perf_counter()
+
+                # 2. Get Next Target Action from Policy (user callback)
+                # Note: This might take time (inference time)
+                target_action = get_action_fn(obs)
+                
+                # Check shape
+                if target_action.shape != current_command.shape:
+                     raise ValueError(f"Action shape mismatch: expected {current_command.shape}, got {target_action.shape}")
+
+                # 3. Interpolation Loop
+                # Interpolate from `current_command` (last target) to `target_action`
+                start_action = current_command
+                
+                for i in range(1, steps_per_action + 1):
+                    loop_start = time.perf_counter()
+                    
+                    alpha = i / steps_per_action
+                    # Linear Interpolation
+                    interp_cmd = (1.0 - alpha) * start_action + alpha * target_action
+                    
+                    self.send_frame_action(interp_cmd)
+                    
+                    # Maintain control frequency
+                    elapsed = time.perf_counter() - loop_start
+                    sleep_time = max(0.0, interval - elapsed)
+                    time.sleep(sleep_time)
+
+                # Update current command to the target we just reached
+                current_command = target_action
+
+                # 4. Get Observation for the next step
+                obs = self.get_observation()
+                
+                step_duration = time.perf_counter() - step_start_time
+                logger.debug(f"Step {step+1}/{max_steps} finished in {step_duration:.3f}s")
+                
+        except KeyboardInterrupt:
+            logger.info("Policy run interrupted by user.")
+        except Exception as e:
+            logger.error(f"Error during policy run: {e}")
+            raise e
+        finally:
+            logger.info("Interpolated policy run finished.")
 
     def record(self, max_frame: int, fps: int = 5) -> RakudaObs:
         if not self.is_connected:
