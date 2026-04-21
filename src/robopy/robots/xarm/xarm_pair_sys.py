@@ -17,6 +17,7 @@ from numpy.typing import NDArray
 
 from robopy.config.robot_config.xarm_config import XArmArmObs, XArmConfig
 from robopy.robots.common.robot import Robot
+from robopy.robots.xarm.sim_xarm_follower import SimXArmFollower
 from robopy.robots.xarm.xarm_follower import XArmFollower
 from robopy.robots.xarm.xarm_leader import XArmLeader
 
@@ -33,7 +34,12 @@ class XArmPairSys(Robot):
     def __init__(self, cfg: XArmConfig) -> None:
         self.config = cfg
         self._leader = XArmLeader(cfg)
-        self._follower = XArmFollower(cfg)
+        if cfg.sim_mode:
+            self._follower: XArmFollower | SimXArmFollower = SimXArmFollower(
+                host=cfg.sim_host, port=cfg.sim_port
+            )
+        else:
+            self._follower = XArmFollower(cfg)
         self._is_connected = False
 
     # ------------------------------------------------------------- lifecycle
@@ -112,7 +118,7 @@ class XArmPairSys(Robot):
 
     # ------------------------------------------------------------ teleoperation
     def teleoperate(self, max_seconds: float | None = None) -> None:
-        """Run the GELLO → xArm teleoperation loop (100 Hz)."""
+        """Run the GELLO -> xArm teleoperation loop (100 Hz)."""
         if not self._is_connected:
             raise ConnectionError("XArmPairSys is not connected. Call connect() first.")
         logger.info("Starting xArm teleoperation.")
@@ -155,7 +161,7 @@ class XArmPairSys(Robot):
         return self._leader
 
     @property
-    def follower(self) -> XArmFollower:
+    def follower(self) -> XArmFollower | SimXArmFollower:
         return self._follower
 
     @property
