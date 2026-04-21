@@ -20,6 +20,7 @@ from robopy.config.robot_config import (
     XArmWorkspaceBounds,
 )
 from robopy.robots.xarm import (
+    SimXArmFollower,
     XArmArm,
     XArmFollower,
     XArmLeader,
@@ -109,3 +110,18 @@ def test_xarm_follower_instantiation_without_hardware() -> None:
     # get_joint_state returns the zero initial state (no hardware)
     state = follower.get_joint_state()
     assert state.shape == (8,)
+
+
+def test_sim_xarm_follower_instantiation() -> None:
+    """SimXArmFollower should construct without connecting."""
+    sim = SimXArmFollower(host="127.0.0.1", port=6000)
+    assert not sim.is_connected
+    assert sim.port == "127.0.0.1:6000"
+    assert issubclass(SimXArmFollower, XArmArm)
+
+
+def test_xarm_config_sim_mode() -> None:
+    cfg = XArmConfig(sim_mode=True, sim_host="192.168.1.100", sim_port=7000)
+    assert cfg.sim_mode is True
+    assert cfg.sim_host == "192.168.1.100"
+    assert cfg.sim_port == 7000
