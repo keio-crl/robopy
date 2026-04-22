@@ -8,6 +8,7 @@ from .rakuda_config import (
     RakudaObs,
     RakudaSensorParams,
 )
+from .so101_config import SO101_MOTOR_MAPPING, So101Config
 from .xarm_config import (
     GELLO_XARM7_DEFAULT,
     GelloArmConfig,
@@ -18,7 +19,6 @@ from .xarm_config import (
     XArmSensorParams,
     XArmWorkspaceBounds,
 )
-from .so101_config import SO101_MOTOR_MAPPING, So101Config
 
 __all__ = [
     "RakudaConfig",
