@@ -16,6 +16,147 @@
 - **タクタイル**: DIGIT
 - **オーディオ**: PyAudio
 
+## :material-tools: セットアップ
+
+xArm 本体および GELLO リーダーを robopy から利用するまでのハードウェア・ソフトウェア準備手順です。既にセットアップ済みのロボットを借用する場合は、本節をスキップして構いません。
+
+!!! note "出典"
+    本節の手順は `xArm_Modules` リポジトリ (<https://github.com/keio-crl/xArm_Modules>) の README に準拠しています。
+
+### 1. 環境 (uv)
+
+robopy は `uv` で管理されています。未インストールの場合は公式インストーラまたは `pip` で導入してください。
+
+```bash
+# 公式インストーラ
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# もしくは pip 経由
+pip install uv
+```
+
+インストール後、`uv` コマンドが実行できることを確認します。
+
+```bash
+$ uv
+An extremely fast Python package manager.
+Usage: uv [OPTIONS] <COMMAND>
+...
+```
+
+### 2. GELLO ハードウェア (Dynamixel モーター ID 割り当て)
+
+GELLO 本体の組み立てと、Dynamixel モーターへの ID 割り当てを行います。
+
+1. GELLO の各種部品 (3D プリント品・購入品) を用意して組み立てます。
+2. Dynamixel Wizard を導入します。インストールガイドは ROBOTIS 公式マニュアルを参照してください: <https://emanual.robotis.com/docs/en/software/dynamixel/dynamixel_wizard2/>  
+   **インストール時に記載されているコマンドはすべて実行してください** (飛ばすとエラーの原因になります)。
+3. Dynamixel Wizard を起動し、まず **U2D2 単体** で接続確認を行います。
+4. 一度完全に切断しソフトも閉じた上で、**モーターを 1 つだけ U2D2 に接続** → ソフト再起動 → ポートスキャンを行い、検出されたモーターに **ID 1** を割り当てます。
+5. 以降、同様の手順で 2 個目以降のモーターにも順次 ID を割り当てます。
+6. 全モーターに ID を割り当て終えたら、通常手順で GELLO 本体へ組み込みます。
+
+### 3. GELLO ソフトウェアキャリブレーション
+
+GELLO 本体を PC に接続した状態で、シリアル ID を確認します。
+
+```bash
+ls /dev/serial/by-id
+# 例: usb-FTDI_USB__-__Serial_Converter_XXXXXXXX-if00-port0
+```
+
+表示された ID を控えておきます。
+
+次に、GELLO 用の `gello_get_offset.py` で各モーターのオフセットとグリッパ開閉角度を取得します (`gello_software` リポジトリのスクリプトを使用)。
+
+```bash
+python scripts/gello_get_offset.py \
+  --start-joints 0 0 0 0 0 0 0 \
+  --joint-signs 1 1 1 1 1 1 1 \
+  --port /dev/serial/by-id/<先ほど控えた ID>
+```
+
+実行すると、次のような出力が得られます。
+
+```
+best offsets : ['3.142' ..... ]
+best offsets function of pi : [2*np.pi/2, ..... ]
+gripper open(degrees)  202.xxxxxx
+gripper close(degrees) 160.xxxxxx
+```
+
+これらの値は、GELLO で読み取ったモーター値を xArm に転送する際の補正量です。`gello/agents/gello_agent.py` の `PORT_CONFIG_MAP` に以下のようなエントリを追加してください (閉じ `}` の直前)。
+
+```python
+"/dev/serial/by-id/<控えた ID>": DynamixelRobotConfig(
+    joint_ids=(1, 2, 3, 4, 5, 6, 7),
+    joint_offsets=(
+        # best offsets function of pi をそのまま並べる
+        2 * np.pi / 2,
+        ...
+    ),
+    joint_signs=(1, 1, 1, 1, 1, 1, 1),
+    # gripper_config は (モーター ID, gripper open, gripper close) で、全て整数
+    gripper_config=(8, 202, 160),
+),
+```
+
+!!! info "robopy 側での利用"
+    robopy ではこれらの値を [`GelloArmConfig`](../api/config.md#robopy.config.robot_config.xarm_config.GelloArmConfig) (`joint_offsets` / `joint_signs` / `gripper_open_deg` / `gripper_close_deg`) に設定します。
+
+### 4. シミュレータ上での動作確認
+
+GUI アプリを起動するため、**SSH 接続ではなくロボット実機が繋がっている PC 上で** 以下を実行します。ターミナルを 2 つ開いてください。
+
+1 つ目 — シミュレータ起動:
+
+```bash
+python experiments/launch_nodes.py --robot sim_xarm
+```
+
+GUI が開いたら、もう一方のターミナルで:
+
+```bash
+python experiments/run_env.py --agent=gello
+```
+
+`Going to start position` で実行が止まる場合は、GELLO の姿勢がホームポジションから外れているのが原因です。できるだけホームに近い姿勢へ手で戻してからやり直してください。
+
+実行が進むと、シミュレータ上の xArm が GELLO に追従します。モーターの向きや動きが明らかにおかしい場合は、`gello/agents/gello_agent.py` の `joint_offsets` を直接微調整してください。  
+(例: モーター ID 4 が 90° ずれていたケースでは、ラジアンで `1/2 π` ずれているため `joint_offsets` の 4 番目から `np.pi / 2` を引いて補正)
+
+ここまで一致させれば、GELLO キャリブレーションは完了です。
+
+### 5. xArm 本体の接続
+
+#### 5.1 ケーブル類
+
+1. xArm 本体とコントローラ Box を 2 本のケーブルで接続します。
+2. Box の電源ケーブルを接続します。
+3. 上部の非常停止スイッチを**回して押せる状態**にします。
+4. **LAN ケーブルは、PC に直結ではなくルーター (またはハブ) に接続します** (純正の取扱説明書は PC 直結を指示していますが、無視してください)。
+5. Box の電源ボタンを押して起動します。
+
+#### 5.2 WebUI での疎通確認
+
+コントローラ Box の LAN 端子の下に貼られているシールで、Box の IP アドレスを確認します (`192.168.1.XXX` の形式)。
+
+ブラウザで以下にアクセスすると UFactory WebUI が起動し、xArm の状態確認・操作が行えます。
+
+```
+http://192.168.1.XXX:18333
+```
+
+ここまで疎通できれば、xArm のハードウェア側セットアップは完了です。`XArmConfig(follower_ip="192.168.1.XXX", ...)` としてこの IP を指定すれば、robopy から接続できます。
+
+### 6. カメラ権限 (RealSense / Web カメラ)
+
+RealSense や USB Web カメラから画像が取得できない場合、`/dev/video*` の権限不足が原因であることが多いです。全てのカメラを接続した状態で次を実行してください (sudo 権限が必要)。
+
+```bash
+sudo bash -c 'for device in /dev/video*; do chmod 666 "$device"; done'
+```
+
 ## :material-cog: 基本的な使用方法
 
 ### 設定の作成
@@ -47,20 +188,244 @@ finally:
     robot.disconnect()
 ```
 
-## :material-database: データ記録
+## :material-database: データ収集
+
+xArm では legacy `xarm_modules/saver.py` 相当のデータ収集を `XArmRobot` の 3 種類の `record*` API で行います。`RakudaExpHandler` のような専用ハンドラはまだ無いため、**記録は `XArmRobot` を直接使い、保存は numpy で手動**という形が基本パターンです。
+
+### API 一覧
+
+| メソッド | 用途 | リーダー | Follower | sensors |
+|---|---|---|---|---|
+| [`record`](../api/robots.md#robopy.robots.xarm.xarm_robot.XArmRobot.record) | シーケンシャル記録 (低 fps, シンプル) | GELLO ライブ | GELLO 追従 | 毎フレーム同期読み |
+| [`record_parallel`](../api/robots.md#robopy.robots.xarm.xarm_robot.XArmRobot.record_parallel) | 並列記録 (推奨、高 fps) | GELLO ライブ | GELLO 追従 | スレッドプール並列読み |
+| [`record_with_fixed_leader`](../api/robots.md#robopy.robots.xarm.xarm_robot.XArmRobot.record_with_fixed_leader) | 記録済み leader 軌道で再生しつつ収集 | 配列から補間再生 | 追従 | 並列読み |
+| [`send`](../api/robots.md#robopy.robots.xarm.xarm_robot.XArmRobot.send) | 記録なしで軌道を再生のみ | 配列から補間再生 | 追従 | 読まない |
+
+### 記録データの構造 ([`XArmObs`](../api/config.md#robopy.config.robot_config.xarm_config.XArmObs))
 
 ```python
-# 並列記録（高 fps 対応）
+obs.arms.leader        # (frames, 8)   — 7 joints [rad] + gripper [0, 1]
+obs.arms.follower      # (frames, 8)   — 同上 (xArm 本体 or sim の状態)
+obs.arms.ee_pos_quat   # (frames, 7)   — [x, y, z (m), qx, qy, qz, qw]
+
+obs.sensors.cameras    # Dict[str, (frames, H, W, 3) | None]  — RealSense RGB
+obs.sensors.tactile    # Dict[str, (frames, 3, H, W) | None]  — DIGIT (CHW に transpose 済)
+obs.sensors.audio      # Dict[str, (frames, channels, samples) | None]
+```
+
+センサーは `XArmConfig.sensors` に設定したもののみ、辞書に **名前キー**で入ります。未接続センサーは `None`、`XArmConfig.sensors=None` なら辞書は空です。
+
+### シーケンシャル記録 (`record`)
+
+メインスレッドで「テレオペ 1 ステップ → センサー読み」を交互に行う単純ループ。**低 fps の動作確認**に向きます。センサー処理時間が長いと fps が維持できないため、高 fps には `record_parallel` を使ってください。
+
+```python
+obs = robot.record(max_frame=100, fps=5)
+```
+
+### 並列記録 (`record_parallel`) — 推奨
+
+テレオペを独立スレッドで `teleop_hz` Hz で動かし、メインループは `fps` Hz でキュー最新値 + センサーを取得します。センサー読みも `ThreadPoolExecutor` で並列化。
+
+```python
 obs = robot.record_parallel(
     max_frame=500,
+    fps=20,                      # 記録 (保存) のフレームレート
+    teleop_hz=100,               # 内部テレオペループの Hz (fps 以上にする)
+    max_processing_time_ms=40.0, # 1 フレーム処理の上限 (超えるとスキップ検知)
+)
+```
+
+- `teleop_hz >= fps` が前提。通常 `teleop_hz = 4 × fps` 程度が安定。
+- `max_processing_time_ms` を超えると `skipped_frames` にカウントされ、終了時に `logger.info` で出ます。sensor が重い場合はここを上げる。
+- ログ: `record_parallel completed: frames=N, skipped=K, avg_proc=XXms`
+
+### 軌道再生つき収集 (`record_with_fixed_leader`)
+
+過去に記録した leader 軌道 `(max_frame, 8)` を時間線形補間しつつ follower に送り、実機応答 + センサーを記録します。**方策評価・再現実験**に使います。
+
+```python
+import numpy as np
+
+# 過去データの leader 軌道を読み込み (例: 前回の record_parallel で保存した配列)
+prior = np.load("data/trajectory_001/leader.npy")  # (N, 8)
+obs = robot.record_with_fixed_leader(
+    max_frame=prior.shape[0],
+    leader_action=prior,
     fps=20,
     teleop_hz=100,
-    max_processing_time_ms=40.0,
 )
+```
 
-print(obs.arms.leader.shape)        # (500, 8)  — 7 joints [rad] + gripper [0, 1]
-print(obs.arms.follower.shape)      # (500, 8)
-print(obs.arms.ee_pos_quat.shape)   # (500, 7)  — xyz [m] + quat [xyzw]
+### 記録なし再生 (`send`)
+
+保存は不要だが軌道だけ再生したい場合 (デモ、微調整ループなど):
+
+```python
+robot.send(max_frame=prior.shape[0], fps=20, leader_action=prior, teleop_hz=100)
+```
+
+終了時に Rich の `Table` で送信フレーム数・実効 Hz を出力します。
+
+## :material-camera-plus-outline: センサー設定つきの完全例
+
+`XArmConfig.sensors` に `XArmSensorParams` を渡すと、`connect()` 内でカメラ・触覚・音声を初期化し、記録時に同期取得されます。
+
+=== "カメラのみ"
+
+    ```python
+    import numpy as np
+    from robopy.config.robot_config import (
+        XArmConfig, XArmSensorParams, XArmWorkspaceBounds,
+    )
+    from robopy.config.sensor_config.params_config import CameraParams
+    from robopy.robots.xarm import XArmRobot
+
+    config = XArmConfig(
+        follower_ip="192.168.1.240",
+        workspace_bounds=XArmWorkspaceBounds(),
+        start_joints=np.deg2rad([0, -90, 90, -90, -90, 0, 0]).astype(np.float32),
+        sensors=XArmSensorParams(
+            cameras=[
+                CameraParams(name="wrist", width=640, height=480, fps=30),
+                CameraParams(name="env",   width=640, height=480, fps=30),
+            ],
+        ),
+    )
+
+    robot = XArmRobot(config)
+    try:
+        robot.connect()
+        obs = robot.record_parallel(max_frame=300, fps=20, teleop_hz=80)
+    finally:
+        robot.disconnect()
+    ```
+
+=== "カメラ + 触覚 + 音声"
+
+    ```python
+    from robopy.config.sensor_config.params_config import (
+        CameraParams, TactileParams, AudioParams,
+    )
+
+    config = XArmConfig(
+        follower_ip="192.168.1.240",
+        sensors=XArmSensorParams(
+            cameras=[CameraParams(name="wrist", width=640, height=480, fps=30)],
+            tactile=[TactileParams(serial_num="D20542", name="tip", fps=30)],
+            audio=[AudioParams(name="mic", sample_rate=16000, channels=1)],
+        ),
+    )
+    ```
+
+## :material-content-save-outline: 記録データの保存
+
+xArm 向け専用の保存ハンドラは現状未実装です。legacy `saver.py` と同じ形式で保存するなら、以下のようにして numpy で書き出します。
+
+```python
+from pathlib import Path
+import numpy as np
+
+def save_xarm_obs(obs, save_dir: str | Path, seq_id: int = 1) -> None:
+    """legacy xarm_modules/saver.py の出力形式に合わせて保存する。
+
+    Layout:
+        save_dir/action_state_001.npy      # (T, 8) leader (= teleop 時の GELLO)
+        save_dir/observation_state_001.npy # (T, 8) follower (xArm 実際の状態)
+        save_dir/hand_001.npy              # (T, 7) ee_pos_quat
+        save_dir/robot_image_001.npy       # (T, H, W, 3) 手先カメラ (あれば)
+        save_dir/env_image_001.npy         # (T, H, W, 3) 環境カメラ (あれば)
+        save_dir/tactile_<name>_001.npy    # (T, 3, H, W)
+        save_dir/audio_<name>_001.npy      # (T, C, N)
+    """
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    tag = f"{seq_id:03d}"
+
+    np.save(save_dir / f"action_state_{tag}.npy",      obs.arms.leader)
+    np.save(save_dir / f"observation_state_{tag}.npy", obs.arms.follower)
+    np.save(save_dir / f"hand_{tag}.npy",              obs.arms.ee_pos_quat)
+
+    if obs.sensors is not None:
+        for name, arr in obs.sensors.cameras.items():
+            if arr is not None:
+                np.save(save_dir / f"camera_{name}_{tag}.npy", arr)
+        for name, arr in obs.sensors.tactile.items():
+            if arr is not None:
+                np.save(save_dir / f"tactile_{name}_{tag}.npy", arr)
+        for name, arr in obs.sensors.audio.items():
+            if arr is not None:
+                np.save(save_dir / f"audio_{name}_{tag}.npy", arr)
+```
+
+呼び出し例:
+
+```python
+obs = robot.record_parallel(max_frame=500, fps=20, teleop_hz=100)
+save_xarm_obs(obs, "data/experiment_001", seq_id=1)
+```
+
+!!! tip "統合保存ハンドラ (将来)"
+    Rakuda の `RakudaExpHandler` 相当 (`record_save` / HDF5 統合 / メタデータ自動付与) が必要な場合は、`src/robopy/utils/exp_interface/rakuda_exp_handler.py` を参考に `xarm_exp_handler.py` を追加するのが今後の改善方針です。
+
+## :material-tune-variant: 性能チューニング
+
+=== "fps が出ない"
+
+    - `fps` を下げる、または `teleop_hz` を上げる (テレオペスレッドの更新頻度不足)
+    - `max_processing_time_ms` を `1/fps * 1000 * 0.8` 程度に設定して、超過頻度を logger で観察
+    - 重いセンサー (例: 高解像度カメラ 4 台) を同時記録する場合は解像度を落とす
+
+=== "スキップが多い"
+
+    - 終了時ログの `skipped=` の割合が 10% 超なら、`max_processing_time_ms` を緩めるか fps を下げる
+    - USB 帯域 (RealSense 複数台) が原因の場合は、USB3 ポートを分散する
+
+=== "GELLO 追従が遅い"
+
+    - `XArmConfig.max_delta` を上げると追従速度 ↑ / 安全度 ↓ (既定 0.05 rad/step)
+    - `XArmConfig.control_frequency` を上げると内部スレッドの指令頻度 ↑ (既定 50 Hz)
+    - `cartesian_speed` / `cartesian_mvacc` は xArm SDK への引数で、これも上げると速くなる
+
+## :material-file-document-multiple: データ記録の最小例
+
+```python
+import numpy as np
+from robopy.config.robot_config import (
+    XArmConfig, XArmSensorParams, XArmWorkspaceBounds,
+)
+from robopy.config.sensor_config.params_config import CameraParams
+from robopy.robots.xarm import XArmRobot
+
+def collect() -> None:
+    config = XArmConfig(
+        follower_ip="192.168.1.240",
+        workspace_bounds=XArmWorkspaceBounds(),
+        start_joints=np.deg2rad([0, -90, 90, -90, -90, 0, 0]).astype(np.float32),
+        sensors=XArmSensorParams(
+            cameras=[CameraParams(name="wrist", width=640, height=480, fps=30)],
+        ),
+    )
+    robot = XArmRobot(config)
+    try:
+        robot.connect()
+        # 初期姿勢を GELLO で合わせたあと Enter を待つ
+        input("GELLO を xArm の姿勢に合わせたら Enter で開始...")
+        obs = robot.record_parallel(
+            max_frame=500,
+            fps=20,
+            teleop_hz=100,
+            max_processing_time_ms=40.0,
+        )
+        print("leader:  ", obs.arms.leader.shape)
+        print("follower:", obs.arms.follower.shape)
+        print("ee:      ", obs.arms.ee_pos_quat.shape)
+        # save_xarm_obs(obs, "data/experiment_001", seq_id=1)
+    finally:
+        robot.disconnect()
+
+if __name__ == "__main__":
+    collect()
 ```
 
 ## :material-test-tube: シミュレータ上で先に動作確認する (強く推奨)
