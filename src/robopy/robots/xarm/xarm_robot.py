@@ -556,9 +556,7 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
             if follower_list
             else np.zeros((0, 8), np.float32)
         )
-        ee_np = (
-            np.asarray(ee_list, dtype=np.float32) if ee_list else np.zeros((0, 7), np.float32)
-        )
+        ee_np = np.asarray(ee_list, dtype=np.float32) if ee_list else np.zeros((0, 7), np.float32)
         arms = XArmArmObs(leader=leader_np, follower=follower_np, ee_pos_quat=ee_np)
 
         def to_array(d: Dict[str, List[NDArray[np.float32] | None]]) -> Dict[str, NDArray | None]:

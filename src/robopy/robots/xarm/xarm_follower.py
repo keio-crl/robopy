@@ -49,9 +49,7 @@ def _quat_from_aa(aa: np.ndarray) -> np.ndarray:
         return np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32)
     axis = aa / norm
     quaternion = Quaternion(axis=axis, angle=norm)
-    return np.array(
-        [quaternion.x, quaternion.y, quaternion.z, quaternion.w], dtype=np.float32
-    )
+    return np.array([quaternion.x, quaternion.y, quaternion.z, quaternion.w], dtype=np.float32)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -244,9 +242,7 @@ class XArmFollower(XArmArm):
                     "gripper": None,
                 }
             else:
-                raise ValueError(
-                    f"Invalid joint_state length: {joint_state.shape[0]}"
-                )
+                raise ValueError(f"Invalid joint_state length: {joint_state.shape[0]}")
 
     def command_cartesian_absolute(
         self,
@@ -370,9 +366,7 @@ class XArmFollower(XArmArm):
     def _set_position(self, joints: np.ndarray) -> None:
         if self._robot is None:
             return
-        _, pose = self._robot.get_forward_kinematics(
-            joints.tolist(), input_is_radian=True
-        )
+        _, pose = self._robot.get_forward_kinematics(joints.tolist(), input_is_radian=True)
         if self._workspace is not None:
             pose[0] = float(np.clip(pose[0], self._workspace.min_x, self._workspace.max_x))
             pose[1] = float(np.clip(pose[1], self._workspace.min_y, self._workspace.max_y))
@@ -403,10 +397,17 @@ class XArmFollower(XArmArm):
             pose[1] = float(np.clip(pose[1], self._workspace.min_y, self._workspace.max_y))
             pose[2] = float(np.clip(pose[2], self._workspace.min_z, self._workspace.max_z))
         ret = self._robot.set_position(
-            x=pose[0], y=pose[1], z=pose[2],
-            roll=pose[3], pitch=pose[4], yaw=pose[5],
-            wait_motion=False, is_radian=True,
-            speed=self._cartesian_speed, mvacc=self._cartesian_mvacc, radius=0,
+            x=pose[0],
+            y=pose[1],
+            z=pose[2],
+            roll=pose[3],
+            pitch=pose[4],
+            yaw=pose[5],
+            wait_motion=False,
+            is_radian=True,
+            speed=self._cartesian_speed,
+            mvacc=self._cartesian_mvacc,
+            radius=0,
         )
         if ret in (1, 9):
             self._clear_error_states()
@@ -436,9 +437,7 @@ class XArmFollower(XArmArm):
                 target = cur_arr + np.asarray(cmd["delta"], dtype=np.float32)
                 self._send_cartesian(target)
             else:
-                target_joints = np.asarray(
-                    cmd.get("joints", np.zeros(7)), dtype=np.float32
-                )
+                target_joints = np.asarray(cmd.get("joints", np.zeros(7)), dtype=np.float32)
                 joint_delta = target_joints - self._last_state.joints()
                 norm = float(np.linalg.norm(joint_delta))
                 if norm > self._max_delta and norm > 0.0:

@@ -70,9 +70,7 @@ class GelloArmConfig:
 
     def __post_init__(self) -> None:
         if not (len(self.joint_ids) == len(self.joint_offsets) == len(self.joint_signs)):
-            raise ValueError(
-                "joint_ids, joint_offsets and joint_signs must share the same length."
-            )
+            raise ValueError("joint_ids, joint_offsets and joint_signs must share the same length.")
 
 
 GELLO_XARM7_DEFAULT = GelloArmConfig()

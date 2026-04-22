@@ -92,8 +92,7 @@ class XArmPairSys(Robot):
                 for i in ids
             )
             raise RuntimeError(
-                f"Leader/Follower initial mismatch > {_ALIGNMENT_TOLERANCE_RAD} rad: "
-                f"{details}"
+                f"Leader/Follower initial mismatch > {_ALIGNMENT_TOLERANCE_RAD} rad: {details}"
             )
 
         required_steps = max(

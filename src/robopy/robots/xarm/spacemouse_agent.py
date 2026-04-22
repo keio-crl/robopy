@@ -49,8 +49,7 @@ def run_spacemouse_teleop(
         import pyspacemouse  # type: ignore[import-not-found]
     except ImportError as exc:
         raise ImportError(
-            "pyspacemouse is required for SpaceMouse teleop. "
-            "Install it via `uv add pyspacemouse`."
+            "pyspacemouse is required for SpaceMouse teleop. Install it via `uv add pyspacemouse`."
         ) from exc
 
     if cfg is None:

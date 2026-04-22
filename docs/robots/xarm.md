@@ -49,7 +49,7 @@ Usage: uv [OPTIONS] <COMMAND>
 GELLO 本体の組み立てと、Dynamixel モーターへの ID 割り当てを行います。
 
 1. GELLO の各種部品 (3D プリント品・購入品) を用意して組み立てます。
-2. Dynamixel Wizard を導入します。インストールガイドは ROBOTIS 公式マニュアルを参照してください: <https://emanual.robotis.com/docs/en/software/dynamixel/dynamixel_wizard2/>  
+2. Dynamixel Wizard を導入します。インストールガイドは ROBOTIS 公式マニュアルを参照してください: <https://emanual.robotis.com/docs/en/software/dynamixel/dynamixel_wizard2/>
    **インストール時に記載されているコマンドはすべて実行してください** (飛ばすとエラーの原因になります)。
 3. Dynamixel Wizard を起動し、まず **U2D2 単体** で接続確認を行います。
 4. 一度完全に切断しソフトも閉じた上で、**モーターを 1 つだけ U2D2 に接続** → ソフト再起動 → ポートスキャンを行い、検出されたモーターに **ID 1** を割り当てます。
@@ -122,7 +122,7 @@ python experiments/run_env.py --agent=gello
 
 `Going to start position` で実行が止まる場合は、GELLO の姿勢がホームポジションから外れているのが原因です。できるだけホームに近い姿勢へ手で戻してからやり直してください。
 
-実行が進むと、シミュレータ上の xArm が GELLO に追従します。モーターの向きや動きが明らかにおかしい場合は、`gello/agents/gello_agent.py` の `joint_offsets` を直接微調整してください。  
+実行が進むと、シミュレータ上の xArm が GELLO に追従します。モーターの向きや動きが明らかにおかしい場合は、`gello/agents/gello_agent.py` の `joint_offsets` を直接微調整してください。
 (例: モーター ID 4 が 90° ずれていたケースでは、ラジアンで `1/2 π` ずれているため `joint_offsets` の 4 番目から `np.pi / 2` を引いて補正)
 
 ここまで一致させれば、GELLO キャリブレーションは完了です。
