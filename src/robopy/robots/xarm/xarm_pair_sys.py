@@ -72,15 +72,18 @@ class XArmPairSys(Robot):
     def _align_leader_follower(self) -> None:
         """Smoothly move the follower to match the leader's pose.
 
-        This is a port of ``xarm_modules/src/run_env.py:77-113``: warn if the
-        leader and follower differ by more than 0.8 rad, then push the
-        follower to the leader over 25 incremental steps limited by
-        ``max_delta``.
+        On hardware, fail fast if leader/follower differ by more than 0.8 rad
+        (a port of ``xarm_modules/src/run_env.py:77-113``). In sim_mode the
+        follower always boots at zero, so we skip the pre-check and instead
+        run enough ``max_delta``-limited smooth steps to close the gap, then
+        verify the residual mismatch.
         """
         leader_state = self._leader.get_joint_state()
         follower_state = self._follower.get_joint_state()
         deltas = np.abs(leader_state - follower_state)
-        if deltas.max() > _ALIGNMENT_TOLERANCE_RAD:
+        max_gap = float(deltas.max())
+
+        if not self.config.sim_mode and max_gap > _ALIGNMENT_TOLERANCE_RAD:
             ids = np.where(deltas > _ALIGNMENT_TOLERANCE_RAD)[0]
             details = ", ".join(
                 f"joint[{i}]: leader={leader_state[i]:.3f}, "
@@ -93,7 +96,11 @@ class XArmPairSys(Robot):
                 f"{details}"
             )
 
-        for _ in range(_DEFAULT_ALIGN_STEPS):
+        required_steps = max(
+            _DEFAULT_ALIGN_STEPS,
+            int(np.ceil(max_gap / _DEFAULT_ALIGN_DELTA)) + 5,
+        )
+        for _ in range(required_steps):
             cmd = self._leader.get_joint_state()
             curr = self._follower.get_joint_state()
             diff = cmd - curr
@@ -102,6 +109,25 @@ class XArmPairSys(Robot):
                 diff = diff / max_abs * _DEFAULT_ALIGN_DELTA
             self._follower.command_joint_state(curr + diff)
             time.sleep(1.0 / 100.0)
+
+        if self.config.sim_mode:
+            return
+
+        leader_state = self._leader.get_joint_state()
+        follower_state = self._follower.get_joint_state()
+        residuals = np.abs(leader_state - follower_state)
+        if residuals.max() > _ALIGNMENT_TOLERANCE_RAD:
+            ids = np.where(residuals > _ALIGNMENT_TOLERANCE_RAD)[0]
+            details = ", ".join(
+                f"joint[{i}]: leader={leader_state[i]:.3f}, "
+                f"follower={follower_state[i]:.3f}, "
+                f"delta={residuals[i]:.3f}"
+                for i in ids
+            )
+            raise RuntimeError(
+                f"Leader/Follower residual mismatch > {_ALIGNMENT_TOLERANCE_RAD} rad "
+                f"after smooth align: {details}"
+            )
 
     # ------------------------------------------------------------ observation
     def get_observation(self) -> XArmArmObs:
