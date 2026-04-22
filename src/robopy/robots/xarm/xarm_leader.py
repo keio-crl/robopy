@@ -128,20 +128,27 @@ class XArmLeader(XArmArm):
     def _read_raw_radians(self) -> NDArray[np.float32]:
         """Read the Dynamixel present positions and convert to radians.
 
-        ``DynamixelBus.sync_read(PRESENT_POSITION, ...)`` returns calibrated
-        values in degrees (centred around zero). We simply convert to radians
-        — joint offsets and signs are applied later in
+        ``DynamixelBus.sync_read(PRESENT_POSITION, ...)`` returns values in
+        degrees only when calibration is configured on the bus; GELLO-style
+        leaders never set calibration, so the bus returns **raw INT32 ticks**
+        (already sign-corrected via ``cast_value``). We convert using the same
+        formula as the legacy ``gello_software`` driver:
+
+            rad = ticks / (resolution / 2) * pi
+
+        For XL-330 series motors (resolution=4096) this is equivalent to
+        ``ticks / 2048 * pi``. Joint offsets and signs are applied later in
         :meth:`get_joint_state`.
         """
         if self._motors is None:
             raise ConnectionError("XArmLeader is not connected.")
         motor_names = list(XARM_LEADER_MOTOR_NAMES)
-        deg_values = self._motors.sync_read(XControlTable.PRESENT_POSITION, motor_names)
-        deg_array = np.array(
-            [float(deg_values[name]) for name in motor_names],
-            dtype=np.float32,
-        )
-        return np.deg2rad(deg_array).astype(np.float32)
+        raw = self._motors.sync_read(XControlTable.PRESENT_POSITION, motor_names)
+        rad = np.empty(len(motor_names), dtype=np.float32)
+        for i, name in enumerate(motor_names):
+            resolution = self._motors.motors[name].resolution
+            rad[i] = float(raw[name]) / (resolution / 2.0) * np.pi
+        return rad
 
     def get_joint_state(self) -> NDArray[np.float32]:
         """Return the 8-DOF state: 7 joints [rad] + gripper [0, 1]."""

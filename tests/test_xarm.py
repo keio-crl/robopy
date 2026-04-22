@@ -19,6 +19,7 @@ from robopy.config.robot_config import (
     XArmSensorParams,
     XArmWorkspaceBounds,
 )
+from robopy.config.robot_config.xarm_config import XARM_LEADER_MOTOR_NAMES
 from robopy.robots.xarm import (
     SimXArmFollower,
     XArmArm,
@@ -125,3 +126,52 @@ def test_xarm_config_sim_mode() -> None:
     assert cfg.sim_mode is True
     assert cfg.sim_host == "192.168.1.100"
     assert cfg.sim_port == 7000
+
+
+class _FakeMotor:
+    def __init__(self, resolution: int = 4096) -> None:
+        self.resolution = resolution
+
+
+class _FakeBus:
+    """Mimics DynamixelBus.sync_read returning raw INT32 ticks (no calibration)."""
+
+    def __init__(self, tick_values: dict[str, int], resolution: int = 4096) -> None:
+        self._ticks = tick_values
+        self.motors = {name: _FakeMotor(resolution) for name in tick_values}
+
+    def sync_read(self, _item: object, motor_names: list[str]) -> dict[str, int]:
+        return {name: self._ticks[name] for name in motor_names}
+
+
+def test_xarm_leader_read_raw_radians_tick_to_rad_conversion() -> None:
+    """Regression: _read_raw_radians must interpret sync_read output as raw
+    ticks (calibration is never set on the bus), matching the legacy
+    gello_software DynamixelDriver.get_joints() formula ``ticks / 2048 * pi``.
+
+    Pre-fix, the method called np.deg2rad() on raw ticks and was wrong by
+    2048/180 ≈ 11.38×.
+    """
+    cfg = XArmConfig(leader_port="/dev/null")
+    leader = XArmLeader(cfg)
+    # Inject fake bus with known tick values: 2048 ticks → pi rad (half turn).
+    ticks = {name: 2048 for name in XARM_LEADER_MOTOR_NAMES}
+    leader._motors = _FakeBus(ticks)  # type: ignore[assignment]
+
+    rad = leader._read_raw_radians()
+    assert rad.shape == (8,)
+    expected = np.full(8, np.pi, dtype=np.float32)
+    np.testing.assert_allclose(rad, expected, atol=1e-5)
+
+
+def test_xarm_leader_read_raw_radians_handles_negative_ticks() -> None:
+    """Negative ticks (multi-turn) must convert linearly, not wrap through
+    deg2rad. At -1024 ticks, legacy formula gives -pi/2 rad."""
+    cfg = XArmConfig(leader_port="/dev/null")
+    leader = XArmLeader(cfg)
+    ticks = {name: -1024 for name in XARM_LEADER_MOTOR_NAMES}
+    leader._motors = _FakeBus(ticks)  # type: ignore[assignment]
+
+    rad = leader._read_raw_radians()
+    expected = np.full(8, -np.pi / 2.0, dtype=np.float32)
+    np.testing.assert_allclose(rad, expected, atol=1e-5)
