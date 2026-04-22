@@ -43,6 +43,13 @@ docs = [
     "mkdocstrings[python]>=0.24.0",
     "mkdocs-git-revision-date-localized-plugin>=1.2.0",
 ]
+gello = [
+    "dm-control>=1.0.39",
+    "mujoco>=3.7.0",
+    "numpy>=2.2.6",
+    "tyro>=1.0.13",
+    "zmq>=0.0.0",
+]
 linux = ["pyrealsense2>=2.54.2"]                         # Linux専用依存
 spacemouse = ["pyspacemouse>=1.0.8"]                     # SpaceMouse テレオペ用
 
