@@ -114,6 +114,9 @@ class XArmConfig:
     start_joints: NDArray[np.float32] | None = None
     gello: GelloArmConfig = field(default_factory=GelloArmConfig)
     sensors: XArmSensorParams | None = None
+    sim_mode: bool = False
+    sim_host: str = "127.0.0.1"
+    sim_port: int = 6000
 
 
 @dataclass
@@ -121,9 +124,9 @@ class XArmArmObs:
     """Arm observation: leader / follower joint positions plus end-effector pose.
 
     Shapes:
-        leader: (8,) — 7 joints [rad] + gripper [0, 1]
-        follower: (8,) — 7 joints [rad] + gripper [0, 1]
-        ee_pos_quat: (7,) — xyz [m] + quaternion [x, y, z, w]
+        leader: (8,) -- 7 joints [rad] + gripper [0, 1]
+        follower: (8,) -- 7 joints [rad] + gripper [0, 1]
+        ee_pos_quat: (7,) -- xyz [m] + quaternion [x, y, z, w]
     """
 
     leader: NDArray[np.float32]
