@@ -1,0 +1,181 @@
+<mujoco model="unnamed_model">
+  <compiler autolimits="true" angle="radian"/>
+  <option integrator="implicitfast"/>
+  <default>
+    <default class="/"/>
+    <default class="xarm7/">
+      <default class="xarm7/xarm7">
+        <joint axis="0 0 1" range="-6.2831900000000003 6.2831900000000003" armature="0.10000000000000001" frictionloss="1"/>
+        <geom type="mesh" material="xarm7/white"/>
+        <site group="4" rgba="1 0 0 1" size="0.001"/>
+        <general ctrlrange="-6.2831900000000003 6.2831900000000003" biastype="affine"/>
+        <default class="xarm7/size1">
+          <joint damping="10"/>
+          <general forcerange="-50 50" gainprm="1500" biasprm="0 -1500 -150"/>
+        </default>
+        <default class="xarm7/size2">
+          <joint damping="5"/>
+          <general forcerange="-30 30" gainprm="1000" biasprm="0 -1000 -100"/>
+        </default>
+        <default class="xarm7/size3">
+          <joint damping="2"/>
+          <general forcerange="-20 20" gainprm="800" biasprm="0 -800 -80"/>
+        </default>
+        <default class="xarm7/spring_link">
+          <joint stiffness="0.050000000000000003" range="0 0.84999999999999998" springref="2.6200000000000001" damping="0.00125"/>
+        </default>
+        <default class="xarm7/driver">
+          <joint solreflimit="0.0050000000000000001 1" range="0 0.84999999999999998" armature="0.0050000000000000001" damping="0.10000000000000001"/>
+        </default>
+        <default class="xarm7/follower">
+          <joint solreflimit="0.0050000000000000001 1" range="0 0.84999999999999998"/>
+        </default>
+        <default class="xarm7/visual">
+          <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+        </default>
+        <default class="xarm7/collision">
+          <geom type="mesh" group="3"/>
+          <default class="xarm7/pad_box1">
+            <geom type="box" priority="1" size="0.014999999999999999 0.002 0.0094999999999999998" rgba="0 0.10000000000000001 0.69999999999999996 1" friction="0.69999999999999996" mass="0" solref="0.0040000000000000001 1" solimp="0.94999999999999996 0.98999999999999999 0.001"/>
+          </default>
+          <default class="xarm7/pad_box2">
+            <geom type="box" priority="1" size="0.014999999999999999 0.002 0.0094999999999999998" rgba="0 0.5 0.5 1" friction="0.59999999999999998" mass="0" solref="0.0040000000000000001 1" solimp="0.94999999999999996 0.98999999999999999 0.001"/>
+          </default>
+        </default>
+      </default>
+    </default>
+  </default>
+  <asset>
+    <material name="xarm7/white" class="xarm7/" rgba="1 1 1 1"/>
+    <material name="xarm7/gray" class="xarm7/" rgba="0.753 0.753 0.753 1"/>
+    <material name="xarm7/black" class="xarm7/" rgba="0.14899999999999999 0.14899999999999999 0.14899999999999999 1"/>
+    <mesh name="xarm7/link_base" class="xarm7/" file="link_base-326716fd166303be5d972b206c68a282b6006a86.stl"/>
+    <mesh name="xarm7/link1" class="xarm7/" file="link1-9b13f10e5f4c25ab051800a8d5bde3cea05ded98.stl"/>
+    <mesh name="xarm7/link2" class="xarm7/" file="link2-688558c30b2d2faecc0dd89685e623e369444249.stl"/>
+    <mesh name="xarm7/link3" class="xarm7/" file="link3-388d73ad9c06cfccfa0ca147aaf171d7f9b65760.stl"/>
+    <mesh name="xarm7/link4" class="xarm7/" file="link4-19912b7722a8f0f328a0aa93dcbd55decc748d67.stl"/>
+    <mesh name="xarm7/link5" class="xarm7/" file="link5-0b51f5731ec0b616afafdb5b5a80e6d0e802cac2.stl"/>
+    <mesh name="xarm7/link6" class="xarm7/" file="link6-f60892290819fe0d8cf4cf06eef4b6b1d358d5d6.stl"/>
+    <mesh name="xarm7/link7" class="xarm7/" file="link7-59356a861ea3cc51a1160063a8b2ab142523a9e3.stl"/>
+    <mesh name="xarm7/end_tool" class="xarm7/" file="end_tool-fba88989e12d718c4e6776399e40b7df4c85f363.stl"/>
+    <mesh name="xarm7/base_link" class="xarm7/" file="base_link-d452ec9c2e3ab46e11f888b2f464c736ad508f3a.stl"/>
+    <mesh name="xarm7/left_outer_knuckle" class="xarm7/" file="left_outer_knuckle-e36b948e1ddeda6293ba6a857a0af46ebd01577e.stl"/>
+    <mesh name="xarm7/left_finger" class="xarm7/" file="left_finger-998386065252ae2753e808ac4441721a36844c25.stl"/>
+    <mesh name="xarm7/left_inner_knuckle" class="xarm7/" file="left_inner_knuckle-6ba918569ea7400d8d60375872b1c80637af6bf9.stl"/>
+    <mesh name="xarm7/right_outer_knuckle" class="xarm7/" file="right_outer_knuckle-2469f2cd96cfaff3904c1e529638c369d012554b.stl"/>
+    <mesh name="xarm7/right_finger" class="xarm7/" file="right_finger-7f7b2cca4eb2d392610db5dcb8c48b8d21feeffb.stl"/>
+    <mesh name="xarm7/right_inner_knuckle" class="xarm7/" file="right_inner_knuckle-de1bc22588febf14e803ded214697e42ffe235ef.stl"/>
+  </asset>
+  <worldbody>
+    <body name="xarm7/">
+      <body name="xarm7/link_base" childclass="xarm7/xarm7" pos="0 0 0.12">
+        <inertial pos="-0.021131 -0.0016302000000000001 0.056487999999999997" quat="0.69684299999999999 0.20175999999999999 0.10388 0.68037599999999998" mass="0.88556000000000001" diaginertia="0.00382023 0.0033528199999999998 0.0016772499999999999"/>
+        <geom name="xarm7//unnamed_geom_0" mesh="xarm7/link_base"/>
+        <body name="xarm7/link1" pos="0 0 0.26700000000000002">
+          <inertial pos="-0.00020000000000000001 0.029049999999999999 -0.012330000000000001" quat="0.97895299999999996 -0.202769 -0.0044161699999999996 -0.022726400000000001" mass="2.3820000000000001" diaginertia="0.00569127 0.0053338400000000003 0.0029386500000000001"/>
+          <joint name="xarm7/joint1" class="xarm7/size1"/>
+          <geom name="xarm7//unnamed_geom_1" mesh="xarm7/link1"/>
+          <body name="xarm7/link2" quat="1 -1 0 0">
+            <inertial pos="0.00022000000000000001 -0.12856000000000001 0.017350000000000001" quat="0.50197999999999998 0.86482999999999999 -0.00778841 0.0048328499999999996" mass="1.869" diaginertia="0.00959898 0.0093771700000000006 0.00201315"/>
+            <joint name="xarm7/joint2" class="xarm7/size1" range="-2.0590000000000002 2.0943999999999998"/>
+            <geom name="xarm7//unnamed_geom_2" mesh="xarm7/link2"/>
+            <body name="xarm7/link3" pos="0 -0.29299999999999998 0" quat="1 1 0 0">
+              <inertial pos="0.046600000000000003 -0.024629999999999999 -0.0076800000000000002" quat="0.91381900000000005 0.289775 0.28148099999999998 -0.041645500000000002" mass="1.6383000000000001" diaginertia="0.0035172100000000002 0.0029408899999999998 0.00195868"/>
+              <joint name="xarm7/joint3" class="xarm7/size2"/>
+              <geom name="xarm7//unnamed_geom_3" mesh="xarm7/link3"/>
+              <body name="xarm7/link4" pos="0.052499999999999998 0 0" quat="1 1 0 0">
+                <inertial pos="0.070470000000000005 -0.11575000000000001 0.012" quat="0.42210799999999998 0.85202599999999995 -0.126025 0.28283199999999997" mass="1.7269000000000001" diaginertia="0.00657137 0.0064794800000000001 0.0018676299999999999"/>
+                <joint name="xarm7/joint4" class="xarm7/size2" range="-0.19198000000000001 3.927"/>
+                <geom name="xarm7//unnamed_geom_4" mesh="xarm7/link4"/>
+                <body name="xarm7/link5" pos="0.077499999999999999 -0.34250000000000003 0" quat="1 1 0 0">
+                  <inertial pos="-0.00032000000000000003 0.016039999999999999 -0.025999999999999999" quat="0.99931099999999995 -0.030445699999999999 0.00057706700000000001 0.0212082" mass="1.3203" diaginertia="0.0053472900000000002 0.0049907600000000003 0.0013489000000000001"/>
+                  <joint name="xarm7/joint5" class="xarm7/size2"/>
+                  <geom name="xarm7//unnamed_geom_5" mesh="xarm7/link5"/>
+                  <body name="xarm7/link6" quat="1 1 0 0">
+                    <inertial pos="0.064689999999999998 0.032779999999999997 0.021409999999999998" quat="-0.217672 0.77241899999999997 0.16258 0.57406900000000005" mass="1.325" diaginertia="0.0024542100000000001 0.00221646 0.00107273"/>
+                    <joint name="xarm7/joint6" class="xarm7/size3" range="-1.6929700000000001 3.1415899999999999"/>
+                    <geom name="xarm7//unnamed_geom_6" mesh="xarm7/link6"/>
+                    <body name="xarm7/link7" pos="0.075999999999999998 0.097000000000000003 0" quat="1 -1 0 0">
+                      <inertial pos="0 -0.00677 -0.01098" quat="0.48761199999999999 0.51208799999999999 -0.51208799999999999 0.48761199999999999" mass="0.17000000000000001" diaginertia="0.00013217599999999999 9.2999999999999997e-05 5.8523600000000003e-05"/>
+                      <joint name="xarm7/joint7" class="xarm7/size3"/>
+                      <geom name="xarm7//unnamed_geom_7" material="xarm7/gray" mesh="xarm7/end_tool"/>
+                      <body name="xarm7/xarm_gripper_base_link" quat="0 0 0 1">
+                        <inertial pos="-0.00065488999999999999 -0.0018496999999999999 0.048028000000000001" quat="0.99740300000000004 -0.071751200000000001 -0.0061836 0.000477479" mass="0.54156000000000004" diaginertia="0.00047109300000000001 0.000332307 0.000254799"/>
+                        <geom name="xarm7//unnamed_geom_8" mesh="xarm7/base_link"/>
+                        <body name="xarm7/left_outer_knuckle" pos="0 0.035000000000000003 0.059097999999999998">
+                          <inertial pos="0 0.021558999999999998 0.015181" quat="0.47788999999999998 0.87841999999999998 0 0" mass="0.033618000000000002" diaginertia="1.9111e-05 1.7908900000000001e-05 1.90167e-06"/>
+                          <joint name="xarm7/left_driver_joint" class="xarm7/driver" axis="1 0 0"/>
+                          <geom name="xarm7//unnamed_geom_9" material="xarm7/black" mesh="xarm7/left_outer_knuckle"/>
+                          <body name="xarm7/left_finger" pos="0 0.035465000000000003 0.042039">
+                            <inertial pos="0 -0.016413000000000001 0.029257999999999999" quat="0.69763399999999998 0.115353 -0.115353 0.69763399999999998" mass="0.048304" diaginertia="1.8803700000000001e-05 1.7493e-05 3.5679199999999999e-06"/>
+                            <joint name="xarm7/left_finger_joint" class="xarm7/follower" axis="-1 0 0"/>
+                            <geom name="xarm7//unnamed_geom_10" class="xarm7/visual" material="xarm7/black" mesh="xarm7/left_finger"/>
+                            <geom name="xarm7/left_finger_pad_1" class="xarm7/pad_box1" pos="0 -0.024003 0.032000000000000001"/>
+                            <geom name="xarm7/left_finger_pad_2" class="xarm7/pad_box2" pos="0 -0.024003 0.050000000000000003"/>
+                          </body>
+                        </body>
+                        <body name="xarm7/left_inner_knuckle" pos="0 0.02 0.074097999999999997">
+                          <inertial pos="1.8660100000000001e-06 0.022046799999999998 0.0261335" quat="0.66413900000000003 -0.242732 0.24271300000000001 0.66414600000000001" mass="0.023012600000000001" diaginertia="8.3421600000000001e-06 6.0948999999999999e-06 2.7560099999999998e-06"/>
+                          <joint name="xarm7/left_inner_knuckle_joint" class="xarm7/spring_link" axis="1 0 0"/>
+                          <geom name="xarm7//unnamed_geom_13" material="xarm7/black" mesh="xarm7/left_inner_knuckle"/>
+                        </body>
+                        <body name="xarm7/right_outer_knuckle" pos="0 -0.035000000000000003 0.059097999999999998">
+                          <inertial pos="0 -0.021558999999999998 0.015181" quat="0.87841999999999998 0.47788999999999998 0 0" mass="0.033618000000000002" diaginertia="1.9111e-05 1.7908900000000001e-05 1.90167e-06"/>
+                          <joint name="xarm7/right_driver_joint" class="xarm7/driver" axis="-1 0 0"/>
+                          <geom name="xarm7//unnamed_geom_14" material="xarm7/black" mesh="xarm7/right_outer_knuckle"/>
+                          <body name="xarm7/right_finger" pos="0 -0.035465000000000003 0.042039">
+                            <inertial pos="0 0.016413000000000001 0.029257999999999999" quat="0.69763399999999998 -0.115356 0.115356 0.69763399999999998" mass="0.048304" diaginertia="1.8803800000000001e-05 1.7493e-05 3.5677900000000001e-06"/>
+                            <joint name="xarm7/right_finger_joint" class="xarm7/follower" axis="1 0 0"/>
+                            <geom name="xarm7//unnamed_geom_15" class="xarm7/visual" material="xarm7/black" mesh="xarm7/right_finger"/>
+                            <geom name="xarm7/right_finger_pad_1" class="xarm7/pad_box1" pos="0 0.024003 0.032000000000000001"/>
+                            <geom name="xarm7/right_finger_pad_2" class="xarm7/pad_box2" pos="0 0.024003 0.050000000000000003"/>
+                          </body>
+                        </body>
+                        <body name="xarm7/right_inner_knuckle" pos="0 -0.02 0.074097999999999997">
+                          <inertial pos="1.866e-06 -0.022047000000000001 0.026133" quat="0.66415000000000002 0.242702 -0.24272099999999999 0.66414399999999996" mass="0.023012999999999999" diaginertia="8.3420900000000003e-06 6.0948999999999999e-06 2.7560099999999998e-06"/>
+                          <joint name="xarm7/right_inner_knuckle_joint" class="xarm7/spring_link" axis="-1 0 0"/>
+                          <geom name="xarm7//unnamed_geom_18" material="xarm7/black" mesh="xarm7/right_inner_knuckle"/>
+                        </body>
+                        <site name="xarm7/link_tcp" pos="0 0 0.17199999999999999"/>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+  <contact>
+    <exclude name="xarm7//unnamed_contact_0" body1="xarm7/right_inner_knuckle" body2="xarm7/right_outer_knuckle"/>
+    <exclude name="xarm7//unnamed_contact_1" body1="xarm7/right_inner_knuckle" body2="xarm7/right_finger"/>
+    <exclude name="xarm7//unnamed_contact_2" body1="xarm7/left_inner_knuckle" body2="xarm7/left_outer_knuckle"/>
+    <exclude name="xarm7//unnamed_contact_3" body1="xarm7/left_inner_knuckle" body2="xarm7/left_finger"/>
+  </contact>
+  <equality>
+    <connect name="xarm7//unnamed_equality_0" class="xarm7/" solref="0.0050000000000000001 1" body1="xarm7/right_finger" body2="xarm7/right_inner_knuckle" anchor="0 0.014999999999999999 0.014999999999999999"/>
+    <connect name="xarm7//unnamed_equality_1" class="xarm7/" solref="0.0050000000000000001 1" body1="xarm7/left_finger" body2="xarm7/left_inner_knuckle" anchor="0 -0.014999999999999999 0.014999999999999999"/>
+    <joint name="xarm7//unnamed_equality_2" class="xarm7/" solref="0.0050000000000000001 1" joint1="xarm7/left_driver_joint" joint2="xarm7/right_driver_joint" polycoef="0 1 0 0 0"/>
+  </equality>
+  <tendon>
+    <fixed name="xarm7/split" class="xarm7/">
+      <joint joint="xarm7/right_driver_joint" coef="0.5"/>
+      <joint joint="xarm7/left_driver_joint" coef="0.5"/>
+    </fixed>
+  </tendon>
+  <actuator>
+    <general name="xarm7/act1" class="xarm7/size1" joint="xarm7/joint1"/>
+    <general name="xarm7/act2" class="xarm7/size1" ctrlrange="-2.0590000000000002 2.0943999999999998" joint="xarm7/joint2"/>
+    <general name="xarm7/act3" class="xarm7/size2" joint="xarm7/joint3"/>
+    <general name="xarm7/act4" class="xarm7/size2" ctrlrange="-0.19198000000000001 3.927" joint="xarm7/joint4"/>
+    <general name="xarm7/act5" class="xarm7/size2" joint="xarm7/joint5"/>
+    <general name="xarm7/act6" class="xarm7/size3" ctrlrange="-1.6929700000000001 3.1415899999999999" joint="xarm7/joint6"/>
+    <general name="xarm7/act7" class="xarm7/size3" joint="xarm7/joint7"/>
+    <general name="xarm7/gripper" class="xarm7/" ctrlrange="0 255" forcerange="-50 50" tendon="xarm7/split" biastype="affine" gainprm="0.33300000000000002" biasprm="0 -100 -10"/>
+  </actuator>
+  <keyframe>
+    <key name="xarm7/home" qpos="0 -0.247 0 0.90900000000000003 0 1.1564399999999999 0 0 0 0 0 0 0" ctrl="0 -0.247 0 0.90900000000000003 0 1.1564399999999999 0 0"/>
+  </keyframe>
+</mujoco>

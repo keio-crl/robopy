@@ -131,6 +131,7 @@ nav:
   - Robot:
     - Rakuda: robots/rakuda.md
     - Koch: robots/koch.md
+    - xArm: robots/xarm.md
     - SO-101: robots/so101.md
   - Sensor:
     - Cameras: sensors/cameras.md

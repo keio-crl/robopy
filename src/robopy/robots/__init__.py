@@ -11,6 +11,10 @@ from .so101.so101_follower import So101Follower
 from .so101.so101_leader import So101Leader
 from .so101.so101_pair_sys import So101PairSys
 from .so101.so101_robot import So101Robot
+from .xarm.xarm_follower import XArmFollower
+from .xarm.xarm_leader import XArmLeader
+from .xarm.xarm_pair_sys import XArmPairSys
+from .xarm.xarm_robot import XArmRobot
 
 __all__ = [
     "RakudaRobot",
@@ -22,6 +26,10 @@ __all__ = [
     "KochPairSys",
     "KochLeader",
     "KochFollower",
+    "XArmRobot",
+    "XArmPairSys",
+    "XArmLeader",
+    "XArmFollower",
     "So101Robot",
     "So101PairSys",
     "So101Leader",
