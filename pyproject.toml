@@ -1,7 +1,7 @@
 [project]
 name = "robopy"
-version = "0.3.2"
-description = "A Python library for controlling robots with Dynamixel actuators and Intel RealSense cameras."
+version = "0.3.3"
+description = "A Python library for controlling robots with Dynamixel and Feetech actuators and Intel RealSense cameras."
 readme = "README.md"
 authors = [{ name = "tetsugo", email = "tetsugou2002@gmail.com" }]
 requires-python = ">=3.11"
@@ -20,6 +20,7 @@ dependencies = [
     "pyquaternion>=0.9.9",
     "pyyaml>=6.0.2",
     "rich>=14.1.0",
+    "feetech-servo-sdk>=1.0.0",
     "tqdm>=4.67.1",
     "xarm-python-sdk>=1.17.0",
 ]
@@ -50,6 +51,7 @@ gello = [
     "tyro>=1.0.13",
     "zmq>=0.0.0",
 ]
+spacemouse = ["pyspacemouse>=0.0.7"]
 linux = ["pyrealsense2>=2.54.2"]                         # Linux専用依存
 spacemouse = ["pyspacemouse>=1.0.8"]                     # SpaceMouse テレオペ用
 

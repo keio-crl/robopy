@@ -18,6 +18,7 @@ from .xarm_config import (
     XArmSensorParams,
     XArmWorkspaceBounds,
 )
+from .so101_config import SO101_MOTOR_MAPPING, So101Config
 
 __all__ = [
     "RakudaConfig",
@@ -34,4 +35,6 @@ __all__ = [
     "XArmWorkspaceBounds",
     "GelloArmConfig",
     "GELLO_XARM7_DEFAULT",
+    "So101Config",
+    "SO101_MOTOR_MAPPING",
 ]
