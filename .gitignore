@@ -21,3 +21,6 @@ tests/**/*.png
 
 # Experiment data
 data/
+
+# Robot config
+.robopy/

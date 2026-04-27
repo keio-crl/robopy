@@ -33,7 +33,7 @@ class RakudaArm(Arm):
             self.motors.write(
                 XControlTable.OPERATING_MODE,
                 motor_name,
-                RAKUDA_CONTROLTABLE_VALUES.GRIP_OPERATING_MODE,
+                RAKUDA_CONTROLTABLE_VALUES.CURRENT_BASED_OPERATING_MODE,
             )
             # Set PID gains for gripper motors
             # Use slower PID gains if in slow mode

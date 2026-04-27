@@ -62,8 +62,17 @@ class RakudaFollower(RakudaArm):
     def connect(self) -> None:
         """Connect to the follower arm and enable torque."""
         super().connect()
-        if self._is_connected:
+        if not self._is_connected:
+            return
+
+        # Always read all joints, but only torque-enable configured joints.
+        self._motors.torque_disabled()
+
+        enabled = self.config.follower_torque_enabled
+        if enabled is None:
             self._motors.torque_enabled()
+        elif enabled:
+            self._motors.torque_enabled(specific_motor_names=enabled)
 
     def disconnect(self) -> None:
         """Disconnect from the follower arm and disable torque."""

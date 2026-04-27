@@ -6,6 +6,7 @@ from typing import Dict
 import numpy as np
 from rich import print
 
+from robopy.config.dotrobopy import apply_rakuda_dotconfig
 from robopy.config.robot_config.rakuda_config import (
     RAKUDA_MOTOR_MAPPING,
     RakudaArmObs,
@@ -21,10 +22,18 @@ from .rakuda_leader import RakudaLeader
 logger = logging.getLogger(__name__)
 
 
+def _filter_action_by_enabled_joints(
+    action: Dict[str, float],
+    enabled_joints: set[str],
+) -> Dict[str, float]:
+    return {name: value for name, value in action.items() if name in enabled_joints}
+
+
 class RakudaPairSys(Robot):
     """Class representing the Rakuda robotic system with both leader and follower arms."""
 
     def __init__(self, cfg: RakudaConfig) -> None:
+        cfg = apply_rakuda_dotconfig(cfg)
         self.config = cfg
         self._leader = RakudaLeader(cfg)
         self._follower = RakudaFollower(cfg)
@@ -34,6 +43,18 @@ class RakudaPairSys(Robot):
         )
         self._leader_motor_names = list(self._leader.motors.motors.keys())
         self._follower_motor_names = list(self._follower.motors.motors.keys())
+
+        # Cache torque-enabled joints for safe write filtering.
+        self._leader_torque_enabled: set[str] = (
+            {"l_arm_grip", "r_arm_grip"}
+            if cfg.leader_torque_enabled is None
+            else set(cfg.leader_torque_enabled)
+        )
+        self._follower_torque_enabled: set[str] = (
+            set(self._follower_motor_names)
+            if cfg.follower_torque_enabled is None
+            else set(cfg.follower_torque_enabled)
+        )
 
     def connect(self) -> None:
         """Connect to both leader and follower arms."""
@@ -228,7 +249,10 @@ class RakudaPairSys(Robot):
         """Send action to the leader arm only."""
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
-        self._leader.motors.sync_write(XControlTable.GOAL_POSITION, action)
+        filtered = _filter_action_by_enabled_joints(action, self._leader_torque_enabled)
+        if not filtered:
+            return
+        self._leader.motors.sync_write(XControlTable.GOAL_POSITION, filtered)
 
     def get_follower_action(self) -> Dict[str, float]:
         """Get the current action (positions) from the follower arm."""
@@ -246,8 +270,11 @@ class RakudaPairSys(Robot):
         """Send action to the follower arm only."""
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
+        filtered = _filter_action_by_enabled_joints(action, self._follower_torque_enabled)
+        if not filtered:
+            return
 
-        self._follower.motors.sync_write(XControlTable.GOAL_POSITION, action)
+        self._follower.motors.sync_write(XControlTable.GOAL_POSITION, filtered)
 
     @property
     def is_connected(self) -> bool:

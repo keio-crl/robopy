@@ -36,6 +36,40 @@ config = RakudaConfig(
 )
 ```
 
+### `.robopy/rakuda/config.yaml` による関節トルク設定
+
+Rakudaを使用すると、実行ディレクトリ直下に `.robopy/rakuda/config.yaml` が自動生成されます。
+このYAMLで、leader/followerそれぞれ「トルクONにする関節」を関節名で指定できます。
+
+- **read（観測）は常に全関節**
+- **write（目標位置送信）はトルクON関節のみ**
+
+例：followerは頭だけトルクON、leaderはgripperだけトルクON
+
+```yaml
+leader:
+    torque_enabled:
+        - l_arm_grip
+        - r_arm_grip
+
+follower:
+    torque_enabled:
+        - torso_yaw
+        - head_yaw
+        - head_pitch
+```
+
+`torque_enabled: null`（またはキー自体を省略）にするとデフォルト挙動になります：
+
+- leader: gripperのみトルクON
+- follower: 全関節トルクON
+
+`torque_enabled: []` を指定すると、全関節トルクOFFになります。
+
+`torque_enabled: all` を指定すると、全関節トルクONになります。
+
+利用可能な関節名は、生成された `config.yaml` 内コメント（Available joint names）を参照してください。
+
 ### ロボットの操作
 
 ```python

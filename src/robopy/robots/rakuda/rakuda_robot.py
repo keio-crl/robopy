@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 from rich.console import Console
 from rich.table import Table
 
+from robopy.config.dotrobopy import apply_rakuda_dotconfig
 from robopy.config.robot_config.rakuda_config import (
     RakudaArmObs,
     RakudaConfig,
@@ -32,6 +33,7 @@ logger = getLogger(__name__)
 
 class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
     def __init__(self, cfg: RakudaConfig):
+        cfg = apply_rakuda_dotconfig(cfg)
         self.config = cfg
         self._pair_sys = RakudaPairSys(cfg)
         self._sensor_configs: RakudaSensorConfigs = self._init_config()
