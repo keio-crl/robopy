@@ -2,8 +2,8 @@ import logging
 from abc import abstractmethod
 
 from robopy.config.robot_config import RAKUDA_CONTROLTABLE_VALUES, RakudaConfig
-from robopy.motor.control_table import XControlTable
 from robopy.motor.dynamixel_bus import DynamixelBus, DynamixelMotor
+from robopy.motor.dynamixel_control_table import XControlTable
 from robopy.robots.common.arm import Arm
 
 logger = logging.getLogger(__name__)

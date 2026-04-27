@@ -1,8 +1,8 @@
 import logging
 
 from robopy.config.robot_config import RAKUDA_CONTROLTABLE_VALUES, RakudaConfig
-from robopy.motor.control_table import XControlTable
 from robopy.motor.dynamixel_bus import DynamixelMotor
+from robopy.motor.dynamixel_control_table import XControlTable
 
 from .rakuda_arm import RakudaArm
 

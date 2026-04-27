@@ -1,7 +1,7 @@
 import logging
 
 from robopy.config.robot_config.koch_config import KochConfig
-from robopy.motor.control_table import XControlTable
+from robopy.motor.dynamixel_control_table import XControlTable
 from robopy.motor.dynamixel_bus import DynamixelBus, DynamixelMotor
 from robopy.robots.common.arm import Arm
 
