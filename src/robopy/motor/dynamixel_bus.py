@@ -15,7 +15,7 @@ import dynamixel_sdk as dxl
 import numpy as np
 from numpy.typing import NDArray
 
-from .control_table import ControlItem, XControlTable, cast_value, get_model_definition
+from .dynamixel_control_table import ControlItem, XControlTable, cast_value, get_model_definition
 
 logger = logging.getLogger(__name__)
 

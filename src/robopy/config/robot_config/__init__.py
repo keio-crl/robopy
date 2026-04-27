@@ -3,6 +3,7 @@
 from .koch_config import KochConfig
 from .rakuda_config import (
     RAKUDA_CONTROLTABLE_VALUES,
+    RAKUDA_JOINT_NAMES,
     RAKUDA_MOTOR_MAPPING,
     RakudaConfig,
     RakudaObs,
@@ -16,6 +17,7 @@ __all__ = [
     "RakudaObs",
     "KochConfig",
     "RAKUDA_CONTROLTABLE_VALUES",
+    "RAKUDA_JOINT_NAMES",
     "RAKUDA_MOTOR_MAPPING",
     "So101Config",
     "SO101_MOTOR_MAPPING",

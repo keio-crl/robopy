@@ -32,6 +32,7 @@ dev = [
     "codespell>=2.2.6",
     "types-pyserial>=3.5.0.20251001",
     "h5py-stubs>=0.1.2",
+    "types-PyYAML>=6.0.12.20250402",
 ]
 
 docs = [
@@ -43,7 +44,7 @@ docs = [
     "mkdocs-git-revision-date-localized-plugin>=1.2.0",
 ]
 spacemouse = ["pyspacemouse>=0.0.7"]
-linux = ["pyrealsense2>=2.54.2"]                         # Linux専用依存
+linux = ["pyrealsense2>=2.54.2"] # Linux専用依存
 
 [build-system]
 requires = ["uv_build>=0.8.12,<0.9.0"]

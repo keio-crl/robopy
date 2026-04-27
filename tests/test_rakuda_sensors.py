@@ -238,7 +238,7 @@ def _get_audio_visualization_params(
     vmin = np.percentile(all_audio_data, 1.0)
     vmax = np.percentile(all_audio_data, 99.0)
 
-    return freq_min, freq_max, vmin, vmax, audio_w
+    return float(freq_min), float(freq_max), float(vmin), float(vmax), int(audio_w)
 
 
 def _extract_sensor_data(obs):
@@ -445,7 +445,7 @@ def create_sensor_gif_visualization(obs, save_path: str, fps: int = VISUALIZATIO
 
     # Create and save animation
     try:
-        anim = FuncAnimation(fig, animate, frames=num_frames, interval=500 // fps, blit=False)
+        anim = FuncAnimation(fig, animate, frames=num_frames, interval=500 // fps, blit=False)  # type: ignore
         gif_path = os.path.join(save_path, "sensor_images.gif")
         print(f"💾 Saving GIF to: {gif_path}")
         anim.save(gif_path, writer="pillow", fps=fps)
