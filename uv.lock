@@ -443,6 +443,18 @@ wheels = [
 ]
 
 [[package]]
+name = "easyhid-ng"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cffi" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e1/e3/6cbdea8c8869c53ee6ae95456f0e2bfc24c24bdff1be63e22febc780aa21/easyhid_ng-0.1.0.tar.gz", hash = "sha256:33ec11fecf10aecd015a6e0ef1d5682a21b30218b6b64edf63eba2aba06ef959", size = 7627, upload-time = "2026-01-17T01:09:58.023Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6a/c6/9511d6eb3814d6ddedcc036b084e2268f0a4153d35fd3191209b8bf13a5b/easyhid_ng-0.1.0-py3-none-any.whl", hash = "sha256:71bbfb85b1fd824c109a5cb4d403bf0818293d52b8271589f30fb8ef19195657", size = 8051, upload-time = "2026-01-17T01:09:59.307Z" },
+]
+
+[[package]]
 name = "feetech-servo-sdk"
 version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1658,6 +1670,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pyspacemouse"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "easyhid-ng" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/08/49/f0882556e09add821d42055a6a46aa459ffab5d1c17b97564a827e0500e2/pyspacemouse-2.0.0.tar.gz", hash = "sha256:df025ed74048c621f64ff3fb97493d2f86c2b3b508dda5e2cb901707db1e360f", size = 30965, upload-time = "2026-01-17T13:33:40.815Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2b/34/4da2b2b942a695a390286b5795c259e25f63f705cb844527c220875c0ecd/pyspacemouse-2.0.0-py3-none-any.whl", hash = "sha256:c48709c37aff54969e52d05eb003357a1a4ed94660caff4c48fee450aab9832e", size = 21389, upload-time = "2026-01-17T13:33:42.314Z" },
+]
+
+[[package]]
 name = "pytest"
 version = "8.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1780,7 +1804,7 @@ wheels = [
 
 [[package]]
 name = "robopy"
-version = "0.3.2"
+version = "0.3.3"
 source = { editable = "." }
 dependencies = [
     { name = "blosc2" },
@@ -1820,6 +1844,9 @@ docs = [
 linux = [
     { name = "pyrealsense2" },
 ]
+spacemouse = [
+    { name = "pyspacemouse" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1858,6 +1885,7 @@ docs = [
     { name = "mkdocstrings", extras = ["python"], specifier = ">=0.24.0" },
 ]
 linux = [{ name = "pyrealsense2", specifier = ">=2.54.2" }]
+spacemouse = [{ name = "pyspacemouse", specifier = ">=0.0.7" }]
 
 [[package]]
 name = "ruff"
