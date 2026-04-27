@@ -9,7 +9,7 @@ def _parse_torque_enabled_arg(
     value: str | None,
     *,
     all_joint_names: list[str],
-) -> list[str] | None | object:
+) -> list[str] | None:
     """Parse CLI arg into torque_enabled value.
 
     Returns:
@@ -19,9 +19,8 @@ def _parse_torque_enabled_arg(
         - list[str] for explicit enable list
     """
 
-    _UNSET = object()
     if value is None:
-        return _UNSET
+        return None
 
     v = value.strip()
     if v == "":
@@ -79,13 +78,15 @@ def rakuda_teleoperate() -> None:
     # (The robot init also ensures this, but we do it here so the user can see/edit the file.)
     yaml_path = ensure_rakuda_yaml_exists()
     if args.leader_torque_enabled is not None or args.follower_torque_enabled is not None:
-        # Only update specified fields.
-        kwargs = {}
-        if args.leader_torque_enabled is not None:
-            kwargs["leader"] = leader_val
-        if args.follower_torque_enabled is not None:
-            kwargs["follower"] = follower_val
-        yaml_path = update_rakuda_yaml_torque_enabled(**kwargs)
+        if args.leader_torque_enabled is not None and args.follower_torque_enabled is not None:
+            yaml_path = update_rakuda_yaml_torque_enabled(
+                leader=leader_val,
+                follower=follower_val,
+            )
+        elif args.leader_torque_enabled is not None:
+            yaml_path = update_rakuda_yaml_torque_enabled(leader=leader_val)
+        else:
+            yaml_path = update_rakuda_yaml_torque_enabled(follower=follower_val)
 
     logger.info(f"Using Rakuda dotconfig: {yaml_path}")
 

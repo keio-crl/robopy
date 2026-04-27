@@ -1832,6 +1832,7 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
     { name = "types-pyserial" },
+    { name = "types-pyyaml" },
 ]
 docs = [
     { name = "mkdocs" },
@@ -1875,6 +1876,7 @@ dev = [
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "ruff", specifier = ">=0.12.11" },
     { name = "types-pyserial", specifier = ">=3.5.0.20251001" },
+    { name = "types-pyyaml", specifier = ">=6.0.12.20250402" },
 ]
 docs = [
     { name = "mkdocs", specifier = ">=1.6.1" },
@@ -2159,6 +2161,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e2/d4/7afd97ee3e2b4cf5c70e559748f3583f646ff3dbc4a65b26fc51d2aff985/types_pyserial-3.5.0.20251001.tar.gz", hash = "sha256:627a1965c4b874f8b5851dc88c60896696dfd1af0491836c77a60a633dca0ad4", size = 19848, upload-time = "2025-10-01T03:04:17.669Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/78/4d/9437e214780de833165f52728709e8a3130015fe536d4fbb3139f7353b3f/types_pyserial-3.5.0.20251001-py3-none-any.whl", hash = "sha256:334f9f1b5c122dcc3ce6a6142e46450cc80b684032d6ad333362077f191dea23", size = 25331, upload-time = "2025-10-01T03:04:16.555Z" },
+]
+
+[[package]]
+name = "types-pyyaml"
+version = "6.0.12.20260408"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/74/73/b759b1e413c31034cc01ecdfb96b38115d0ab4db55a752a3929f0cd449fd/types_pyyaml-6.0.12.20260408.tar.gz", hash = "sha256:92a73f2b8d7f39ef392a38131f76b970f8c66e4c42b3125ae872b7c93b556307", size = 17735, upload-time = "2026-04-08T04:30:50.974Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1c/f0/c391068b86abb708882c6d75a08cd7d25b2c7227dab527b3a3685a3c635b/types_pyyaml-6.0.12.20260408-py3-none-any.whl", hash = "sha256:fbc42037d12159d9c801ebfcc79ebd28335a7c13b08a4cfbc6916df78fee9384", size = 20339, upload-time = "2026-04-08T04:30:50.113Z" },
 ]
 
 [[package]]
