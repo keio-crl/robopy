@@ -142,7 +142,7 @@ def ensure_default_rakuda_yaml(path: Path, *, joint_names: tuple[str, ...]) -> N
             "  #   - r_arm_grip",
             "",
             "follower:",
-            "  torque_enabled: all",
+            "  torque_enabled: null",
             "  # torque_enabled:",
             "  #   - torso_yaw",
             "",
