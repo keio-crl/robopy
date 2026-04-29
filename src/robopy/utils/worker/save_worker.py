@@ -27,12 +27,11 @@ class SaveTask(NamedTuple):
 class SaveWorker(ABC, Generic[T]):
     def __init__(self, worker_num: int = 2) -> None:
         self.worker_num = worker_num
-        self._save_queue: queue.Queue[SaveTask | None] = queue.Queue()
+        self._save_queue: queue.Queue[SaveTask | None] = queue.Queue(maxsize=max(worker_num, 1))
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=worker_num)
         self._stop_event = threading.Event()
         self._background_thread = threading.Thread(target=self._background_saver, daemon=False)
         self._background_thread.start()
-        self._futures: list[Future[None]] = []
 
     @abstractmethod
     def save_arm_datas(
@@ -98,21 +97,25 @@ class SaveWorker(ABC, Generic[T]):
             try:
                 future = self._process_task(task)
                 if future:
-                    self._futures.append(future)
+                    task_type = task.task_type
+
+                    def log_result(completed_future: Future[None]) -> None:
+                        self._log_future_result(task_type, completed_future)
+
+                    future.add_done_callback(log_result)
             except Exception as e:
                 logger.error(f"Error processing task {task.task_type}: {e}", exc_info=True)
             finally:
                 self._save_queue.task_done()
 
-        # Wait for all tasks to complete
-        logger.info(f"Waiting for {len(self._futures)} tasks to complete...")
-        for i, future in enumerate(concurrent.futures.as_completed(self._futures)):
-            try:
-                future.result()
-            except Exception as e:
-                logger.error(f"Error in background save task {i + 1}: {e}", exc_info=True)
-
         logger.info("Background saver thread finished successfully")
+
+    @staticmethod
+    def _log_future_result(task_type: str, future: Future[None]) -> None:
+        try:
+            future.result()
+        except Exception as e:
+            logger.error(f"Error in background save task {task_type}: {e}", exc_info=True)
 
     @abstractmethod
     def _process_task(self, task: SaveTask) -> Future[None] | None:
