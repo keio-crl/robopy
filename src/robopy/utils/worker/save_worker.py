@@ -27,7 +27,7 @@ class SaveTask(NamedTuple):
 class SaveWorker(ABC, Generic[T]):
     def __init__(self, worker_num: int = 2) -> None:
         self.worker_num = worker_num
-        self._save_queue: queue.Queue[SaveTask | None] = queue.Queue(maxsize=max(worker_num, 1))
+        self._save_queue: queue.Queue[SaveTask | None] = queue.Queue()
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=worker_num)
         self._stop_event = threading.Event()
         self._background_thread = threading.Thread(target=self._background_saver, daemon=False)
