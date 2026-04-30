@@ -99,7 +99,9 @@ class SaveWorker(ABC, Generic[T]):
                 if future:
                     task_type = task.task_type
 
-                    def log_result(completed_future: Future[None]) -> None:
+                    def log_result(
+                        completed_future: Future[None], task_type: str = task_type
+                    ) -> None:
                         self._log_future_result(task_type, completed_future)
 
                     future.add_done_callback(log_result)

@@ -13,10 +13,14 @@ def _parse_torque_enabled_arg(
     """Parse CLI arg into torque_enabled value.
 
     Returns:
-        - _UNSET-like object when value is None (argument not provided)
-        - None for default (YAML null)
+        - None when value is None or when value is 'default'/'null'
         - [] for enable none
-        - list[str] for explicit enable list
+        - list[str] for explicit enable list, or all joints for 'all'
+
+    Note:
+        This function does not distinguish between an omitted argument and an
+        explicit 'default'/'null' value; the caller handles omitted-argument
+        detection using the raw CLI argument value.
     """
 
     if value is None:
