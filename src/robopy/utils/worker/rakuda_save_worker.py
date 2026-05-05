@@ -11,7 +11,9 @@ matplotlib.use("Agg")  # thread safe backend
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.animation import ArtistAnimation
+from matplotlib.animation import FuncAnimation, PillowWriter
+from matplotlib.artist import Artist
+from matplotlib.image import AxesImage
 from numpy.typing import NDArray
 
 from robopy.config import RakudaConfig
@@ -196,62 +198,79 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
             data = data.transpose(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
             audio_data[name] = np.clip(data / 255.0, 0, 1)
 
-        num_frames = list(processed_camera.values())[0].shape[0]
+        camera_items = list(processed_camera.items())
+        tactile_items = list(tactile_data.items())
+        audio_items = list(audio_data.items())
 
-        all_fig_num = len(processed_camera) + len(tactile_data) + len(audio_data)
+        num_frames = camera_items[0][1].shape[0]
+
+        all_fig_num = len(camera_items) + len(tactile_items) + len(audio_items)
         rows = all_fig_num // 3 + int(all_fig_num % 3 != 0)
         cols = min(all_fig_num, 3)
 
         # Layout: multiple columns for cameras, tactile and audio sensors
         fig = plt.figure(figsize=(5 * cols, 5 * rows))
-        axes = fig.subplots(rows, cols)
-        if rows == 1 and cols == 1:
-            axes = [axes]
-        ims = []
+        axes = np.atleast_1d(fig.subplots(rows, cols)).ravel()
+
+        image_artists: list[AxesImage] = []
+
+        for index, (name, cam_data) in enumerate(camera_items):
+            axes[index].set_title(f"Camera: {name}")
+            axes[index].axis("off")
+            image_artists.append(axes[index].imshow(cam_data[0], animated=True))
+
+        for t_index, (name, tactile) in enumerate(tactile_items):
+            idx = len(camera_items) + t_index
+            axes[idx].set_title(f"Tactile Sensor: {name}")
+            axes[idx].axis("off")
+            image_artists.append(axes[idx].imshow(tactile[0], animated=True))
+
+        for a_index, (name, audio) in enumerate(audio_items):
+            idx = len(camera_items) + len(tactile_items) + a_index
+            axes[idx].set_title(f"Audio Sensor: {name}")
+            axes[idx].axis("off")
+            image_artists.append(axes[idx].imshow(audio[0], animated=True))
+
+        for unused_axis in axes[all_fig_num:]:
+            unused_axis.axis("off")
+
+        fps_text = fig.text(
+            0.02,
+            0.98,
+            "",
+            color="white",
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="black", alpha=0.7),
+            verticalalignment="top",
+        )
 
         logger.info(f"Generating animation frames for {num_frames} frames...")
 
-        for i in range(num_frames):
-            frame_artists = []
-            for index, (name, cam_data) in enumerate(processed_camera.items()):
-                im1 = axes[index].imshow(cam_data[i], animated=True)
-                axes[index].set_title(f"Camera: {name}")
-                axes[index].axis("off")
-                frame_artists.append(im1)
+        def update(frame_index: int) -> list[Artist]:
+            artist_list: list[Artist] = []
 
-            for t_index, (name, tactile) in enumerate(tactile_data.items()):
-                idx = len(processed_camera) + t_index
-                im = axes[idx].imshow(tactile[i], animated=True)
-                axes[idx].set_title(f"Tactile Sensor: {name}")
-                axes[idx].axis("off")
-                frame_artists.append(im)
+            for index, (_, cam_data) in enumerate(camera_items):
+                image_artists[index].set_data(cam_data[frame_index])
+                artist_list.append(image_artists[index])
 
-            for a_index, (name, audio) in enumerate(audio_data.items()):
-                idx = len(processed_camera) + len(tactile_data) + a_index
-                im = axes[idx].imshow(audio[i], animated=True)
-                axes[idx].set_title(f"Audio Sensor: {name}")
-                axes[idx].axis("off")
-                frame_artists.append(im)
+            for t_index, (_, tactile) in enumerate(tactile_items):
+                artist_index = len(camera_items) + t_index
+                image_artists[artist_index].set_data(tactile[frame_index])
+                artist_list.append(image_artists[artist_index])
 
-            # Display FPS information in upper left
-            fps_text = axes[0].text(
-                0.02,
-                0.75,
-                f"FPS: {i}",
-                color="white",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="black", alpha=0.7),
-                verticalalignment="top",
-                transform=fig.transFigure,
-            )
+            for a_index, (_, audio) in enumerate(audio_items):
+                artist_index = len(camera_items) + len(tactile_items) + a_index
+                image_artists[artist_index].set_data(audio[frame_index])
+                artist_list.append(image_artists[artist_index])
 
-            frame_artists.extend([fps_text])
+            fps_text.set_text(f"Frame: {frame_index}")
+            artist_list.append(fps_text)
+            return artist_list
 
-            ims.append(frame_artists)
         fig.tight_layout()
         plt.subplots_adjust(wspace=0.1, top=0.85)
         logger.info("Saving animation...")
-        ani = ArtistAnimation(fig, ims, interval=1000 / fps, blit=True)
-        ani.save(save_dir, writer="pillow", fps=fps)
+        ani = FuncAnimation(fig, update, frames=num_frames, interval=1000 / fps, blit=True)
+        ani.save(save_dir, writer=PillowWriter(fps=fps))
         plt.close(fig)
         logger.info(f"Animation saved to {save_dir}")
 
@@ -491,7 +510,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
             SaveTask(
                 task_type="arm_obs",
                 data=(leader, follower),
-                save_path=os.path.join(save_path, "arm_obs.png"),
+                save_path=os.path.join(save_path, "arm_obs.jpg"),
             )
         )
 

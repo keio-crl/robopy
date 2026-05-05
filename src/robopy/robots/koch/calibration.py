@@ -5,7 +5,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 from numpy.typing import NDArray
 
-from robopy.motor.control_table import XControlTable
+from robopy.motor.dynamixel_control_table import XControlTable
 from robopy.robots.common.arm import Arm
 
 # --- Constants and Helper Functions from Reference ---
