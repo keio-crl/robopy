@@ -6,7 +6,11 @@ from typing import Any, override
 
 import librosa
 import numpy as np
-import pyaudio
+
+try:
+    import pyaudio  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    pyaudio = None  # type: ignore
 from numpy.typing import NDArray
 
 from robopy.config.sensor_config.params_config import AudioParams
@@ -49,6 +53,11 @@ class AudioSensor(Sensor):
         self.callback_active = True  # Flag to control audio callback
 
     def connect(self) -> None:
+        if pyaudio is None:
+            raise ImportError(
+                "AudioSensor requires the optional dependency 'pyaudio'. "
+                "Install it with `pip install robopy[audio]` (or add the 'audio' extra)."
+            )
         # Initialize PyAudio instance
         self.pyaudio_instance = pyaudio.PyAudio()
 
@@ -231,6 +240,7 @@ class AudioSensor(Sensor):
 
     def _audio_callback(self, in_data, frame_count, time_info, status):
         """Audio stream callback function"""
+        assert pyaudio is not None
         # 最初に呼ばれた時の初期化
         if not hasattr(self, "_callback_count"):
             self._callback_count = 0
