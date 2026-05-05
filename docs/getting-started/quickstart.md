@@ -13,9 +13,13 @@
 
     ```bash
     # 基本パッケージのインストール
-    uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.2
-    # RealSenseサポート（Linux）
-    uv add pyrealsense2
+    uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.4
+
+    # extras（project.optional-dependencies）: RealSenseサポート（現状Linuxのみ）
+    uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.4 --extra realsense
+
+    # 複数extrasを同時に（--extra を複数回指定）
+    uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.2 --extra realsense --extra audio
     ```
 
 === "pip"
@@ -26,8 +30,11 @@
     cd robopy
     pip install -e .
 
-    # RealSenseサポート（Linux）
-    pip install pyrealsense2
+    # RealSenseサポート（オプション / 現状Linuxのみ）
+    pip install -e ".[realsense]"  # または: pip install pyrealsense2
+
+    # 複数extrasを同時に（カンマ区切り）
+    pip install -e ".[realsense,audio]"
     ```
 
 ### 1. データ収集の基本

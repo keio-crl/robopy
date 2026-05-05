@@ -9,9 +9,21 @@
 ### インストール
 
 ```bash
-uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.3
-# RealSenseサポート（Linux）
-uv add pyrealsense2
+# 基本
+uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.4
+
+# extras（project.optional-dependencies）は --extra を複数回指定で同時に有効化できます
+# RealSenseサポート（現状Linuxのみ）
+uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.4 --extra realsense
+
+# 音声センサー（PortAudio等が必要な場合あり）
+uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.4 --extra audio
+
+# 例: RealSense + 音声を同時に
+uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.4 --extra realsense --extra audio
+
+# pip（clone済み）: extras をカンマ区切りで同時に
+# pip install -e ".[realsense,audio]"
 ```
 
 ### 基本的な使用例

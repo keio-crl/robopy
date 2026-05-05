@@ -1817,13 +1817,26 @@ dependencies = [
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "opencv-python" },
-    { name = "pyaudio" },
     { name = "pyyaml" },
     { name = "rich" },
     { name = "tqdm" },
 ]
 
+[package.optional-dependencies]
+audio = [
+    { name = "pyaudio" },
+]
+realsense = [
+    { name = "pyrealsense2" },
+]
+spacemouse = [
+    { name = "pyspacemouse" },
+]
+
 [package.dev-dependencies]
+audio = [
+    { name = "pyaudio" },
+]
 dev = [
     { name = "codespell" },
     { name = "h5py-stubs" },
@@ -1842,7 +1855,7 @@ docs = [
     { name = "mkdocs-section-index" },
     { name = "mkdocstrings", extra = ["python"] },
 ]
-linux = [
+realsense = [
     { name = "pyrealsense2" },
 ]
 spacemouse = [
@@ -1861,13 +1874,17 @@ requires-dist = [
     { name = "matplotlib", specifier = ">=3.10.3" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "opencv-python", specifier = ">=4.10" },
-    { name = "pyaudio", specifier = ">=0.2.14" },
+    { name = "pyaudio", marker = "extra == 'audio'", specifier = ">=0.2.14" },
+    { name = "pyrealsense2", marker = "extra == 'realsense'", specifier = ">=2.54.2" },
+    { name = "pyspacemouse", marker = "extra == 'spacemouse'", specifier = ">=0.0.7" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "rich", specifier = ">=14.1.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
 ]
+provides-extras = ["audio", "realsense", "spacemouse"]
 
 [package.metadata.requires-dev]
+audio = [{ name = "pyaudio", specifier = ">=0.2.14" }]
 dev = [
     { name = "codespell", specifier = ">=2.2.6" },
     { name = "h5py-stubs", specifier = ">=0.1.2" },
@@ -1886,7 +1903,7 @@ docs = [
     { name = "mkdocs-section-index", specifier = ">=0.3.0" },
     { name = "mkdocstrings", extras = ["python"], specifier = ">=0.24.0" },
 ]
-linux = [{ name = "pyrealsense2", specifier = ">=2.54.2" }]
+realsense = [{ name = "pyrealsense2", specifier = ">=2.54.2" }]
 spacemouse = [{ name = "pyspacemouse", specifier = ">=0.0.7" }]
 
 [[package]]
