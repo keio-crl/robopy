@@ -21,8 +21,9 @@ logger = getLogger(__name__)
 
 
 def main() -> None:
+    from robopy.config.input_config.spacemouse_config import SpaceMouseConfig
     from robopy.config.robot_config import XArmConfig, XArmWorkspaceBounds
-    from robopy.robots.xarm.spacemouse_agent import SpaceMouseConfig, run_spacemouse_teleop
+    from robopy.robots.xarm.spacemouse_agent import run_spacemouse_teleop
     from robopy.robots.xarm.xarm_follower import XArmFollower
 
     config = XArmConfig(
@@ -31,13 +32,24 @@ def main() -> None:
     )
     follower = XArmFollower(config)
 
+    # linear_speed / angular_speed act as the sensitivity knobs. Lower these to
+    # make the robot move slowly even when the SpaceMouse is fully deflected.
+    sm_cfg = SpaceMouseConfig(
+        linear_speed=0.10,    # m/s at full stick deflection
+        angular_speed=0.5,    # rad/s at full stick deflection
+        deadzone=0.05,
+        control_hz=50,
+        input_smoothing=0.5,  # EMA factor: higher = smoother but more lag
+    )
+
     try:
         follower.connect()
         logger.info("xArm connected. Starting SpaceMouse teleop...")
         run_spacemouse_teleop(
             follower,
-            cfg=SpaceMouseConfig(pos_scale=1.0, rot_scale=0.5, hz=50.0),
+            cfg=sm_cfg,
             max_seconds=None,
+            gripper_toggle_button=0,
         )
     except KeyboardInterrupt:
         logger.info("Interrupted.")
