@@ -11,6 +11,7 @@ import numpy as np
 
 from robopy.config.robot_config import (
     GELLO_XARM7_DEFAULT,
+    XARM_WORKSPACE_PRESETS,
     GelloArmConfig,
     XArmArmObs,
     XArmConfig,
@@ -18,6 +19,8 @@ from robopy.config.robot_config import (
     XArmSensorObs,
     XArmSensorParams,
     XArmWorkspaceBounds,
+    XArmZFloorZone,
+    resolve_workspace_bounds,
 )
 from robopy.config.robot_config.xarm_config import XARM_LEADER_MOTOR_NAMES
 from robopy.robots.xarm import (
@@ -162,6 +165,134 @@ def test_xarm_leader_read_raw_radians_tick_to_rad_conversion() -> None:
     assert rad.shape == (8,)
     expected = np.full(8, np.pi, dtype=np.float32)
     np.testing.assert_allclose(rad, expected, atol=1e-5)
+
+
+def test_restriction_default_preset_resolves_to_default_bounds() -> None:
+    bounds = resolve_workspace_bounds(None, ["default"])
+    assert bounds is not None
+    default = XArmWorkspaceBounds()
+    assert bounds.min_x == default.min_x
+    assert bounds.max_x == default.max_x
+    assert bounds.min_y == default.min_y
+    assert bounds.max_y == default.max_y
+    assert bounds.min_z == default.min_z
+    assert bounds.max_z == default.max_z
+
+
+def test_restriction_intersection_takes_tighter() -> None:
+    """Combining 'default' (very wide) with 'drawer' (narrow) yields the drawer box."""
+    bounds = resolve_workspace_bounds(None, ["default", "drawer"])
+    assert bounds is not None
+    drawer = XARM_WORKSPACE_PRESETS["drawer"]
+    # Drawer is fully inside default on every axis, so intersection equals drawer.
+    assert bounds.min_x == drawer.min_x
+    assert bounds.max_x == drawer.max_x
+    assert bounds.min_y == drawer.min_y
+    assert bounds.max_y == drawer.max_y
+    assert bounds.min_z == drawer.min_z
+    assert bounds.max_z == drawer.max_z
+
+
+def test_restriction_unknown_name_raises() -> None:
+    try:
+        resolve_workspace_bounds(None, ["nonexistent"])
+    except ValueError:
+        return
+    raise AssertionError("Unknown restriction name must raise ValueError")
+
+
+def test_restriction_combined_with_workspace_bounds() -> None:
+    """An explicit ``workspace_bounds`` should also participate in the intersection."""
+    explicit = XArmWorkspaceBounds(
+        min_x=500.0,
+        max_x=600.0,
+        min_y=-100.0,
+        max_y=100.0,
+        min_z=100.0,
+        max_z=300.0,
+    )
+    # 'drawer' is wider than ``explicit`` on every axis, so explicit dominates.
+    bounds = resolve_workspace_bounds(explicit, ["drawer"])
+    assert bounds is not None
+    assert bounds.min_x == explicit.min_x
+    assert bounds.max_x == explicit.max_x
+    assert bounds.min_y == explicit.min_y
+    assert bounds.max_y == explicit.max_y
+    assert bounds.min_z == explicit.min_z
+    assert bounds.max_z == explicit.max_z
+
+
+def test_restriction_empty_intersection_raises() -> None:
+    """If the explicit box does not overlap a preset on any axis, raise."""
+    disjoint = XArmWorkspaceBounds(
+        min_x=-1000.0,
+        max_x=-500.0,  # entirely behind base, drawer requires x >= 400
+        min_y=-100.0,
+        max_y=100.0,
+        min_z=100.0,
+        max_z=300.0,
+    )
+    try:
+        resolve_workspace_bounds(disjoint, ["drawer"])
+    except ValueError:
+        return
+    raise AssertionError("Empty intersection must raise ValueError")
+
+
+def test_restriction_none_returns_none() -> None:
+    assert resolve_workspace_bounds(None, None) is None
+    assert resolve_workspace_bounds(None, []) is None
+
+
+def test_xarm_config_restriction_field() -> None:
+    cfg = XArmConfig(restriction=["default"])
+    assert cfg.restriction == ["default"]
+    cfg_default = XArmConfig()
+    assert cfg_default.restriction is None
+
+
+def test_z_floor_zone_raises_min_z_inside_footprint() -> None:
+    zone = XArmZFloorZone(min_x=400.0, max_x=600.0, min_y=-100.0, max_y=100.0, min_z=200.0)
+    bounds = XArmWorkspaceBounds(min_z=25.0, z_floor_zones=(zone,))
+
+    assert bounds.effective_min_z(500.0, 0.0) == 200.0
+    assert bounds.effective_min_z(400.0, -100.0) == 200.0
+    assert bounds.effective_min_z(700.0, 0.0) == 25.0
+    assert bounds.effective_min_z(500.0, 200.0) == 25.0
+
+
+def test_z_floor_zone_takes_max_when_overlapping() -> None:
+    z1 = XArmZFloorZone(min_x=400.0, max_x=600.0, min_y=-100.0, max_y=100.0, min_z=150.0)
+    z2 = XArmZFloorZone(min_x=500.0, max_x=700.0, min_y=-100.0, max_y=100.0, min_z=250.0)
+    bounds = XArmWorkspaceBounds(min_z=25.0, z_floor_zones=(z1, z2))
+
+    assert bounds.effective_min_z(450.0, 0.0) == 150.0
+    assert bounds.effective_min_z(550.0, 0.0) == 250.0
+    assert bounds.effective_min_z(650.0, 0.0) == 250.0
+
+
+def test_resolve_workspace_bounds_unions_z_floor_zones() -> None:
+    z1 = XArmZFloorZone(min_x=400.0, max_x=500.0, min_y=-50.0, max_y=50.0, min_z=200.0)
+    z2 = XArmZFloorZone(min_x=550.0, max_x=650.0, min_y=-50.0, max_y=50.0, min_z=300.0)
+    explicit = XArmWorkspaceBounds(z_floor_zones=(z1,))
+    XARM_WORKSPACE_PRESETS["__test_zone"] = XArmWorkspaceBounds(z_floor_zones=(z2,))
+    try:
+        bounds = resolve_workspace_bounds(explicit, ["__test_zone"])
+    finally:
+        del XARM_WORKSPACE_PRESETS["__test_zone"]
+
+    assert bounds is not None
+    assert len(bounds.z_floor_zones) == 2
+    assert bounds.effective_min_z(450.0, 0.0) == 200.0
+    assert bounds.effective_min_z(600.0, 0.0) == 300.0
+
+
+def test_z_floor_zone_invalid_footprint_raises() -> None:
+    try:
+        XArmZFloorZone(min_x=600.0, max_x=400.0, min_y=0.0, max_y=10.0, min_z=200.0)
+    except ValueError:
+        return
+    raise AssertionError("Inverted footprint must raise ValueError")
 
 
 def test_xarm_leader_read_raw_radians_handles_negative_ticks() -> None:
