@@ -17,7 +17,11 @@ from typing import Any, Optional
 import numpy as np
 from numpy.typing import NDArray
 
-from robopy.config.robot_config.xarm_config import XArmConfig, XArmWorkspaceBounds
+from robopy.config.robot_config.xarm_config import (
+    XArmConfig,
+    XArmWorkspaceBounds,
+    resolve_workspace_bounds,
+)
 from robopy.robots.xarm.xarm_arm import XArmArm
 
 logger = logging.getLogger(__name__)
@@ -137,7 +141,9 @@ class XArmFollower(XArmArm):
     def __init__(self, cfg: XArmConfig) -> None:
         self.config = cfg
         self._ip = cfg.follower_ip
-        self._workspace: XArmWorkspaceBounds | None = cfg.workspace_bounds
+        self._workspace: XArmWorkspaceBounds | None = resolve_workspace_bounds(
+            cfg.workspace_bounds, cfg.restriction
+        )
         self._control_frequency = float(cfg.control_frequency)
         self._max_delta = float(cfg.max_delta)
         self._cartesian_speed = int(cfg.cartesian_speed)
@@ -370,7 +376,8 @@ class XArmFollower(XArmArm):
         if self._workspace is not None:
             pose[0] = float(np.clip(pose[0], self._workspace.min_x, self._workspace.max_x))
             pose[1] = float(np.clip(pose[1], self._workspace.min_y, self._workspace.max_y))
-            pose[2] = float(np.clip(pose[2], self._workspace.min_z, self._workspace.max_z))
+            min_z = self._workspace.effective_min_z(pose[0], pose[1])
+            pose[2] = float(np.clip(pose[2], min_z, self._workspace.max_z))
 
         ret = self._robot.set_position(
             x=pose[0],
@@ -395,7 +402,8 @@ class XArmFollower(XArmArm):
         if self._workspace is not None:
             pose[0] = float(np.clip(pose[0], self._workspace.min_x, self._workspace.max_x))
             pose[1] = float(np.clip(pose[1], self._workspace.min_y, self._workspace.max_y))
-            pose[2] = float(np.clip(pose[2], self._workspace.min_z, self._workspace.max_z))
+            min_z = self._workspace.effective_min_z(pose[0], pose[1])
+            pose[2] = float(np.clip(pose[2], min_z, self._workspace.max_z))
         ret = self._robot.set_position(
             x=pose[0],
             y=pose[1],

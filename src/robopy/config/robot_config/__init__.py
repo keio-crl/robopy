@@ -11,6 +11,7 @@ from .rakuda_config import (
 from .so101_config import SO101_MOTOR_MAPPING, So101Config
 from .xarm_config import (
     GELLO_XARM7_DEFAULT,
+    XARM_WORKSPACE_PRESETS,
     GelloArmConfig,
     XArmArmObs,
     XArmConfig,
@@ -18,6 +19,8 @@ from .xarm_config import (
     XArmSensorObs,
     XArmSensorParams,
     XArmWorkspaceBounds,
+    XArmZFloorZone,
+    resolve_workspace_bounds,
 )
 
 __all__ = [
@@ -33,6 +36,9 @@ __all__ = [
     "XArmArmObs",
     "XArmSensorObs",
     "XArmWorkspaceBounds",
+    "XArmZFloorZone",
+    "XARM_WORKSPACE_PRESETS",
+    "resolve_workspace_bounds",
     "GelloArmConfig",
     "GELLO_XARM7_DEFAULT",
     "So101Config",

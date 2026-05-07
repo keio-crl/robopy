@@ -188,6 +188,93 @@ finally:
     robot.disconnect()
 ```
 
+### 作業領域の制限 (`restriction` プリセット)
+
+毎回 `XArmWorkspaceBounds(min_x=..., max_x=...)` を組み立てる代わりに、名前付きプリセットを `XArmConfig.restriction` に列挙して制約を切り替えられます。
+
+```python
+from robopy.config.robot_config import XArmConfig
+
+config = XArmConfig(
+    follower_ip="192.168.1.240",
+    restriction=["default", "drawer"],   # 複数指定すると積集合 (intersection)
+)
+```
+
+[`XArmFollower`](../api/robots.md#robopy.robots.xarm.xarm_follower.XArmFollower) は `XArmWorkspaceBounds` と等価な mm 単位の Cartesian クリップを行います。`restriction` のプリセット名は [`resolve_workspace_bounds`](../api/config.md#robopy.config.robot_config.xarm_config.resolve_workspace_bounds) で解決され、複数指定時は **すべての box の積集合** (各軸で max of mins / min of maxes) が適用されます。`workspace_bounds` を併用した場合も同じ集合に含まれます。
+
+#### 提供プリセット
+
+[`XARM_WORKSPACE_PRESETS`](../api/config.md#robopy.config.robot_config.xarm_config.XARM_WORKSPACE_PRESETS) に定義されています (mm 単位、xArm ベース座標)。
+
+| 名前 | 用途 | 範囲 (mm) |
+|---|---|---|
+| `default` | legacy `xarm_modules/config/robot_area.yaml` 由来の広い既定値 | x=[390.4, 1e5], y=[-257.5, 314.0], z=[25.0, 1e4] |
+| `drawer` | 引き出し操作向けの保守的な箱 | x=[400, 700], y=[-200, 200], z=[50, 400] |
+
+#### プリセットの追加
+
+`src/robopy/config/robot_config/xarm_config.py` の `XARM_WORKSPACE_PRESETS` 辞書にエントリを追加するだけで、`restriction=["my_task"]` で参照できるようになります。
+
+```python
+XARM_WORKSPACE_PRESETS["tabletop"] = XArmWorkspaceBounds(
+    min_x=380.0, max_x=700.0,
+    min_y=-300.0, max_y=300.0,
+    min_z=10.0,  max_z=300.0,
+)
+```
+
+未知のプリセット名・矛盾する組み合わせ (積集合が空) を渡すと、`XArmFollower` インスタンス化時に `ValueError` が発生します。
+
+#### 部分領域での z 下限の引き上げ ([`XArmZFloorZone`](../api/config.md#robopy.config.robot_config.xarm_config.XArmZFloorZone))
+
+`XArmWorkspaceBounds` の各軸クリップは AABB 1 個分しか表現できないため、 「**`x` がこの範囲のときだけ `z` の下限を上げたい**」 (例: 引き出し上面に当てたくない) のような条件付きの制約は、`XArmWorkspaceBounds.z_floor_zones` に [`XArmZFloorZone`](../api/config.md#robopy.config.robot_config.xarm_config.XArmZFloorZone) を渡して表現します。
+
+ゾーンは **(x, y) 平面上の軸並行矩形 + その範囲内での `min_z`** で定義します。クリップ時、エンドエフェクタの (x, y) 位置がいずれかのゾーンに入っていれば、そのゾーンの `min_z` がグローバル `min_z` を上書きします (どのゾーンにも入らなければグローバル値そのまま)。
+
+```python
+from robopy.config.robot_config import (
+    XArmConfig, XArmWorkspaceBounds, XArmZFloorZone,
+)
+
+# 例: ベース正面 x∈[450, 650], y∈[-150, 150] mm に drawer がある。
+# その footprint 内では z は drawer 上面 + クリアランス (220 mm) 以上に保ち、
+# それ以外の領域では通常の min_z (25 mm) のまま自由に動かしたい。
+drawer_keepout = XArmZFloorZone(
+    min_x=450.0, max_x=650.0,
+    min_y=-150.0, max_y=150.0,
+    min_z=220.0,
+)
+
+config = XArmConfig(
+    follower_ip="192.168.1.240",
+    workspace_bounds=XArmWorkspaceBounds(
+        z_floor_zones=(drawer_keepout,),
+    ),
+)
+```
+
+クリップ順序は `xarm_follower._set_position` / `_send_cartesian` で次のように適用されます。
+
+```python
+pose[0] = clip(pose[0], min_x, max_x)
+pose[1] = clip(pose[1], min_y, max_y)
+min_z = workspace.effective_min_z(pose[0], pose[1])  # ← ゾーン判定はクリップ後の (x, y) で
+pose[2] = clip(pose[2], min_z, max_z)
+```
+
+複数ゾーンを同時に登録でき、(x, y) が複数のゾーンに同時に入る場合は `min_z` の **最大値** が採用されます (常に最も保守的)。`restriction` プリセット側で定義した `z_floor_zones` と、明示的な `workspace_bounds` で渡したゾーンは **union (連結)** で合成されます (AABB は intersection ですが、ゾーンは独立した障害物表現なので片方だけ残すと意味が壊れるため)。
+
+| 制約の種類 | データ構造 | 合成方法 |
+|---|---|---|
+| 全体の AABB | `XArmWorkspaceBounds` の `min_*` / `max_*` | 各 box の **積集合** (max of mins / min of maxes) |
+| 部分領域の z 下限 | `z_floor_zones: Tuple[XArmZFloorZone, ...]` | 全 box から **連結** (union)、評価時は (x, y) を含むゾーンの max |
+
+`XArmZFloorZone` の `min_x > max_x` などフットプリントが反転している場合は、構築時に `ValueError` が発生します。
+
+!!! note "斜めの障害物・円筒形の障害物"
+    現状の `XArmZFloorZone` フットプリントは軸並行矩形 (AABB) のみです。斜めの drawer や円筒形の柱を表現したい場合は、複数の小さなゾーンで近似するか、フットプリント表現を多角形 (凸) に拡張する必要があります。
+
 ## :material-database: データ収集
 
 xArm では legacy `xarm_modules/saver.py` 相当のデータ収集を `XArmRobot` の 3 種類の `record*` API で行います。`RakudaExpHandler` のような専用ハンドラはまだ無いため、**記録は `XArmRobot` を直接使い、保存は numpy で手動**という形が基本パターンです。
@@ -562,6 +649,74 @@ if __name__ == "__main__":
     xarm_teleoperate()
 ```
 
+## :material-mouse-variant: SpaceMouse によるテレオペ (GELLO 不使用)
+
+GELLO リーダーの代わりに 3Dconnexion **SpaceMouse** で xArm7 をテレオペできます。フルの動作例は [`examples/robot/xarm_spacemouse_teleop.py`](https://github.com/keio-crl/robopy/blob/main/examples/robot/xarm_spacemouse_teleop.py) を参照してください。
+
+ドライバは [`robopy.robots.xarm.spacemouse_agent.run_spacemouse_teleop`](../api/robots.md#robopy.robots.xarm.spacemouse_agent.run_spacemouse_teleop) で、so101 と共通の [`SpaceMouseConfig`](../api/config.md#robopy.config.input_config.spacemouse_config.SpaceMouseConfig) を受け取ります。
+
+### 感度の設計
+
+SpaceMouse の各軸 raw 値は ±1.0 の範囲で読まれます。teleop ループは制御ステップごとに次の式でデルタを計算して [`command_cartesian_relative`](../api/robots.md#robopy.robots.xarm.xarm_follower.XArmFollower.command_cartesian_relative) に渡します。
+
+```text
+dt        = 1 / control_hz
+dx_mm     = raw[:3] * linear_speed  * dt * 1000   # m/s -> mm/step
+drx_rad   = raw[3:] * angular_speed * dt          # rad/s
+```
+
+つまり `linear_speed` と `angular_speed` がそのまま **「フル入力時の最大 EE 速度」** = **感度** になります:
+
+- 感度を **下げる** (`linear_speed=0.02` など): SpaceMouse を最大まで倒しても 0.02 m/s (= 2 cm/s) 以上は出ません。微細作業向け。
+- 感度を **上げる** (`linear_speed=0.30` など): 30 cm/s まで出るので大きく動かしたいときに。
+- 中間入力では線形にスケール (raw=0.5 なら最大速度の半分)、`deadzone` 以下は完全にゼロ。
+
+### 設定例
+
+```python
+from robopy.config.input_config.spacemouse_config import SpaceMouseConfig
+from robopy.config.robot_config import XArmConfig, XArmWorkspaceBounds
+from robopy.robots.xarm.spacemouse_agent import run_spacemouse_teleop
+from robopy.robots.xarm.xarm_follower import XArmFollower
+
+# 感度低めの設定 (微細位置決め向け)
+sm_cfg = SpaceMouseConfig(
+    linear_speed=0.03,    # 最大 3 cm/s — フルチルトでもゆっくり動く
+    angular_speed=0.20,   # 最大 0.20 rad/s ≒ 11.5 deg/s
+    deadzone=0.05,        # 微小入力は無視
+    control_hz=50,
+    input_smoothing=0.7,  # 高めにすると揺れが減るが追従が遅れる
+)
+
+follower = XArmFollower(XArmConfig(
+    follower_ip="192.168.1.240",
+    workspace_bounds=XArmWorkspaceBounds(),
+))
+follower.connect()
+try:
+    run_spacemouse_teleop(
+        follower,
+        cfg=sm_cfg,
+        gripper_toggle_button=0,   # ボタン 0 でグリッパ open/close トグル
+        max_seconds=None,           # Ctrl-C で停止
+    )
+finally:
+    follower.disconnect()
+```
+
+### パラメータの目安
+
+| パラメータ | 単位 | 意味 | 既定値 | 調整ヒント |
+|---|---|---|---|---|
+| `linear_speed` | m/s | フル入力時の EE 並進速度 (= 並進感度) | `0.10` | 慣れていない場合 `0.03 ~ 0.05` から始める |
+| `angular_speed` | rad/s | フル入力時の EE 回転速度 (= 回転感度) | `0.5` | `0.2 ~ 0.3` 程度が扱いやすい |
+| `deadzone` | -- | 絶対値がこれ未満の raw 入力をゼロ化 | `0.05` | 手の震えで誤動作するなら上げる |
+| `input_smoothing` | -- (EMA) | 0 = フィルタなし、1 に近いほど滑らか・遅延↑ | `0.5` | ジッタが気になるなら `0.7~0.8` |
+| `control_hz` | Hz | teleop ループ周波数 | `50` | `XArmConfig.control_frequency` と揃えるのが基本 |
+
+!!! tip "ワークスペース制限との併用"
+    `linear_speed` を上げてもエンドエフェクタは [`XArmWorkspaceBounds`](../api/config.md#robopy.config.robot_config.xarm_config.XArmWorkspaceBounds) (とゾーン) で常にクリップされます。SpaceMouse から大きな delta が来てもベース正面・drawer 上空などの境界外には出ません。
+
 ## :material-alert-circle: トラブルシューティング
 
 ### シミュレータに接続できない
@@ -595,3 +750,4 @@ config = XArmConfig(
 - [`XArmFollower`](../api/robots.md#robopy.robots.xarm.xarm_follower.XArmFollower) — xArm7 本体ラッパ
 - [`GelloArmConfig`](../api/config.md#robopy.config.robot_config.xarm_config.GelloArmConfig) — GELLO キャリブレーション
 - [`XArmWorkspaceBounds`](../api/config.md#robopy.config.robot_config.xarm_config.XArmWorkspaceBounds) — Cartesian ワークスペース境界
+- [`XArmZFloorZone`](../api/config.md#robopy.config.robot_config.xarm_config.XArmZFloorZone) — 部分領域での z 下限引き上げ (障害物回避用)
