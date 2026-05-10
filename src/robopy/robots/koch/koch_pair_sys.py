@@ -10,7 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from robopy.config.robot_config.koch_config import KOCH_MOTOR_MAPPING, KochConfig
-from robopy.motor.control_table import XControlTable
+from robopy.motor.dynamixel_control_table import XControlTable
 from robopy.robots.koch.calibration import run_arm_calibration
 
 from ..common.robot import Robot

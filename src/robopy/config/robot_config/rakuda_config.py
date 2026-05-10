@@ -16,6 +16,11 @@ class RakudaConfig:
     follower_port: str
     sensors: "RakudaSensorParams | None" = field(default=None)
     slow_mode: bool = False
+    # Torque enable policy (joint names). If None, defaults preserve current behavior.
+    # - leader_torque_enabled: default is grippers only
+    # - follower_torque_enabled: default is all joints
+    leader_torque_enabled: List[str] | None = None
+    follower_torque_enabled: List[str] | None = None
 
 
 @dataclass
@@ -78,6 +83,10 @@ RAKUDA_MOTOR_MAPPING: Dict[str, str] = {
 }
 
 
+# Canonical Rakuda joint names (used for validation and config templates).
+RAKUDA_JOINT_NAMES: Tuple[str, ...] = tuple(RAKUDA_MOTOR_MAPPING.keys())
+
+
 @dataclass
 class RAKUDA_CONTROLTABLE_VALUES:
     GRIP_OPEN_POSITION: int = 2500  # Open position for gripper
@@ -94,6 +103,7 @@ class RAKUDA_CONTROLTABLE_VALUES:
     LEADER_GRIP_CURRENT_LIMIT: int = 30  # mA, current limit for leader gripper
 
     GRIP_MAX_POSITION: int = 2600  # Maximum position for gripper
-    GRIP_OPERATING_MODE: int = (
+    CURRENT_BASED_OPERATING_MODE: int = (
         5  # Operating mode for gripper motors (Current-based position control)
     )
+    POSITION_CONTROL_MODE: int = 3  # Operating mode for non-gripper motors (Position control)

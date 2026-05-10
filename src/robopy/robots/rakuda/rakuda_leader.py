@@ -1,8 +1,8 @@
 import logging
 
 from robopy.config.robot_config import RAKUDA_CONTROLTABLE_VALUES, RakudaConfig
-from robopy.motor.control_table import XControlTable
 from robopy.motor.dynamixel_bus import DynamixelMotor
+from robopy.motor.dynamixel_control_table import XControlTable
 
 from .rakuda_arm import RakudaArm
 
@@ -59,8 +59,24 @@ class RakudaLeader(RakudaArm):
 
     def connect(self) -> None:
         super().connect()
-        if self._is_connected:
-            self._motors.torque_enabled(specific_motor_names=["l_arm_grip", "r_arm_grip"])
+        if not self._is_connected:
+            return
+
+        # Always read all joints, but only torque-enable configured joints.
+        self._motors.torque_disabled()
+        enabled = self.config.leader_torque_enabled
+        self._motors.torque_enabled(specific_motor_names=["l_arm_grip", "r_arm_grip"])
+
+        # Fix leader initial gripper pose.
+        # NOTE: 2600 is used as the max/open position for the Rakuda leader grippers.
+        for motor_name in ["l_arm_grip", "r_arm_grip"]:
+            self.motors.write(
+                XControlTable.GOAL_POSITION,
+                motor_name,
+                RAKUDA_CONTROLTABLE_VALUES.GRIP_MAX_POSITION,
+            )
+        if enabled:
+            self._motors.torque_enabled(specific_motor_names=enabled)
 
     def disconnect(self) -> None:
         if self._is_connected:

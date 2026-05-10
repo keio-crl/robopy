@@ -24,7 +24,7 @@ def check_pyspacemouse_installed() -> bool:
 def check_device_list() -> None:
     """List available HID devices."""
     try:
-        import hid
+        import hid  # type: ignore
 
         print("\n✓ hid library is available")
         print("\nListing HID devices (looking for 3Dconnexion devices):")
@@ -72,7 +72,7 @@ def check_pyspacemouse_open() -> None:
         # List supported devices
         if hasattr(pyspacemouse, "list_devices"):
             print("\nSupported devices:")
-            devices = pyspacemouse.list_devices()
+            devices = pyspacemouse.get_connected_devices()
             for dev in devices:
                 print(f"  - {dev}")
 
