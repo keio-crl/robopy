@@ -96,7 +96,7 @@ XARM_WORKSPACE_PRESETS: Dict[str, XArmWorkspaceBounds] = {
     # narrow lateral, low-to-mid height. Tune for your physical setup.
     "drawer": XArmWorkspaceBounds(
         z_floor_zones=(
-            XArmZFloorZone(min_x=430.0, max_x=700.0, min_y=45.5, max_y=320.0, min_z=132.4),
+            XArmZFloorZone(min_x=430.0, max_x=700.0, min_y=55.0, max_y=320.0, min_z=132.4),
         ),
     ),
 }
