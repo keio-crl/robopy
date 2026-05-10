@@ -1,6 +1,6 @@
 from logging import INFO, getLogger
 
-from robopy.config import RakudaConfig, RakudaSensorParams, TactileParams
+from robopy.config import RakudaConfig
 from robopy.utils import MetaDataConfig, RakudaExpHandler
 
 logger = getLogger(__name__)
@@ -41,14 +41,14 @@ def rakuda_exp_send():
 if __name__ == "__main__":
     handler = RakudaExpHandler(
         rakuda_config=RakudaConfig(
-            leader_port="/dev/ttyUSB0",
-            follower_port="/dev/ttyUSB1",
-            sensors=RakudaSensorParams(
-                tactile=[
-                    TactileParams(serial_num="D20542", name="left"),
-                    TactileParams(serial_num="D20537", name="right"),
-                ],
-            ),
+            leader_port="/dev/ttyUSB1",
+            follower_port="/dev/ttyUSB0",
+            # sensors=RakudaSensorParams(
+            #    tactile=[
+            #        TactileParams(serial_num="D20542", name="left"),
+            #        TactileParams(serial_num="D20537", name="right"),
+            #    ],
+            # ),
         ),
         metadata_config=MetaDataConfig(
             task_name="test_task",

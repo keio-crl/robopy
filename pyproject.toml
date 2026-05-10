@@ -16,14 +16,17 @@ dependencies = [
     "matplotlib>=3.10.3",
     "numpy>=1.26.0",
     "opencv-python>=4.10",
-    "pyaudio>=0.2.14",
-    "pyquaternion>=0.9.9",
     "pyyaml>=6.0.2",
     "rich>=14.1.0",
     "feetech-servo-sdk>=1.0.0",
     "tqdm>=4.67.1",
     "xarm-python-sdk>=1.17.0",
 ]
+
+[project.optional-dependencies]
+audio = ["pyaudio>=0.2.14"]
+realsense = ["pyrealsense2>=2.54.2"]
+spacemouse = ["pyspacemouse>=0.0.7"]
 
 [dependency-groups]
 dev = [
@@ -34,6 +37,7 @@ dev = [
     "codespell>=2.2.6",
     "types-pyserial>=3.5.0.20251001",
     "h5py-stubs>=0.1.2",
+    "types-PyYAML>=6.0.12.20250402",
 ]
 
 docs = [
@@ -51,8 +55,10 @@ gello = [
     "tyro>=1.0.13",
     "zmq>=0.0.0",
 ]
-linux = ["pyrealsense2>=2.54.2"]                         # Linux専用依存
-spacemouse = ["pyspacemouse>=1.0.8"]                     # SpaceMouse テレオペ用
+spacemouse = ["pyspacemouse>=0.0.7"]
+realsense = ["pyrealsense2>=2.54.2"] # RealSense用（現状 Linux で主に利用）
+audio = ["pyaudio>=0.2.14"]
+
 
 [build-system]
 requires = ["uv_build>=0.8.12,<0.9.0"]

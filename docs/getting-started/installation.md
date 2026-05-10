@@ -15,11 +15,28 @@
 
 ```bash
 # 基本パッケージのインストール
-uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.2
-# RealSenseサポート（Linux）
-uv add pyrealsense2
+uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.4
+
+# extras（project.optional-dependencies）を有効化したい場合
+#   RealSenseサポート（現状Linuxのみ）
+uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.4 --extra realsense
+#   音声センサー（PortAudio等が必要な場合あり）
+uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.4 --extra audio
+
+#   複数extrasを同時に（--extra を複数回指定）
+uv add git+https://github.com/keio-crl/robopy.git --tag v0.3.2 --extra realsense --extra audio
 
 ```
+
+!!! tip "uvでextrasをインストール（環境に直接入れる）"
+    リポジトリを `git clone` 済みなら、`uv pip install` でも extras を有効化できます。
+
+    ```bash
+    uv pip install -e .
+    uv pip install -e . --extra realsense
+    uv pip install -e . --extra audio
+    uv pip install -e . --extra realsense --extra audio
+    ```
 
 ### pip環境
 
@@ -28,8 +45,11 @@ git clone https://github.com/keio-crl/robopy.git
 cd robopy
 pip install -e .
 
-# RealSenseサポート（Linux）
-pip install pyrealsense2
+# RealSenseサポート（オプション / 現状Linuxのみ）
+pip install -e ".[realsense]"  # または: pip install pyrealsense2
+
+# 複数extrasを同時に（カンマ区切り）
+pip install -e ".[realsense,audio]"
 ```
 
 ## :material-package-variant: 依存関係
@@ -47,7 +67,7 @@ pip install pyrealsense2
 | `matplotlib` | >=3.10.3 | データ可視化 |
 | `numpy` | >=1.26.0 | 数値計算 |
 | `opencv-python` | >=4.10 | 画像処理 |
-| `pyaudio` | >=0.2.14 | 音声入力 |
+| `pyaudio` | >=0.2.14 | 音声入力（オプション: `pip install robopy[audio]` / `uv add <robopyの指定> --extra audio` / `uv pip install <robopyの指定> --extra audio` / `uv sync --group audio`） |
 | `pyyaml` | >=6.0.2 | 設定ファイル |
 | `rich` | >=14.1.0 | コンソール出力 |
 | `tqdm` | >=4.67.1 | 進捗バー |
@@ -56,7 +76,7 @@ pip install pyrealsense2
 
 | パッケージ | バージョン | 用途 | 対応OS |
 |-----------|-----------|------|--------|
-| `pyrealsense2` | >=2.54.2 | Intel RealSenseカメラ | Linux専用 |
+| `pyrealsense2` | >=2.54.2 | Intel RealSenseカメラ（オプション: `pip install robopy[realsense]` / `uv add <robopyの指定> --extra realsense` / `uv pip install <robopyの指定> --extra realsense` / `uv sync --group realsense`） | Linux専用 |
 
 ### 開発依存関係
 

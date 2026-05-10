@@ -612,6 +612,18 @@ epath = [
 ]
 
 [[package]]
+name = "easyhid-ng"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cffi" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e1/e3/6cbdea8c8869c53ee6ae95456f0e2bfc24c24bdff1be63e22febc780aa21/easyhid_ng-0.1.0.tar.gz", hash = "sha256:33ec11fecf10aecd015a6e0ef1d5682a21b30218b6b64edf63eba2aba06ef959", size = 7627, upload-time = "2026-01-17T01:09:58.023Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6a/c6/9511d6eb3814d6ddedcc036b084e2268f0a4153d35fd3191209b8bf13a5b/easyhid_ng-0.1.0-py3-none-any.whl", hash = "sha256:71bbfb85b1fd824c109a5cb4d403bf0818293d52b8271589f30fb8ef19195657", size = 8051, upload-time = "2026-01-17T01:09:59.307Z" },
+]
+
+[[package]]
 name = "feetech-servo-sdk"
 version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2508,15 +2520,27 @@ dependencies = [
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "opencv-python" },
-    { name = "pyaudio" },
-    { name = "pyquaternion" },
     { name = "pyyaml" },
     { name = "rich" },
     { name = "tqdm" },
     { name = "xarm-python-sdk" },
 ]
 
+[package.optional-dependencies]
+audio = [
+    { name = "pyaudio" },
+]
+realsense = [
+    { name = "pyrealsense2" },
+]
+spacemouse = [
+    { name = "pyspacemouse" },
+]
+
 [package.dev-dependencies]
+audio = [
+    { name = "pyaudio" },
+]
 dev = [
     { name = "codespell" },
     { name = "h5py-stubs" },
@@ -2525,6 +2549,7 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
     { name = "types-pyserial" },
+    { name = "types-pyyaml" },
 ]
 docs = [
     { name = "mkdocs" },
@@ -2541,7 +2566,7 @@ gello = [
     { name = "tyro" },
     { name = "zmq" },
 ]
-linux = [
+realsense = [
     { name = "pyrealsense2" },
 ]
 spacemouse = [
@@ -2560,15 +2585,18 @@ requires-dist = [
     { name = "matplotlib", specifier = ">=3.10.3" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "opencv-python", specifier = ">=4.10" },
-    { name = "pyaudio", specifier = ">=0.2.14" },
-    { name = "pyquaternion", specifier = ">=0.9.9" },
+    { name = "pyaudio", marker = "extra == 'audio'", specifier = ">=0.2.14" },
+    { name = "pyrealsense2", marker = "extra == 'realsense'", specifier = ">=2.54.2" },
+    { name = "pyspacemouse", marker = "extra == 'spacemouse'", specifier = ">=0.0.7" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "rich", specifier = ">=14.1.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "xarm-python-sdk", specifier = ">=1.17.0" },
 ]
+provides-extras = ["audio", "realsense", "spacemouse"]
 
 [package.metadata.requires-dev]
+audio = [{ name = "pyaudio", specifier = ">=0.2.14" }]
 dev = [
     { name = "codespell", specifier = ">=2.2.6" },
     { name = "h5py-stubs", specifier = ">=0.1.2" },
@@ -2577,6 +2605,7 @@ dev = [
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "ruff", specifier = ">=0.12.11" },
     { name = "types-pyserial", specifier = ">=3.5.0.20251001" },
+    { name = "types-pyyaml", specifier = ">=6.0.12.20250402" },
 ]
 docs = [
     { name = "mkdocs", specifier = ">=1.6.1" },
@@ -2593,8 +2622,8 @@ gello = [
     { name = "tyro", specifier = ">=1.0.13" },
     { name = "zmq", specifier = ">=0.0.0" },
 ]
-linux = [{ name = "pyrealsense2", specifier = ">=2.54.2" }]
-spacemouse = [{ name = "pyspacemouse", specifier = ">=1.0.8" }]
+realsense = [{ name = "pyrealsense2", specifier = ">=2.54.2" }]
+spacemouse = [{ name = "pyspacemouse", specifier = ">=0.0.7" }]
 
 [[package]]
 name = "ruff"
@@ -2888,6 +2917,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/23/c7/75035cf4511e7e76e37eb54c7b960d184fbcad6f6b7118f9b4694167aba7/types_pyserial-3.5.0.20260408.tar.gz", hash = "sha256:8a8eb2bfcdc942a081ebf1e4c6d852683127b37c9cd2e8e17f00e2308e8e08cc", size = 20003, upload-time = "2026-04-08T04:31:43.047Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/20/e1/2336f416d9b7c00fc21a098df7838eec0199d4e4175402e553c2a867d637/types_pyserial-3.5.0.20260408-py3-none-any.whl", hash = "sha256:3c9d611de989de94748290c7de5b22f1dad295a9b96d6c371cc482c6a8485345", size = 25328, upload-time = "2026-04-08T04:31:42.175Z" },
+]
+
+[[package]]
+name = "types-pyyaml"
+version = "6.0.12.20260408"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/74/73/b759b1e413c31034cc01ecdfb96b38115d0ab4db55a752a3929f0cd449fd/types_pyyaml-6.0.12.20260408.tar.gz", hash = "sha256:92a73f2b8d7f39ef392a38131f76b970f8c66e4c42b3125ae872b7c93b556307", size = 17735, upload-time = "2026-04-08T04:30:50.974Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1c/f0/c391068b86abb708882c6d75a08cd7d25b2c7227dab527b3a3685a3c635b/types_pyyaml-6.0.12.20260408-py3-none-any.whl", hash = "sha256:fbc42037d12159d9c801ebfcc79ebd28335a7c13b08a4cfbc6916df78fee9384", size = 20339, upload-time = "2026-04-08T04:30:50.113Z" },
 ]
 
 [[package]]

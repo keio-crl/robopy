@@ -2,8 +2,8 @@ import logging
 from abc import abstractmethod
 
 from robopy.config.robot_config import RAKUDA_CONTROLTABLE_VALUES, RakudaConfig
-from robopy.motor.control_table import XControlTable
 from robopy.motor.dynamixel_bus import DynamixelBus, DynamixelMotor
+from robopy.motor.dynamixel_control_table import XControlTable
 from robopy.robots.common.arm import Arm
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ class RakudaArm(Arm):
             self.motors.write(
                 XControlTable.OPERATING_MODE,
                 motor_name,
-                RAKUDA_CONTROLTABLE_VALUES.GRIP_OPERATING_MODE,
+                RAKUDA_CONTROLTABLE_VALUES.CURRENT_BASED_OPERATING_MODE,
             )
             # Set PID gains for gripper motors
             # Use slower PID gains if in slow mode

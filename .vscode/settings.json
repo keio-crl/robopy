@@ -19,5 +19,6 @@
 	], // Linter・Formatter無効化設定
 	"editor.tabSize": 4,
 	"ruff.lineLength": 100,
-	"python-envs.pythonProjects": []
+	"python.defaultInterpreterPath": "${workspaceFolder}/.venv", // 仮想環境を指定（OS依存の実行ファイルパスを避ける）
+
 }

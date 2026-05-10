@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, Literal, TypedDict
 
-from .control_table import Dtype
+from .dynamixel_control_table import Dtype
 
 
 @dataclass

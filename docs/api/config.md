@@ -199,6 +199,20 @@ if config.sensors:
 
 ### 設定の保存と読み込み
 
+#### `.robopy`（YAML）によるRakuda設定
+
+Rakudaを使用すると、実行ディレクトリ直下に `.robopy/rakuda/config.yaml` が自動生成されます。
+このYAMLで、leader/followerそれぞれの「トルクON関節（joint名リスト）」を設定できます。
+
+- `leader.torque_enabled`: `null` ならデフォルト（gripperのみON）
+- `follower.torque_enabled`: `null` ならデフォルト（全関節ON）
+
+`[]`（空リスト）を指定すると、全関節トルクOFFになります。
+
+`all` を指定すると、全関節トルクONになります。
+
+詳細と例は [docs/robots/rakuda.md](../robots/rakuda.md) を参照してください。
+
 ```python
 import json
 from pathlib import Path
