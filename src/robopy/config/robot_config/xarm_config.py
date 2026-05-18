@@ -71,7 +71,7 @@ class XArmWorkspaceBounds:
 
     min_x: float = 390.4
     max_x: float = 100000.0
-    min_y: float = -257.5
+    min_y: float = -300
     max_y: float = 314.0
     min_z: float = 25.0
     max_z: float = 10000.0

@@ -35,8 +35,8 @@ def main() -> None:
     # linear_speed / angular_speed act as the sensitivity knobs. Lower these to
     # make the robot move slowly even when the SpaceMouse is fully deflected.
     sm_cfg = SpaceMouseConfig(
-        linear_speed=0.10,    # m/s at full stick deflection
-        angular_speed=0.5,    # rad/s at full stick deflection
+        linear_speed=0.10,  # m/s at full stick deflection
+        angular_speed=0.5,  # rad/s at full stick deflection
         deadzone=0.05,
         control_hz=50,
         input_smoothing=0.5,  # EMA factor: higher = smoother but more lag

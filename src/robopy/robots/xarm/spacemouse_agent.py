@@ -73,9 +73,7 @@ def run_spacemouse_teleop(
     if cfg.control_hz <= 0:
         raise ValueError(f"control_hz must be > 0, got {cfg.control_hz}")
     if not (0.0 <= cfg.input_smoothing < 1.0):
-        raise ValueError(
-            f"input_smoothing must be in [0, 1), got {cfg.input_smoothing}"
-        )
+        raise ValueError(f"input_smoothing must be in [0, 1), got {cfg.input_smoothing}")
 
     success = pyspacemouse.open()
     if not success:
