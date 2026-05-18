@@ -27,6 +27,7 @@ from robopy.robots.xarm import (
     SimXArmFollower,
     XArmArm,
     XArmFollower,
+    XArmKinematics,
     XArmLeader,
     XArmPairSys,
     XArmRobot,
@@ -37,7 +38,7 @@ def test_workspace_bounds_defaults() -> None:
     bounds = XArmWorkspaceBounds()
     assert bounds.min_x == 390.4
     assert bounds.max_x == 100000.0
-    assert bounds.min_y == -257.5
+    assert bounds.min_y == -300
     assert bounds.max_y == 314.0
     assert bounds.min_z == 25.0
     assert bounds.max_z == 10000.0
@@ -293,6 +294,144 @@ def test_z_floor_zone_invalid_footprint_raises() -> None:
     except ValueError:
         return
     raise AssertionError("Inverted footprint must raise ValueError")
+
+
+class _FakeXArmAPI:
+    """Minimal stub for ``xarm.wrapper.XArmAPI`` used by FK/IK tests.
+
+    Records the IP it was constructed with and returns canned FK/IK answers
+    based on simple linear arithmetic, so tests can verify call wiring
+    without needing a real xArm controller on the network.
+    """
+
+    def __init__(self, ip: str, is_radian: bool = True) -> None:  # noqa: ARG002
+        self.ip = ip
+        self.disconnected = False
+
+    def get_forward_kinematics(
+        self,
+        angles: list[float],
+        input_is_radian: bool,
+        return_is_radian: bool,  # noqa: ARG002
+    ) -> tuple[int, list[float]]:
+        # Canned answer: pose = [sum*100, 0, 200, 0, 0, sum]
+        s = float(sum(angles))
+        return 0, [s * 100.0, 0.0, 200.0, 0.0, 0.0, s]
+
+    def get_inverse_kinematics(
+        self,
+        pose: list[float],
+        input_is_radian: bool,
+        return_is_radian: bool,  # noqa: ARG002
+    ) -> tuple[int, list[float]]:
+        # Canned answer: joints = first element / 7 broadcast to 7-vector
+        v = float(pose[0]) / 700.0
+        return 0, [v] * 7
+
+    def disconnect(self) -> None:
+        self.disconnected = True
+
+
+def test_xarm_kinematics_requires_connect() -> None:
+    """FK/IK without prior connect() must raise ConnectionError."""
+    k = XArmKinematics("127.0.0.1")
+    assert not k.is_connected
+    try:
+        k.forward_kinematics(np.zeros(7))
+    except ConnectionError:
+        pass
+    else:
+        raise AssertionError("FK must raise ConnectionError when not connected")
+
+
+def test_xarm_kinematics_context_manager(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """XArmKinematics should call FK/IK without moving the robot."""
+    import xarm.wrapper as wrapper_module  # type: ignore[import-not-found]
+
+    monkeypatch.setattr(wrapper_module, "XArmAPI", _FakeXArmAPI)
+
+    with XArmKinematics("192.168.1.240") as k:
+        assert k.is_connected
+        # FK: sum of [1,2,3,4,5,6,7] = 28
+        pose = k.forward_kinematics(np.array([1, 2, 3, 4, 5, 6, 7], dtype=np.float32))
+        assert pose.shape == (6,)
+        assert pose[0] == 28.0 * 100.0
+        assert pose[5] == 28.0
+        # IK: pose[0]/700 = 700/700 = 1.0 -> 7-vector of 1.0
+        joints = k.inverse_kinematics(np.array([700.0, 0, 0, 0, 0, 0], dtype=np.float64))
+        assert joints.shape == (7,)
+        np.testing.assert_allclose(joints, 1.0)
+
+    # After __exit__ the connection is dropped.
+    assert not k.is_connected
+
+
+def test_xarm_kinematics_validates_input_shape(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import xarm.wrapper as wrapper_module  # type: ignore[import-not-found]
+
+    monkeypatch.setattr(wrapper_module, "XArmAPI", _FakeXArmAPI)
+
+    with XArmKinematics("127.0.0.1") as k:
+        try:
+            k.forward_kinematics(np.zeros(6))  # wrong: needs 7
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("FK must reject non-7 input")
+
+        try:
+            k.inverse_kinematics(np.zeros(7))  # wrong: needs 6
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("IK must reject non-6 input")
+
+
+def test_xarm_kinematics_raises_on_controller_error(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Non-zero status code from the controller must surface as RuntimeError."""
+
+    class _ErrorFakeAPI(_FakeXArmAPI):
+        def get_forward_kinematics(self, angles, input_is_radian, return_is_radian):  # noqa: ANN001, ARG002
+            return 1, None
+
+        def get_inverse_kinematics(self, pose, input_is_radian, return_is_radian):  # noqa: ANN001, ARG002
+            return 2, None
+
+    import xarm.wrapper as wrapper_module  # type: ignore[import-not-found]
+
+    monkeypatch.setattr(wrapper_module, "XArmAPI", _ErrorFakeAPI)
+
+    with XArmKinematics("127.0.0.1") as k:
+        try:
+            k.forward_kinematics(np.zeros(7))
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("FK must raise RuntimeError on controller error")
+
+        try:
+            k.inverse_kinematics(np.zeros(6))
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("IK must raise RuntimeError on controller error")
+
+
+def test_xarm_follower_fk_ik_require_connection() -> None:
+    """XArmFollower.forward_kinematics/inverse_kinematics without connect()."""
+    follower = XArmFollower(XArmConfig(follower_ip="127.0.0.1"))
+    try:
+        follower.forward_kinematics(np.zeros(7))
+    except ConnectionError:
+        pass
+    else:
+        raise AssertionError("FK must raise ConnectionError before connect()")
+    try:
+        follower.inverse_kinematics(np.zeros(6))
+    except ConnectionError:
+        pass
+    else:
+        raise AssertionError("IK must raise ConnectionError before connect()")
 
 
 def test_xarm_leader_read_raw_radians_handles_negative_ticks() -> None:

@@ -15,7 +15,7 @@ import time
 from typing import Any, Optional
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from robopy.config.robot_config.xarm_config import (
     XArmConfig,
@@ -230,6 +230,63 @@ class XArmFollower(XArmArm):
         with self._last_state_lock:
             state = self._last_state
         return np.concatenate([state.cartesian_pos(), state.quat()]).astype(np.float32)
+
+    # ------------------------------------------------------------- FK / IK
+    def forward_kinematics(self, joint_angles_rad: ArrayLike) -> NDArray[np.float64]:
+        """Compute end-effector pose for a joint configuration (no motion).
+
+        Reuses the existing TCP session opened by :meth:`connect`. The arm
+        does not move -- the controller only returns the FK result.
+
+        Args:
+            joint_angles_rad: (7,) joint angles in radians.
+
+        Returns:
+            (6,) array ``[x, y, z, roll, pitch, yaw]`` (mm + rad).
+        """
+        if self._robot is None:
+            raise ConnectionError(
+                "XArmFollower is not connected. Call connect() first, "
+                "or use robopy.robots.xarm.XArmKinematics for standalone FK/IK."
+            )
+        angles = np.asarray(joint_angles_rad, dtype=np.float64).flatten()
+        if angles.shape[0] != 7:
+            raise ValueError(f"Expected 7 joint angles, got {angles.shape[0]}.")
+        code, pose = self._robot.get_forward_kinematics(
+            angles.tolist(), input_is_radian=True, return_is_radian=True
+        )
+        if code != 0 or pose is None:
+            raise RuntimeError(f"xArm forward_kinematics failed (code={code}).")
+        return np.asarray(pose, dtype=np.float64)
+
+    def inverse_kinematics(self, target_pose: ArrayLike) -> NDArray[np.float64]:
+        """Compute joint angles for a target end-effector pose (no motion).
+
+        Reuses the existing TCP session. The arm does not move.
+
+        Args:
+            target_pose: (6,) array ``[x, y, z, roll, pitch, yaw]`` (mm + rad).
+
+        Returns:
+            (7,) joint angles in radians.
+        """
+        if self._robot is None:
+            raise ConnectionError(
+                "XArmFollower is not connected. Call connect() first, "
+                "or use robopy.robots.xarm.XArmKinematics for standalone FK/IK."
+            )
+        pose = np.asarray(target_pose, dtype=np.float64).flatten()
+        if pose.shape[0] != 6:
+            raise ValueError(f"Expected 6 pose elements, got {pose.shape[0]}.")
+        code, joints = self._robot.get_inverse_kinematics(
+            pose.tolist(), input_is_radian=True, return_is_radian=True
+        )
+        if code != 0 or joints is None:
+            raise RuntimeError(
+                f"xArm inverse_kinematics failed (code={code}). "
+                "Target may be unreachable or in a singular configuration."
+            )
+        return np.asarray(joints, dtype=np.float64)
 
     def command_joint_state(self, joint_state: NDArray[np.float32]) -> None:
         """Submit a joint (+gripper) target to the background thread."""

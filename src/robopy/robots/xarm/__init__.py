@@ -3,6 +3,7 @@
 from .sim_xarm_follower import SimXArmFollower
 from .xarm_arm import XArmArm
 from .xarm_follower import XArmFollower
+from .xarm_kinematics import XArmKinematics
 from .xarm_leader import XArmLeader
 from .xarm_pair_sys import XArmPairSys
 from .xarm_robot import XArmRobot
@@ -11,6 +12,7 @@ __all__ = [
     "SimXArmFollower",
     "XArmArm",
     "XArmFollower",
+    "XArmKinematics",
     "XArmLeader",
     "XArmPairSys",
     "XArmRobot",

@@ -21,8 +21,8 @@ from robopy.config.robot_config.xarm_config import (
     GelloArmConfig,
     XArmConfig,
 )
-from robopy.motor.control_table import XControlTable
 from robopy.motor.dynamixel_bus import DynamixelBus, DynamixelMotor
+from robopy.motor.dynamixel_control_table import XControlTable
 from robopy.robots.xarm.xarm_arm import XArmArm
 
 logger = logging.getLogger(__name__)

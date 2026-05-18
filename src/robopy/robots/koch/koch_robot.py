@@ -33,6 +33,7 @@ logger = getLogger(__name__)
 
 class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
     _kinematic_chain: ClassVar[KinematicChain | None] = None
+    _ik_solver: ClassVar[IKSolver | None] = None
 
     def __init__(self, cfg: KochConfig) -> None:
         super().__init__()
@@ -41,7 +42,6 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
         self._robot_system = KochPairSys(self.config)
         self._sensors = self._init_sensors()
         self._cameras: List[WebCamera | RealsenseCamera] = list(self._sensors.cameras or [])
-        self._ik_solver: IKSolver | None = None
 
     def connect(self) -> None:
         try:
@@ -442,19 +442,25 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
         pose = chain.forward_kinematics(angles_rad)
         return EEPose.from_array(pose)
 
-    def _get_ik_solver(self) -> IKSolver:
-        """Get or create the IK solver instance."""
-        if self._ik_solver is None:
-            self._ik_solver = IKSolver(self.kinematic_chain())
-        return self._ik_solver
+    @classmethod
+    def _get_ik_solver(cls) -> IKSolver:
+        """Get or create the shared IK solver (no hardware needed)."""
+        if cls._ik_solver is None:
+            cls._ik_solver = IKSolver(cls.kinematic_chain())
+        return cls._ik_solver
 
+    @classmethod
     def inverse_kinematics(
-        self,
+        cls,
         target_pose: EEPose | NDArray[np.float32],
         current_joint_angles_deg: NDArray[np.float32],
         ik_config: IKConfig | None = None,
     ) -> IKResult:
         """Solve IK for a target end-effector pose.
+
+        This is a pure-numpy computation -- **no hardware connection required**.
+        Can be called either as ``KochRobot.inverse_kinematics(...)`` or on an
+        instance.
 
         Args:
             target_pose: Desired EE pose (EEPose or (5,) array
@@ -476,9 +482,10 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
             current = current[:5]
         current_rad = np.deg2rad(current)
 
-        solver = self._get_ik_solver()
         if ik_config is not None:
-            solver = IKSolver(self.kinematic_chain(), ik_config)
+            solver = IKSolver(cls.kinematic_chain(), ik_config)
+        else:
+            solver = cls._get_ik_solver()
 
         return solver.solve(target, current_rad)
 

@@ -649,6 +649,67 @@ if __name__ == "__main__":
     xarm_teleoperate()
 ```
 
+## :material-calculator-variant: 順運動学 / 逆運動学 (FK / IK)
+
+xArm7 の FK / IK は、UFactory コントローラに組み込まれた kinematic engine を介して計算します。SO-101 や Koch のような **純 numpy のオフライン計算ではなく**、TCP 接続が必要です。ただし送信されるのは `H44 (get_forward_kinematics)` / `H43 (get_inverse_kinematics)` のクエリのみで、**ロボットは動きません**。
+
+実機 Box に加えて、**UFactory Studio simulator (`127.0.0.1`) でもまったく同じ API が使えます**。ハードウェアが手元になくても、Studio を起動しておけば FK/IK の検証ができます。
+
+### スタンドアロン使用 (`XArmKinematics`)
+
+GELLO や `XArmFollower` の起動を伴わずに FK/IK だけ計算したいときは、軽量ラッパ [`XArmKinematics`](../api/robots.md#robopy.robots.xarm.xarm_kinematics.XArmKinematics) を使います。`clean_error` / `set_state` / `set_collision_*` / グリッパ初期化 / 制御スレッドのいずれも実行しません。
+
+```python
+import numpy as np
+from robopy.robots.xarm import XArmKinematics
+
+with XArmKinematics("192.168.1.240") as k:   # 実機 or "127.0.0.1" で simulator
+    pose = k.forward_kinematics(
+        np.array([0, -1.57, 0, 1.57, 0, 0, 0], dtype=np.float32)
+    )
+    # pose -> [x, y, z, roll, pitch, yaw]  (mm + rad)
+
+    joints = k.inverse_kinematics(
+        np.array([400.0, 0.0, 300.0, 3.14, 0.0, 0.0], dtype=np.float32)
+    )
+    # joints -> (7,) rad
+```
+
+with 文を使うと TCP セッションが自動的にクローズされます。バッチで多数のクエリを投げる場合は **接続を開きっぱなしにする** のがコスト効率上重要です (`__init__` で毎回開閉しない)。
+
+### 既存の `XArmFollower` から呼ぶ
+
+既に `XArmFollower.connect()` 済みのセッションがあるなら、その接続を流用できます。
+
+```python
+from robopy.robots.xarm import XArmFollower
+from robopy.config.robot_config import XArmConfig
+
+follower = XArmFollower(XArmConfig(follower_ip="192.168.1.240"))
+follower.connect()
+try:
+    pose = follower.forward_kinematics(np.zeros(7))
+    joints = follower.inverse_kinematics(np.array([400, 0, 300, 3.14, 0, 0]))
+finally:
+    follower.disconnect()
+```
+
+### SO-101 / Koch との対比
+
+| Robot | API | TCP 接続 |
+|---|---|---|
+| **SO-101** | `So101Robot.forward_kinematics(joints_deg)` / `So101Robot.inverse_kinematics(target, init_deg)` -- 純 numpy classmethod | 不要 |
+| **Koch** | `KochRobot.forward_kinematics(...)` / `KochRobot.inverse_kinematics(...)` -- 同上 | 不要 |
+| **xArm** | `XArmKinematics(ip)` または `XArmFollower.forward_kinematics / inverse_kinematics` | **必要** (実機 or simulator) |
+
+xArm の kinematic chain (リンク長・MDH パラメータ・特異点扱い) を robopy 側に複製していないのは意図的です: UFactory の公式 FK/IK と挙動を一致させるため、SDK の実装に委譲しています。
+
+### エラー
+
+- `ConnectionError`: `connect()` 前に FK/IK を呼んだ場合
+- `ValueError`: 入力ベクトル長が想定外 (FK は 7, IK は 6)
+- `RuntimeError`: コントローラが非ゼロのステータスコードを返した場合 (リーチ外・特異姿勢・通信失敗など)
+
 ## :material-mouse-variant: SpaceMouse によるテレオペ (GELLO 不使用)
 
 GELLO リーダーの代わりに 3Dconnexion **SpaceMouse** で xArm7 をテレオペできます。フルの動作例は [`examples/robot/xarm_spacemouse_teleop.py`](https://github.com/keio-crl/robopy/blob/main/examples/robot/xarm_spacemouse_teleop.py) を参照してください。
