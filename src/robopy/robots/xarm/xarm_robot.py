@@ -397,6 +397,12 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
         if leader_action.ndim != 2 or leader_action.shape[1] != 8:
             raise ValueError("leader_action must be of shape (max_frame, 8).")
 
+        ramp_sent_count = self._send_initial_follower_ramp(
+            leader_action[0],
+            fps=fps,
+            teleop_hz=teleop_hz,
+        )
+
         interval = 1.0 / teleop_hz
         total_time = (max_frame - 1) / fps
         start_time = time.perf_counter()
@@ -418,16 +424,39 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
                     pass
             self.send_frame_action(leader_action[-1])
 
-            elapsed = time.perf_counter() - start_time
+            total_sent_count = ramp_sent_count + sent_count
+            elapsed = time.perf_counter() - start_time + (ramp_sent_count / teleop_hz)
             table = Table(title="XArm Send Summary")
             table.add_column("Metric", style="cyan")
             table.add_column("Value", style="magenta")
             table.add_row("Original frames", f"{max_frame} @ {fps}Hz")
-            table.add_row("Sent frames", f"{sent_count} @ {sent_count / elapsed:.2f}Hz")
+            table.add_row(
+                "Sent frames",
+                f"{total_sent_count} @ {total_sent_count / elapsed:.2f}Hz",
+            )
             table.add_row("Elapsed", f"{elapsed:.2f}s")
             Console().print(table)
         except KeyboardInterrupt:
             logger.info("Send interrupted by user.")
+
+    def _send_initial_follower_ramp(
+        self,
+        first_leader_action: NDArray[np.float32],
+        fps: int,
+        teleop_hz: int,
+    ) -> int:
+        current = self._pair_sys.follower.get_joint_state()
+        target = np.asarray(first_leader_action, dtype=np.float32)
+        steps = max(1, int(round(teleop_hz / fps)))
+        interval = 1.0 / teleop_hz
+
+        for step in range(1, steps + 1):
+            alpha = step / steps
+            action = (1 - alpha) * current + alpha * target
+            self._pair_sys.send_follower_action(action.astype(np.float32))
+            time.sleep(interval)
+
+        return steps
 
     # ----------------------------------------------------------- initialisers
     def _init_config(self) -> XArmSensorConfigs:

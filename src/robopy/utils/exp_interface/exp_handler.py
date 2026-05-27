@@ -55,6 +55,69 @@ class ExpHandler(ABC, Generic[ObsType, RobotType, ConfigType, WorkerType]):
     def _extract_data_shapes(self, obs: ObsType) -> dict[str, Any]:
         pass
 
+    def send_follower_init_pose(self, follower_init_pose: NDArray[float32], fps: int = 5) -> None:
+        """Send initial pose to follower robot."""
+        if fps <= 0:
+            raise ValueError("fps must be greater than 0.")
+
+        # check if robot is connected
+        if not self.robot.is_connected:
+            self.robot.connect()
+
+        # check follower_init_pose shape
+        pose = np.asarray(follower_init_pose, dtype=np.float32)
+        if pose.ndim != 1:
+            raise ValueError("follower_init_pose must be a 1D array.")
+
+        follower_motor_names, expected_dim = self._get_follower_pose_spec()
+        if pose.shape[0] != expected_dim:
+            raise ValueError(
+                f"follower_init_pose length {pose.shape[0]} does not match "
+                f"number of follower motors {expected_dim}."
+            )
+
+        robot_system = self.robot.robot_system
+        if not hasattr(robot_system, "send_follower_action"):
+            raise AttributeError("robot.robot_system must provide send_follower_action().")
+
+        action: dict[str, float] | NDArray[np.float32]
+        if follower_motor_names is not None:
+            action = {
+                motor_name: float(pose[i]) for i, motor_name in enumerate(follower_motor_names)
+            }
+        else:
+            action = pose
+
+        interval = 1.0 / fps
+        for _ in range(fps):
+            robot_system.send_follower_action(action)
+            sleep(interval)
+
+    def _get_follower_pose_spec(self) -> tuple[list[str] | None, int]:
+        """Return follower motor names and pose dimension."""
+        robot_system = self.robot.robot_system
+        if not hasattr(robot_system, "follower"):
+            raise AttributeError("robot.robot_system must provide follower.")
+
+        follower = robot_system.follower
+        motor_names = getattr(follower, "motor_names", None)
+        if motor_names is not None:
+            names = list(motor_names)
+            if names:
+                return names, len(names)
+
+        motors = getattr(follower, "motors", None)
+        if motors is not None and hasattr(motors, "motors"):
+            names = list(motors.motors.keys())
+            if names:
+                return names, len(names)
+
+        if hasattr(follower, "get_joint_state"):
+            joint_state = np.asarray(follower.get_joint_state(), dtype=np.float32)
+            return None, int(joint_state.shape[0])
+
+        raise AttributeError("Could not determine follower motor count.")
+
     def close(self) -> None:
         """Close the handler and clean up resources."""
         if hasattr(self, "robot") and self.robot:

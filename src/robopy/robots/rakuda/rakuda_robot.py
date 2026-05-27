@@ -13,6 +13,7 @@ from rich.table import Table
 
 from robopy.config.dotrobopy import apply_rakuda_dotconfig
 from robopy.config.robot_config.rakuda_config import (
+    RAKUDA_MOTOR_MAPPING,
     RakudaArmObs,
     RakudaConfig,
     RakudaObs,
@@ -706,6 +707,12 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
         if leader_action.ndim != 2 or leader_action.shape[1] != 17:
             raise ValueError("leader_action must be of shape (max_frame, 17).")
 
+        ramp_sent_count = self._send_initial_follower_ramp(
+            leader_action[0],
+            fps=fps,
+            teleop_hz=teleop_hz,
+        )
+
         interval = 1.0 / teleop_hz
         total_time = (max_frame - 1) / fps
         start_time = time.perf_counter()
@@ -737,13 +744,15 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
             # 最後のフレームを念のため送信
             self.send_frame_action(leader_action[-1])
 
-            elapsed = time.perf_counter() - start_time
+            total_sent_count = ramp_sent_count + sent_count
+            elapsed = time.perf_counter() - start_time + (ramp_sent_count / teleop_hz)
             table = Table(title="Send Action Summary")
             table.add_column("Metric", style="cyan", no_wrap=True)
             table.add_column("Value", style="magenta")
             table.add_row("Original Frames (fps)", f"{max_frame} ({fps}Hz)")
             table.add_row(
-                "Sent Frames (after interpolation)", f"{sent_count} ({sent_count / elapsed:.2f}Hz)"
+                "Sent Frames (after interpolation)",
+                f"{total_sent_count} ({total_sent_count / elapsed:.2f}Hz)",
             )
             table.add_row("Total Time (s)", f"{elapsed:.2f}")
             console = Console()
@@ -756,7 +765,12 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
             raise e
 
     def send_frame_action(self, leader_action: NDArray[np.float32]) -> None:
-        leader_action_dict: Dict[str, float] = {}
+        self._pair_sys.send_follower_action(self._leader_action_to_follower_action(leader_action))
+
+    def _leader_action_to_follower_action(
+        self, leader_action: NDArray[np.float32]
+    ) -> Dict[str, float]:
+        follower_action: Dict[str, float] = {}
 
         leader_motor_names = list(self._pair_sys.leader.motors.motors.keys())
         if len(leader_action) != len(leader_motor_names):
@@ -766,9 +780,33 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
             )
 
         for i, motor_name in enumerate(leader_motor_names):
-            leader_action_dict[motor_name] = int(leader_action[i])
+            follower_name = RAKUDA_MOTOR_MAPPING.get(motor_name)
+            if follower_name is not None:
+                follower_action[follower_name] = float(leader_action[i])
 
-        self._pair_sys.send_follower_action(leader_action_dict)
+        return follower_action
+
+    def _send_initial_follower_ramp(
+        self,
+        first_leader_action: NDArray[np.float32],
+        fps: int,
+        teleop_hz: int,
+    ) -> int:
+        current = self._pair_sys.get_follower_action()
+        target = self._leader_action_to_follower_action(first_leader_action)
+        steps = max(1, int(round(teleop_hz / fps)))
+        interval = 1.0 / teleop_hz
+
+        for step in range(1, steps + 1):
+            alpha = step / steps
+            action = {
+                name: (1 - alpha) * float(current.get(name, value)) + alpha * value
+                for name, value in target.items()
+            }
+            self._pair_sys.send_follower_action(action)
+            time.sleep(interval)
+
+        return steps
 
     def _init_config(self) -> RakudaSensorConfigs:
         """Initialize sensor configurations based on the provided robot configuration."""

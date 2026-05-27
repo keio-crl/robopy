@@ -347,6 +347,12 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
                 f"leader_action must be of shape ({max_frame}, {len(leader_motor_names)})."
             )
 
+        self._send_initial_follower_ramp(
+            leader_action[0],
+            fps=fps,
+            teleop_hz=teleop_hz,
+        )
+
         interval = 1.0 / teleop_hz
         total_time = (max_frame - 1) / fps
         start_time = time.perf_counter()
@@ -382,6 +388,13 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
             raise
 
     def send_frame_action(self, leader_action: NDArray[np.float32]) -> None:
+        self._robot_system.send_follower_action(
+            self._leader_action_to_follower_action(leader_action)
+        )
+
+    def _leader_action_to_follower_action(
+        self, leader_action: NDArray[np.float32]
+    ) -> Dict[str, float]:
         follower_goals: Dict[str, float] = {}
 
         # Get leader motor names from mapping if leader is not connected
@@ -402,7 +415,27 @@ class KochRobot(ComposedRobot[KochPairSys, Sensors, KochObs]):
             if follower_name is not None:
                 follower_goals[follower_name] = float(leader_action[i])
 
-        self._robot_system.send_follower_action(follower_goals)
+        return follower_goals
+
+    def _send_initial_follower_ramp(
+        self,
+        first_leader_action: NDArray[np.float32],
+        fps: int,
+        teleop_hz: int,
+    ) -> None:
+        current = self._robot_system.get_follower_action()
+        target = self._leader_action_to_follower_action(first_leader_action)
+        steps = max(1, int(round(teleop_hz / fps)))
+        interval = 1.0 / teleop_hz
+
+        for step in range(1, steps + 1):
+            alpha = step / steps
+            action = {
+                name: (1 - alpha) * float(current.get(name, value)) + alpha * value
+                for name, value in target.items()
+            }
+            self._robot_system.send_follower_action(action)
+            time.sleep(interval)
 
     # ------------------------------------------------------------------
     # Kinematics: FK / IK / EE-space actions
