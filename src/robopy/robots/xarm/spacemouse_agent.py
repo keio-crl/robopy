@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Any, cast
 
 import numpy as np
 
@@ -66,6 +67,7 @@ def run_spacemouse_teleop(
         raise ImportError(
             "pyspacemouse is required for SpaceMouse teleop. Install it via `uv add pyspacemouse`."
         ) from exc
+    pyspacemouse = cast(Any, pyspacemouse)
 
     if cfg is None:
         cfg = SpaceMouseConfig()

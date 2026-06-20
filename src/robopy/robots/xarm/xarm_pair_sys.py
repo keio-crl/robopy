@@ -106,7 +106,7 @@ class XArmPairSys(Robot):
             max_abs = float(np.abs(diff).max())
             if max_abs > _DEFAULT_ALIGN_DELTA and max_abs > 0.0:
                 diff = diff / max_abs * _DEFAULT_ALIGN_DELTA
-            self._follower.command_joint_state(curr + diff)
+            self._follower.command_joint_state(np.asarray(curr + diff, dtype=np.float32))
             time.sleep(1.0 / 100.0)
 
         if self.config.sim_mode:
