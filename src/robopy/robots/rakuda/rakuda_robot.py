@@ -767,6 +767,30 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
     def send_frame_action(self, leader_action: NDArray[np.float32]) -> None:
         self._pair_sys.send_follower_action(self._leader_action_to_follower_action(leader_action))
 
+    def get_follower_frame_action(self) -> NDArray[np.float32]:
+        """Return the current follower positions in follower motor order."""
+        follower_positions = self._pair_sys.get_follower_action()
+        follower_motor_names = list(self._pair_sys.follower.motors.motors.keys())
+        return np.asarray(
+            [follower_positions[name] for name in follower_motor_names],
+            dtype=np.float32,
+        )
+
+    def send_follower_frame_action(self, follower_action: NDArray[np.float32]) -> None:
+        """Send one action expressed directly in follower motor order."""
+        action = np.asarray(follower_action, dtype=np.float32)
+        follower_motor_names = list(self._pair_sys.follower.motors.motors.keys())
+        if action.ndim != 1 or action.shape[0] != len(follower_motor_names):
+            raise ValueError(
+                f"follower_action must be a 1D array with {len(follower_motor_names)} elements."
+            )
+        if not np.all(np.isfinite(action)):
+            raise ValueError("follower_action must contain only finite values.")
+
+        self._pair_sys.send_follower_action(
+            {name: float(action[i]) for i, name in enumerate(follower_motor_names)}
+        )
+
     def _leader_action_to_follower_action(
         self, leader_action: NDArray[np.float32]
     ) -> Dict[str, float]:

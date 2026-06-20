@@ -86,6 +86,24 @@ handler.record_save(
     if_async=True
 )
 ```
+
+### 推論actionを1フレーム送信する
+
+`send_action()` は、Rakuda followerのモーター順に並んだ17次元actionを1フレーム送信し、
+送信後のarm・camera・tactile・audioを含む `RakudaObs` を返します。`fps` はpolicyの
+フレームレート、`control_hz` はフレーム間を線形補間して送信する制御周波数です。
+
+```python
+handler = RakudaExpHandler(
+    rakuda_config=config,
+    metadata_config=metadata,
+    fps=10,
+    control_hz=100,
+)
+
+obs = handler.send_action(follower_action)  # follower_action.shape == (17,)
+```
+
 ### データの保存とアニメーション生成
 
 ## :material-alert-circle: 注意点と制限
