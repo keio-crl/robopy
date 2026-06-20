@@ -14,11 +14,10 @@ appears in the MuJoCo GUI launched by Terminal 1 and follows the GELLO
 input in real time.
 """
 
-from logging import INFO, basicConfig, getLogger
+from logging import getLogger
 
 import numpy as np
 
-basicConfig(level=INFO)
 logger = getLogger(__name__)
 
 

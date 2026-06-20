@@ -600,7 +600,6 @@ def main() -> bool:
     Returns:
         True if test completed successfully, False otherwise.
     """
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
     print("🤖 Saver Test")
     print("=" * 50)
     print("📋 Features:")
