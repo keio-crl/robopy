@@ -267,6 +267,17 @@ class KochPairSys(Robot):
         )
         return leader_positions
 
+    def get_follower_action(self) -> dict[str, float]:
+        """Get the current action (positions) from the follower arm."""
+        if not self._is_connected:
+            raise ConnectionError("KochPairSys is not connected. Call connect() first.")
+
+        follower_motor_names = list(self._follower.motors.motors.keys())
+        follower_positions = self._follower.motors.sync_read(
+            XControlTable.PRESENT_POSITION, follower_motor_names
+        )
+        return follower_positions
+
     def send_follower_action(self, action: dict[str, float]) -> None:
         """Send action to the follower arm only."""
         if not self._is_connected:

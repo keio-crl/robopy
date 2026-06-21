@@ -418,7 +418,7 @@ class So101SpaceMouseController:
         max_step = np.float32(cfg.max_joint_delta_deg)
         joint_deg = prev_joint_deg + np.clip(delta, -max_step, max_step)
 
-        full_action = np.append(joint_deg, np.float32(gripper_deg))
+        full_action = np.asarray(np.append(joint_deg, np.float32(gripper_deg)), dtype=np.float32)
 
         # Send to follower
         self._robot.send_frame_action(full_action)

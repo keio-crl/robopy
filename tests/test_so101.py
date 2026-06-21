@@ -3,6 +3,7 @@ from robopy.robots.so101.so101_robot import So101Robot
 
 
 def main() -> None:
+    robot: So101Robot | None = None
     try:
         # Leader付き設定（テレオペレーション用）
         config = So101Config(
@@ -23,7 +24,8 @@ def main() -> None:
         print(f"エラーが発生しました: {e}")
 
     finally:
-        robot.disconnect()
+        if robot is not None:
+            robot.disconnect()
 
 
 if __name__ == "__main__":

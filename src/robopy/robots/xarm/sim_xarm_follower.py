@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import pickle
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -48,12 +48,14 @@ class SimXArmFollower(XArmArm):
                 "pyzmq is required for SimXArmFollower. Install via `uv add pyzmq`."
             ) from exc
 
-        self._context = zmq.Context()
-        self._socket = self._context.socket(zmq.REQ)
+        context = zmq.Context()
+        socket = context.socket(zmq.REQ)
         addr = f"tcp://{self._host}:{self._port}"
-        self._socket.connect(addr)
-        self._socket.setsockopt(zmq.RCVTIMEO, 5000)
-        self._socket.setsockopt(zmq.SNDTIMEO, 5000)
+        socket.connect(addr)
+        socket.setsockopt(zmq.RCVTIMEO, 5000)
+        socket.setsockopt(zmq.SNDTIMEO, 5000)
+        self._context = cast(Any, context)
+        self._socket = cast(Any, socket)
 
         ndofs = self._call("num_dofs")
         self._is_connected = True

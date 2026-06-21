@@ -460,3 +460,6 @@ class FeetechBus:
     def __repr__(self) -> str:
         motor_list = ", ".join(self.motors.keys())
         return f"FeetechBus(port={self.port_handler.port_name}, motors=[{motor_list}])"
+
+    def __len__(self) -> int:
+        return len(self.motors)

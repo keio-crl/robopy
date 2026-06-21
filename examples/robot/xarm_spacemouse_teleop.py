@@ -14,9 +14,8 @@ Controls:
     * Ctrl-C → stop and disconnect.
 """
 
-from logging import INFO, basicConfig, getLogger
+from logging import getLogger
 
-basicConfig(level=INFO)
 logger = getLogger(__name__)
 
 
