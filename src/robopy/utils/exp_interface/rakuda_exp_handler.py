@@ -1,11 +1,13 @@
+import logging
 import time
 from time import sleep
 from typing import Any, Dict, List
-from venv import logger
 
 import numpy as np
 from numpy import float32
 from numpy.typing import NDArray
+
+logger = logging.getLogger(__name__)
 
 from robopy.config import RakudaConfig, RakudaObs
 from robopy.config.robot_config.rakuda_config import RakudaSensorParams
