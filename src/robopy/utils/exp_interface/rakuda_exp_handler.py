@@ -7,8 +7,6 @@ import numpy as np
 from numpy import float32
 from numpy.typing import NDArray
 
-logger = logging.getLogger(__name__)
-
 from robopy.config import RakudaConfig, RakudaObs
 from robopy.config.robot_config.rakuda_config import RakudaSensorParams
 from robopy.config.sensor_config.params_config import CameraParams
@@ -17,6 +15,8 @@ from robopy.utils.worker.rakuda_save_worker import RakudaSaveWorker
 
 from .exp_handler import ExpHandler
 from .meta_data_config import MetaDataConfig
+
+logger = logging.getLogger(__name__)
 
 
 class RakudaExpHandler(ExpHandler[RakudaObs, RakudaRobot, RakudaConfig, RakudaSaveWorker]):
