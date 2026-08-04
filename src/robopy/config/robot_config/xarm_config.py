@@ -214,6 +214,8 @@ class XArmConfig:
     max_delta: float = 0.05
     cartesian_speed: int = 300
     cartesian_mvacc: int = 1000
+    # "euler" -> set_position (roll/pitch/yaw), "axis_angle" -> set_position_aa.
+    cartesian_rotation_repr: str = "euler"
     collision_sensitivity: int = 3
     gripper_open: int = 800
     gripper_close: int = 0
@@ -224,6 +226,13 @@ class XArmConfig:
     sim_mode: bool = False
     sim_host: str = "127.0.0.1"
     sim_port: int = 6000
+
+    def __post_init__(self) -> None:
+        if self.cartesian_rotation_repr not in ("euler", "axis_angle"):
+            raise ValueError(
+                "cartesian_rotation_repr must be 'euler' or 'axis_angle', "
+                f"got {self.cartesian_rotation_repr!r}."
+            )
 
 
 @dataclass

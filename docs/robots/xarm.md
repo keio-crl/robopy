@@ -188,6 +188,27 @@ finally:
     robot.disconnect()
 ```
 
+### Cartesian 指令の回転表現 (`cartesian_rotation_repr`)
+
+EE 姿勢を直接指令する API では、位置は mm・回転は rad ですが、回転 3 要素の**解釈**が 2 通りあります。
+
+| 呼び出し | 回転の解釈 | 送出に使う SDK |
+|---|---|---|
+| `command_cartesian_absolute(pos, gripper)` | `XArmConfig.cartesian_rotation_repr` に従う (既定 `"euler"` = roll/pitch/yaw) | `set_position` / `set_position_aa` |
+| `command_cartesian_absolute_aa(pos_aa, gripper)` | 常に軸角 (axis-angle) | `set_position_aa` |
+| `command_cartesian_relative(delta, gripper)` | 常に軸角 (現在姿勢を `get_position_aa` で読むため) | `set_position_aa` |
+
+`get_ee_pos_quat()` / `get_position_aa` が返すのは軸角ベースなので、**観測した姿勢をそのまま指令に戻す**ワークフロー (オフライン FK/IK の再生など) では `command_cartesian_absolute_aa` を使うか、設定側で統一してください。
+
+```python
+config = XArmConfig(
+    follower_ip="192.168.1.240",
+    cartesian_rotation_repr="axis_angle",   # command_cartesian_absolute も AA 送出に統一
+)
+```
+
+`"euler"` / `"axis_angle"` 以外を指定すると `XArmConfig` の構築時に `ValueError` になります。作業領域クリップ (xyz) は回転表現に依存せず、どちらの経路でも同じように適用されます。
+
 ### 作業領域の制限 (`restriction` プリセット)
 
 毎回 `XArmWorkspaceBounds(min_x=..., max_x=...)` を組み立てる代わりに、名前付きプリセットを `XArmConfig.restriction` に列挙して制約を切り替えられます。

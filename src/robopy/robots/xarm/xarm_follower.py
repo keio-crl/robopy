@@ -148,6 +148,7 @@ class XArmFollower(XArmArm):
         self._max_delta = float(cfg.max_delta)
         self._cartesian_speed = int(cfg.cartesian_speed)
         self._cartesian_mvacc = int(cfg.cartesian_mvacc)
+        self._cartesian_rot_repr = str(getattr(cfg, "cartesian_rotation_repr", "euler"))
         self._collision_sensitivity = int(cfg.collision_sensitivity)
         self._gripper_open = int(cfg.gripper_open)
         self._gripper_close = int(cfg.gripper_close)
@@ -271,6 +272,29 @@ class XArmFollower(XArmArm):
                 "gripper": gripper,
             }
 
+    def command_cartesian_absolute_aa(
+        self,
+        pos_aa: NDArray[np.float32],
+        gripper: float | None = None,
+    ) -> None:
+        """Absolute EE pose ``[x, y, z, rx, ry, rz]`` sent via ``set_position_aa``.
+
+        Same units as :meth:`command_cartesian_absolute` (mm + rad), but the
+        rotation triplet is always interpreted as an axis-angle vector
+        regardless of ``XArmConfig.cartesian_rotation_repr``. This matches the
+        representation returned by ``get_position_aa`` / :meth:`get_ee_pos_quat`.
+        """
+        pos_aa = np.asarray(pos_aa, dtype=np.float32)
+        if pos_aa.shape[0] != 6:
+            raise ValueError("pos_aa must be a 6-vector [x, y, z, rx, ry, rz].")
+        with self._target_command_lock:
+            self._target_command = {
+                "mode": "cartesian_abs",
+                "pose": pos_aa.copy(),
+                "gripper": gripper,
+                "format": "axis_angle",
+            }
+
     def command_cartesian_relative(
         self,
         delta: NDArray[np.float32],
@@ -316,7 +340,12 @@ class XArmFollower(XArmArm):
     def _set_gripper_position(self, pos: int) -> None:
         if self._robot is None:
             return
-        self._robot.set_gripper_position(pos, speed=100000, wait=False, wait_motion=False)
+        # A Modbus gripper packs speed into a u16 (max 65535); the SDK's
+        # gripper_modbus_set_posspd raises struct.error on anything larger.
+        # Use the configured gripper speed (clamped) instead of a hardcoded
+        # 100000 so both standard and Modbus grippers are handled.
+        speed = min(int(self._gripper_speed), 65535)
+        self._robot.set_gripper_position(pos, speed=speed, wait=False, wait_motion=False)
 
     def _get_gripper_pos(self) -> float:
         if self._robot is None:
@@ -395,8 +424,15 @@ class XArmFollower(XArmArm):
         if ret in (1, 9):
             self._clear_error_states()
 
-    def _send_cartesian(self, pose: np.ndarray) -> None:
-        """Send a 6-DOF Cartesian pose ``[x, y, z, rx, ry, rz]`` (mm, rad)."""
+    def _send_cartesian(self, pose: np.ndarray, fmt: str | None = None) -> None:
+        """Send a 6-DOF Cartesian pose ``[x, y, z, r1, r2, r3]`` (mm, rad).
+
+        The rotation triplet is interpreted as Euler RPY (``set_position``) by
+        default, or as an axis-angle rotation vector (``set_position_aa``) when
+        ``fmt`` -- or ``XArmConfig.cartesian_rotation_repr`` when ``fmt`` is
+        ``None`` -- selects ``"axis_angle"``. The xyz workspace clip is
+        representation-independent and applies to both paths.
+        """
         if self._robot is None:
             return
         if self._workspace is not None:
@@ -404,19 +440,31 @@ class XArmFollower(XArmArm):
             pose[1] = float(np.clip(pose[1], self._workspace.min_y, self._workspace.max_y))
             min_z = self._workspace.effective_min_z(pose[0], pose[1])
             pose[2] = float(np.clip(pose[2], min_z, self._workspace.max_z))
-        ret = self._robot.set_position(
-            x=pose[0],
-            y=pose[1],
-            z=pose[2],
-            roll=pose[3],
-            pitch=pose[4],
-            yaw=pose[5],
-            wait_motion=False,
-            is_radian=True,
-            speed=self._cartesian_speed,
-            mvacc=self._cartesian_mvacc,
-            radius=0,
-        )
+
+        use_aa = (fmt or self._cartesian_rot_repr) == "axis_angle"
+        if use_aa:
+            ret = self._robot.set_position_aa(
+                np.asarray(pose, dtype=np.float32).tolist(),
+                wait=False,
+                is_radian=True,
+                speed=self._cartesian_speed,
+                mvacc=self._cartesian_mvacc,
+                radius=0,
+            )
+        else:
+            ret = self._robot.set_position(
+                x=pose[0],
+                y=pose[1],
+                z=pose[2],
+                roll=pose[3],
+                pitch=pose[4],
+                yaw=pose[5],
+                wait_motion=False,
+                is_radian=True,
+                speed=self._cartesian_speed,
+                mvacc=self._cartesian_mvacc,
+                radius=0,
+            )
         if ret in (1, 9):
             self._clear_error_states()
 
@@ -435,7 +483,10 @@ class XArmFollower(XArmArm):
             gripper_command: Optional[float] = cmd.get("gripper")
 
             if mode == "cartesian_abs":
-                self._send_cartesian(np.asarray(cmd["pose"], dtype=np.float32))
+                self._send_cartesian(
+                    np.asarray(cmd["pose"], dtype=np.float32),
+                    fmt=cmd.get("format"),
+                )
             elif mode == "cartesian_rel":
                 if self._robot is not None:
                     cur_cart = self._robot.get_position_aa(is_radian=True)[1]
@@ -443,7 +494,9 @@ class XArmFollower(XArmArm):
                     cur_cart = [0.0] * 6
                 cur_arr = np.asarray(cur_cart, dtype=np.float32)
                 target = cur_arr + np.asarray(cmd["delta"], dtype=np.float32)
-                self._send_cartesian(target)
+                # The current pose is read back as axis-angle, so the summed
+                # target must be sent as axis-angle too.
+                self._send_cartesian(target, fmt="axis_angle")
             else:
                 target_joints = np.asarray(cmd.get("joints", np.zeros(7)), dtype=np.float32)
                 joint_delta = target_joints - self._last_state.joints()
