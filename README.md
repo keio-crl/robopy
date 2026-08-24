@@ -83,6 +83,7 @@ if __name__ == "__main__":
 - **⚡ 高性能データ収集**: 並列処理による30Hz高速データキャプチャ
 - **🎬 可視化機能**: データのアニメーション生成機能
 - **🛠 シンプルな依存関係**: ROSなどのC/C++ベースのライブラリ不要
+- **⚙️ 任意のC++ transport**: `robopy_dxl` を入れるとDynamixel通信がC++版DynamixelSDK経由になり、Fast Sync Readが使えます（未インストールでもそのまま動作）
 
 ## 📋 基本的な使い方
 
@@ -125,6 +126,36 @@ finally:
     robot.disconnect()
 ```
 
+## ⚡ 制御ループの高速化
+
+Dynamixelの制御ループを速くする設定は [docs/performance/dynamixel.md](docs/performance/dynamixel.md) にまとめています。要点だけ:
+
+```bash
+# 1. C++ transport（任意）: Fast Sync Read + GIL解放
+uv pip install ./native/robopy_dxl
+
+# 2. USB latency timerの恒久化（Linux, 既定16ms → 1ms）
+echo 'ACTION=="add", SUBSYSTEM=="usb-serial", DRIVER=="ftdi_sio", ATTR{latency_timer}="1"' \
+  | sudo tee /etc/udev/rules.d/99-dynamixel-latency.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+```python
+config = RakudaConfig(
+    leader_port="/dev/ttyUSB0",
+    follower_port="/dev/ttyUSB1",
+    motor_backend="auto",     # robopy_dxl があれば自動で使う
+    usb_latency_timer_ms=1,   # open時にlatency timerを下げる（既定）
+    return_delay_time=0,      # Return Delay Time（既定250 = 500µs/軸）を0に
+)
+```
+
+実機なしで測れるベンチマークもあります:
+
+```bash
+uv run python scripts/bench_dynamixel.py --motors 17 --return-delay-us 500
+```
+
 ## 📊 記録データ構造
 
 記録されるデータは[`RakudaObs`](src/robopy/config/robot_config/rakuda_config.py)型で以下の構造を持ちます：
@@ -162,9 +193,12 @@ robopy/
 │   │   ├── visual/      # カメラ
 │   │   └── tactile/     # タクタイルセンサー
 │   ├── config/          # 設定クラス
+│   ├── motor/           # Dynamixel / Feetech バスと transport
 │   └── utils/           # ユーティリティ
 │       ├── exp_interface/  # 実験インターフェース
 │       └── worker/         # データ保存・処理
+├── native/robopy_dxl/   # 任意のC++ transport (pybind11 + DynamixelSDK C++)
+├── scripts/             # ベンチマークなどの補助スクリプト
 ├── docs/                # ドキュメント
 ├── examples/            # サンプルコード
 └── tests/              # テストコード

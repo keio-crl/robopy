@@ -6,6 +6,7 @@ from numpy.typing import NDArray
 
 from robopy.config.sensor_config.params_config import AudioParams, CameraParams, TactileParams
 from robopy.config.sensor_config.visual_config.camera_config import RealsenseCameraConfig
+from robopy.motor.dynamixel_transport import Backend
 
 
 @dataclass
@@ -21,6 +22,20 @@ class RakudaConfig:
     # - follower_torque_enabled: default is all joints
     leader_torque_enabled: List[str] | None = None
     follower_torque_enabled: List[str] | None = None
+
+    # --- Dynamixel transport tuning -------------------------------------
+    # Which Dynamixel transport to use: "auto" picks the optional C++ backend
+    # (`robopy_dxl`, built from native/robopy_dxl) when it is installed and
+    # falls back to the pure-Python dynamixel_sdk otherwise.
+    motor_backend: Backend = "auto"
+    # USB latency timer in ms, applied to both ports before opening them. The
+    # Linux default of 16ms dominates every round trip. None leaves it alone.
+    usb_latency_timer_ms: int | None = 1
+    # Return Delay Time (raw units of 2us) written to every motor at connect.
+    # The factory default of 250 costs 500us *per motor* on a plain sync read.
+    # Left as None by default because this field lives in EEPROM; set it to 0
+    # once and it stays. Motors already at the target value are not rewritten.
+    return_delay_time: int | None = None
 
 
 @dataclass

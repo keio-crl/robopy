@@ -42,6 +42,7 @@ handler = RakudaExpHandler(
 - **⚡ High-performance Data Collection**: 30Hz high-speed data capture with parallel processing
 - **🎬 Visualization Features**: Data animation generation functionality
 - **🛠 Simple Dependencies**: No need for C/C++ based libraries like ROS
+- **⚙️ Optional C++ transport**: install `robopy_dxl` to route Dynamixel traffic through the C++ DynamixelSDK and enable Fast Sync Read (everything still works without it)
 
 ## 📋 Basic Usage
 

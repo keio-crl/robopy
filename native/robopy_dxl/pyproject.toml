@@ -1,0 +1,21 @@
+[project]
+name = "robopy-dxl"
+version = "0.1.0"
+description = "C++ (DynamixelSDK) transport for robopy's Dynamixel bus"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = ["numpy>=1.26.0"]
+
+[project.urls]
+Homepage = "https://github.com/keio-crl/robopy"
+
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=2.12"]
+build-backend = "scikit_build_core.build"
+
+[tool.scikit-build]
+minimum-version = "0.10"
+build-dir = "build/{wheel_tag}"
+wheel.packages = ["python/robopy_dxl"]
+cmake.version = ">=3.20"

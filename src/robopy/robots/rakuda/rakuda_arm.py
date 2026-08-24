@@ -16,7 +16,11 @@ class RakudaArm(Arm):
         self.config = cfg
         self._port = port
         self._is_connected = False
-        self._motors = DynamixelBus(port=self._port, motors=self._create_motors())
+        self._motors = DynamixelBus(
+            port=self._port,
+            motors=self._create_motors(),
+            backend=cfg.motor_backend,
+        )
 
     @abstractmethod
     def _create_motors(self) -> dict[str, DynamixelMotor]:
@@ -58,7 +62,11 @@ class RakudaArm(Arm):
             logger.info(f"Already connected to the {self.__class__.__name__}.")
             return
         try:
-            self._motors.open()
+            self._motors.open(latency_timer_ms=self.config.usb_latency_timer_ms)
+            if self.config.return_delay_time is not None:
+                # RETURN_DELAY_TIME is in EEPROM, so torque has to be off.
+                self._motors.torque_disabled()
+                self._motors.set_return_delay_time(self.config.return_delay_time)
             self._init_control_mode()
             self._is_connected = True
             print(f"Connected to the {self.__class__.__name__}.")

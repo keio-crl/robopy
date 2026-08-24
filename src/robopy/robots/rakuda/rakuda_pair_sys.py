@@ -12,7 +12,7 @@ from robopy.config.robot_config.rakuda_config import (
     RakudaArmObs,
     RakudaConfig,
 )
-from robopy.motor.dynamixel_bus import DynamixelBus
+from robopy.motor.dynamixel_bus import DynamixelBus, sync_read_parallel
 from robopy.motor.dynamixel_control_table import XControlTable
 
 from ..common.robot import Robot
@@ -85,14 +85,18 @@ class RakudaPairSys(Robot):
         if not self.is_connected:
             raise ConnectionError("RakudaPairSys is not connected. Call connect() first.")
 
-        leader_motor_names = self._leader_motor_names
-        follower_motor_names = self._follower_motor_names
-        leader_obs = self._leader.motors.sync_read(
-            XControlTable.PRESENT_POSITION, leader_motor_names
-        )
-
-        follower_obs = self._follower.motors.sync_read(
-            XControlTable.PRESENT_POSITION, follower_motor_names
+        # The two arms are two independent USB devices, so read them at the
+        # same time instead of one after the other. With the native transport
+        # this roughly halves the cost of an observation.
+        leader_obs, follower_obs = sync_read_parallel(
+            [
+                (self._leader.motors, XControlTable.PRESENT_POSITION, self._leader_motor_names),
+                (
+                    self._follower.motors,
+                    XControlTable.PRESENT_POSITION,
+                    self._follower_motor_names,
+                ),
+            ]
         )
 
         leader_obs_array = np.array(list(leader_obs.values()), dtype=np.float32)
@@ -239,9 +243,8 @@ class RakudaPairSys(Robot):
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
 
-        leader_motor_names = list(self._leader.motors.motors.keys())
         leader_positions = self._leader.motors.sync_read(
-            XControlTable.PRESENT_POSITION, leader_motor_names
+            XControlTable.PRESENT_POSITION, self._leader_motor_names
         )
         return leader_positions
 

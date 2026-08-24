@@ -49,6 +49,7 @@ class XControlTable(Enum):
     MODEL_NUMBER = ControlItem(0, 2, Dtype.UINT16, "R")
     ID = ControlItem(7, 1, Dtype.UINT8, "R/W")
     BAUD_RATE = ControlItem(8, 1, Dtype.UINT8, "R/W")
+    RETURN_DELAY_TIME = ControlItem(9, 1, Dtype.UINT8, "R/W")
     DRIVE_MODE = ControlItem(10, 1, Dtype.UINT8, "R/W")
     OPERATING_MODE = ControlItem(11, 1, Dtype.UINT8, "R/W")
     HOMING_OFFSET = ControlItem(20, 4, Dtype.INT32, "R/W")

@@ -1,0 +1,62 @@
+name: Dynamixel transports
+
+# Builds the optional C++ transport and runs the hardware-free Dynamixel tests
+# (they drive a protocol 2.0 simulator on a pty) against both backends.
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - "native/**"
+      - "src/robopy/motor/**"
+      - "src/robopy/robots/rakuda/**"
+      - "tests/support/**"
+      - "tests/test_dynamixel_bus.py"
+      - "tests/test_rakuda_dynamixel_integration.py"
+      - ".github/workflows/dynamixel-tests.yml"
+  pull_request:
+    paths:
+      - "native/**"
+      - "src/robopy/motor/**"
+      - "src/robopy/robots/rakuda/**"
+      - "tests/support/**"
+      - "tests/test_dynamixel_bus.py"
+      - "tests/test_rakuda_dynamixel_integration.py"
+      - ".github/workflows/dynamixel-tests.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run the tests on the pure-Python transport
+        run: uv run pytest tests/test_dynamixel_bus.py tests/test_rakuda_dynamixel_integration.py -q
+
+      - name: Build the C++ transport
+        run: uv pip install ./native/robopy_dxl
+
+      - name: Run the tests on both transports
+        run: uv run pytest tests/test_dynamixel_bus.py tests/test_rakuda_dynamixel_integration.py -q
+
+      - name: Smoke-test the benchmark
+        run: uv run python scripts/bench_dynamixel.py --motors 8 --iterations 50
