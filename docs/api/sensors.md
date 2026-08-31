@@ -31,6 +31,16 @@
         - capture
         - is_connected
 
+### フレーム後処理
+
+::: robopy.sensors.visual.frame_ops
+    options:
+      show_root_heading: true
+      show_source: false
+      members:
+        - to_chw_color
+        - to_chw_depth
+
 ### カメラ設定
 
 ::: robopy.config.sensor_config.visual_config.RealsenseCameraConfig

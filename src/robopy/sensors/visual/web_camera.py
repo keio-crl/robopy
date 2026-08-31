@@ -3,23 +3,26 @@ import platform
 import time
 from datetime import datetime, timezone
 from threading import Event
-from typing import Literal
 
 import cv2
-import numpy as np
 from cv2 import VideoCapture
-from numpy.typing import NDArray
 from rich import print as rprint
 
 from robopy.config.sensor_config.visual_config.camera_config import CameraLog, WebCameraConfig
 from robopy.config.types import OSType
 
 from .camera import Camera
+from .frame_ops import ColorFrame, ColorMode, to_chw_color
 from .utils import find_camera_indices
 
 
-class WebCamera(Camera[NDArray[np.float32]]):
-    """Implementation class for cameras using OpenCV"""
+class WebCamera(Camera[ColorFrame]):
+    """Implementation class for cameras using OpenCV.
+
+    Frames are returned as **uint8** in CHW layout; see
+    :mod:`robopy.sensors.visual.frame_ops` for why they are not widened to
+    float32.
+    """
 
     def __init__(
         self,
@@ -92,12 +95,12 @@ class WebCamera(Camera[NDArray[np.float32]]):
         self._check_set_actual_settings()
         self._is_connected = True
 
-    def read(self, specific_color: Literal["rgb", "bgr"] | None = None) -> NDArray[np.float32]:
+    def read(self, specific_color: ColorMode | None = None) -> ColorFrame:
         """read frames from the camera and return them as a NumPy array.
 
         Args:
-            specific_color (Literal[&quot;rgb&quot;, &quot;bgr&quot;] | None, optional):
-                If &quot;rgb&quot;, convert BGR to RGB. If &quot;bgr&quot;, keep as BGR.
+            specific_color (ColorMode | None, optional):
+                If "rgb", convert BGR to RGB. If "bgr", keep as BGR.
                 If None, use the color_mode from the config. Defaults to None.
 
         Raises:
@@ -106,7 +109,7 @@ class WebCamera(Camera[NDArray[np.float32]]):
             OSError: Camera resolution does not match the expected resolution.
 
         Returns:
-            NDArray: The captured frame as a NumPy array in CHW format.
+            ColorFrame: The captured frame as a uint8 array in CHW format.
         """
         if self.cap is None or not self.cap.isOpened():
             err = "Camera is not connected."
@@ -122,32 +125,18 @@ class WebCamera(Camera[NDArray[np.float32]]):
             err = "Failed to read frame from camera."
             raise OSError(err)
 
-        if specific_color == "rgb":
-            color_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2RGB)
+        self._validate_resolution(color_img.shape[0], color_img.shape[1])
 
-        H, W, _ = color_img.shape
-        if self.config.width is not None and self.config.height is not None:
-            if H != self.config.height or W != self.config.width:
-                err = (
-                    f"Camera resolution is {W}x{H}, but expected "
-                    f"{self.config.width}x{self.config.height}."
-                )
-                raise OSError(err)
         end_time = time.perf_counter()
         self.log["delta_time"] = end_time - start_time
 
-        # last check: convert HWC to CHW
-        if color_img.shape[-1] == 3 or color_img.shape[-1] == 1:
-            color_img = color_img.transpose(2, 0, 1)  # HWC to CHW
-        img: NDArray[np.float32] = color_img.astype("float32")
+        # OpenCV delivers BGR; the frame stays uint8 (see frame_ops).
+        return to_chw_color(color_img, source_color="bgr", target_color=specific_color)
 
-        return img
-
-    def async_read(self, timeout_ms: float = 100.0) -> NDArray[np.float32]:
+    def async_read(self, timeout_ms: float = 100.0) -> ColorFrame:
         """Asynchronously read the latest frame from the camera.
 
         This method returns the most recent frame captured by the camera.
-        If no new frame is available within the specified timeout, it returns None.
 
         Args:
             timeout_ms (float, optional): Maximum time to wait for a new frame in milliseconds.
@@ -155,10 +144,10 @@ class WebCamera(Camera[NDArray[np.float32]]):
 
         Raises:
             OSError: Camera is not connected.
+            TimeoutError: No new frame arrived within the timeout.
 
         Returns:
-            NDArray[np.float32] | None: The latest frame as a NumPy array in CHW format,
-                or None if no new frame is available within the timeout.
+            ColorFrame: The latest frame as a uint8 array in CHW format.
         """
         if self.cap is None or not self.cap.isOpened():
             err = "Camera is not connected."
@@ -168,22 +157,11 @@ class WebCamera(Camera[NDArray[np.float32]]):
         while True:
             ret, color_img = self.cap.read()
             if ret:
-                if self.config.color_mode == "rgb":
-                    color_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2RGB)
+                self._validate_resolution(color_img.shape[0], color_img.shape[1])
 
-                H, W, _ = color_img.shape
-                if self.config.width is not None and self.config.height is not None:
-                    if H != self.config.height or W != self.config.width:
-                        err = (
-                            f"Camera resolution is {W}x{H}, but expected "
-                            f"{self.config.width}x{self.config.height}."
-                        )
-                        raise OSError(err)
-
-                # Convert HWC to CHW
-                if color_img.shape[-1] == 3 or color_img.shape[-1] == 1:
-                    color_img = color_img.transpose(2, 0, 1)  # HWC to CHW
-                img: NDArray[np.float32] = color_img.astype("float32")
+                img = to_chw_color(
+                    color_img, source_color="bgr", target_color=self.config.color_mode
+                )
 
                 self.log["timestamp_utc"] = datetime.now(timezone.utc).timestamp()
                 end_time = time.perf_counter()
@@ -194,6 +172,17 @@ class WebCamera(Camera[NDArray[np.float32]]):
             elapsed_time_ms = (time.perf_counter() - start_time) * 1000.0
             if elapsed_time_ms >= timeout_ms:
                 raise TimeoutError("No new frame available within the specified timeout.")
+
+    def _validate_resolution(self, height: int, width: int) -> None:
+        """Raise when the frame does not match the configured resolution."""
+        if self.config.width is None or self.config.height is None:
+            return
+        if height != self.config.height or width != self.config.width:
+            err = (
+                f"Camera resolution is {width}x{height}, but expected "
+                f"{self.config.width}x{self.config.height}."
+            )
+            raise OSError(err)
 
     def _check_set_actual_settings(self) -> None:
         """Apply requested camera settings and verify actual values.

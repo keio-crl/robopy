@@ -168,7 +168,7 @@ uv run python scripts/bench_dynamixel.py --motors 17 --return-delay-us 500
     },
     "sensors": {
         "cameras": {
-            "main": np.ndarray,  # (frames, C, H, W) - RGB画像
+            "main": np.ndarray,  # (frames, C, H, W) - RGB画像 (uint8, 0-255)
         },
         "tactile": {
             "left": np.ndarray,  # (frames, C, H, W) - 触覚データ
@@ -180,6 +180,11 @@ uv run python scripts/bench_dynamixel.py --motors 17 --return-delay-us 500
     }
 }
 ```
+
+> **dtype について**: カメラ画像は **uint8 (0-255)**、深度は **uint16**（mm）、
+> 触覚・音声・関節角は float32 です。学習側で 0-1 正規化が必要な場合は、読み込み後に
+> `frames.astype(np.float32) / 255.0` を行ってください。
+> 詳細は [docs/performance/dynamixel.md](docs/performance/dynamixel.md) を参照。
 
 ## 📁 プロジェクト構成
 

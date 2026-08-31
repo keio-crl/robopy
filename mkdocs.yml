@@ -140,7 +140,7 @@ nav:
     - Experiments handler: experiments/handlers.md
     - Data collection: experiments/data-collection.md
   - Performance:
-    - Dynamixel: performance/dynamixel.md
+    - Dynamixel & Cameras: performance/dynamixel.md
   - Utils:
     - Animation: utils/animation.md
     - Data handling: utils/data-handling.md

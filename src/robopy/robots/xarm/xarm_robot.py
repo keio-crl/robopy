@@ -13,7 +13,7 @@ import time
 from collections import defaultdict
 from concurrent.futures import Future, ThreadPoolExecutor
 from logging import getLogger
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import numpy as np
 from numpy.typing import NDArray
@@ -97,7 +97,7 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
         leader_obs: List[NDArray[np.float32]] = []
         follower_obs: List[NDArray[np.float32]] = []
         ee_obs: List[NDArray[np.float32]] = []
-        camera_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
+        camera_obs: Dict[str, List[NDArray[np.uint8] | None]] = defaultdict(list)
         tactile_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
         audio_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
 
@@ -112,12 +112,12 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
                 ee_obs.append(arm_obs.ee_pos_quat)
 
                 sensor_data = self.sensors_observation()
-                for name, frame in sensor_data.cameras.items():
-                    camera_obs[name].append(frame)
-                for name, frame in sensor_data.tactile.items():
-                    tactile_obs[name].append(frame)
-                for name, frame in sensor_data.audio.items():
-                    audio_obs[name].append(frame)
+                for name, cam_frame in sensor_data.cameras.items():
+                    camera_obs[name].append(cam_frame)
+                for name, tac_frame in sensor_data.tactile.items():
+                    tactile_obs[name].append(tac_frame)
+                for name, audio_frame in sensor_data.audio.items():
+                    audio_obs[name].append(audio_frame)
 
                 elapsed = time.time() - frame_start
                 sleep_time = interval - elapsed
@@ -167,7 +167,7 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
         leader_obs: List[NDArray[np.float32]] = []
         follower_obs: List[NDArray[np.float32]] = []
         ee_obs: List[NDArray[np.float32]] = []
-        camera_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
+        camera_obs: Dict[str, List[NDArray[np.uint8] | None]] = defaultdict(list)
         tactile_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
         audio_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
 
@@ -195,12 +195,12 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
                 leader_obs.append(arm_obs.leader)
                 follower_obs.append(arm_obs.follower)
                 ee_obs.append(arm_obs.ee_pos_quat)
-                for name, frame in camera_data.items():
-                    camera_obs[name].append(frame)
-                for name, frame in tactile_data.items():
-                    tactile_obs[name].append(frame)
-                for name, frame in audio_data.items():
-                    audio_obs[name].append(frame)
+                for name, cam_frame in camera_data.items():
+                    camera_obs[name].append(cam_frame)
+                for name, tac_frame in tactile_data.items():
+                    tactile_obs[name].append(tac_frame)
+                for name, audio_frame in audio_data.items():
+                    audio_obs[name].append(audio_frame)
 
                 frame_count += 1
                 processing_time = time.perf_counter() - frame_start
@@ -280,7 +280,7 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
         leader_log: List[NDArray[np.float32]] = []
         follower_log: List[NDArray[np.float32]] = []
         ee_log: List[NDArray[np.float32]] = []
-        camera_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
+        camera_obs: Dict[str, List[NDArray[np.uint8] | None]] = defaultdict(list)
         tactile_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
         audio_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
 
@@ -307,12 +307,12 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
                 leader_log.append(leader_action[frame_count])
                 follower_log.append(cur.follower)
                 ee_log.append(cur.ee_pos_quat)
-                for name, frame in camera_data.items():
-                    camera_obs[name].append(frame)
-                for name, frame in tactile_data.items():
-                    tactile_obs[name].append(frame)
-                for name, frame in audio_data.items():
-                    audio_obs[name].append(frame)
+                for name, cam_frame in camera_data.items():
+                    camera_obs[name].append(cam_frame)
+                for name, tac_frame in tactile_data.items():
+                    tactile_obs[name].append(tac_frame)
+                for name, audio_frame in audio_data.items():
+                    audio_obs[name].append(audio_frame)
 
                 frame_count += 1
                 processing_time = time.perf_counter() - frame_start
@@ -347,7 +347,7 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
     def sensors_observation(self) -> XArmSensorObs:
         if not self.is_connected:
             raise ConnectionError("XArmRobot is not connected. Call connect() first.")
-        camera_data: Dict[str, NDArray[np.float32] | None] = {}
+        camera_data: Dict[str, NDArray[np.uint8] | None] = {}
         if self._sensors.cameras:
             for cam in self._sensors.cameras:
                 if cam.is_connected:
@@ -521,7 +521,7 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
     def _capture_sensors_parallel(
         self, max_processing_time_ms: float
     ) -> tuple[
-        Dict[str, NDArray[np.float32] | None],
+        Dict[str, NDArray[np.uint8] | None],
         Dict[str, NDArray[np.float32] | None],
         Dict[str, NDArray[np.float32] | None],
     ]:
@@ -543,7 +543,7 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
                     if audio.is_connected:
                         audio_futures[audio.name] = executor.submit(audio.async_read, timeout_ms=5)
 
-            camera_data: Dict[str, NDArray[np.float32] | None] = {}
+            camera_data: Dict[str, NDArray[np.uint8] | None] = {}
             for name, fut in camera_futures.items():
                 try:
                     camera_data[name] = fut.result(timeout=timeout)
@@ -571,7 +571,7 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
         leader_list: List[NDArray[np.float32]],
         follower_list: List[NDArray[np.float32]],
         ee_list: List[NDArray[np.float32]],
-        camera_obs: Dict[str, List[NDArray[np.float32] | None]],
+        camera_obs: Dict[str, List[NDArray[np.uint8] | None]],
         tactile_obs: Dict[str, List[NDArray[np.float32] | None]],
         audio_obs: Dict[str, List[NDArray[np.float32] | None]],
     ) -> XArmObs:
@@ -588,7 +588,7 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
         ee_np = np.asarray(ee_list, dtype=np.float32) if ee_list else np.zeros((0, 7), np.float32)
         arms = XArmArmObs(leader=leader_np, follower=follower_np, ee_pos_quat=ee_np)
 
-        def to_array(d: Dict[str, List[NDArray[np.float32] | None]]) -> Dict[str, NDArray | None]:
+        def to_array(d: Dict[str, List[NDArray[Any] | None]]) -> Dict[str, NDArray | None]:
             out: Dict[str, NDArray | None] = {}
             for name, frames in d.items():
                 if frames and all(f is not None for f in frames):

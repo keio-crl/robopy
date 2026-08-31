@@ -16,8 +16,9 @@ def example_hierarchical_save() -> None:
     # 階層的なデータ構造を作成
     hierarchical_data = {
         "camera": {
-            "main": np.random.rand(100, 3, 480, 640).astype(np.float32),
-            "side": np.random.rand(100, 3, 480, 640).astype(np.float32),
+            # Camera frames are uint8 (0-255), as they come off the sensor.
+            "main": np.random.randint(0, 256, (100, 3, 480, 640), dtype=np.uint8),
+            "side": np.random.randint(0, 256, (100, 3, 480, 640), dtype=np.uint8),
         },
         "tactile": {
             "left": np.random.rand(100, 3, 224, 224).astype(np.float32),

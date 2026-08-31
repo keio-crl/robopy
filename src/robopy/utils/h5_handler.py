@@ -11,7 +11,12 @@ logger.setLevel(logging.INFO)
 
 
 class H5Handler:
-    """Handler for saving and loading data using HDF5 format with h5py."""
+    """Handler for saving and loading data using HDF5 format with h5py.
+
+    Array dtypes round-trip unchanged: camera frames stay ``uint8`` and depth
+    stays ``uint16``, which keeps a recording a quarter of the size it would be
+    if everything were widened to float32.
+    """
 
     @staticmethod
     def save_hierarchical(data_dict: Dict[str, Any], file_path: str, compress: bool = True) -> None:
@@ -68,8 +73,14 @@ class H5Handler:
                 subgroup = group.create_group(key)
                 H5Handler._save_dict_to_group(subgroup, value, compression, compression_opts)
             elif isinstance(value, (np.ndarray, list)):
-                # Save numpy arrays or lists as datasets
-                arr = np.asarray(value, dtype=np.float32)
+                # Save numpy arrays or lists as datasets, preserving the dtype:
+                # camera frames are uint8 and depth is uint16, and widening them
+                # here would quadruple every recording for no extra information.
+                # Plain lists have no dtype of their own, so they keep the
+                # historical float32 default.
+                arr = (
+                    value if isinstance(value, np.ndarray) else np.asarray(value, dtype=np.float32)
+                )
                 if not arr.flags.c_contiguous:
                     arr = np.ascontiguousarray(arr)
                 group.create_dataset(
@@ -121,20 +132,22 @@ class H5Handler:
                 data_dict[key] = {}
                 H5Handler._load_group_to_dict(item, data_dict[key])
             elif isinstance(item, h5py.Dataset):
-                # Load datasets as numpy arrays
-                data_dict[key] = np.array(item, dtype=np.float32)
+                # Load datasets as numpy arrays, keeping the stored dtype.
+                data_dict[key] = np.array(item)
 
     @staticmethod
     def save_single_array(
-        data: NDArray[np.float32],
+        data: NDArray[Any],
         file_path: str,
         dataset_name: str = "data",
         compress: bool = True,
     ) -> None:
         """Save a single numpy array to HDF5 file.
 
+        The array's dtype is preserved.
+
         Args:
-            data (NDArray[np.float32]): Array to save.
+            data (NDArray[Any]): Array to save.
             file_path (str): Path to save the HDF5 file.
             dataset_name (str): Name of the dataset. Defaults to 'data'.
             compress (bool): Whether to use compression. Defaults to True.
@@ -158,18 +171,20 @@ class H5Handler:
     def load_single_array(
         file_path: str,
         dataset_name: str = "data",
-    ) -> NDArray[np.float32]:
+    ) -> NDArray[Any]:
         """Load a single numpy array from HDF5 file.
+
+        The stored dtype is preserved.
 
         Args:
             file_path (str): Path to the HDF5 file.
             dataset_name (str): Name of the dataset. Defaults to 'data'.
 
         Returns:
-            NDArray[np.float32]: Loaded array.
+            NDArray[Any]: Loaded array, in the dtype it was stored with.
         """
         with h5py.File(file_path, "r") as f:
-            data = np.array(f[dataset_name], dtype=np.float32)
+            data = np.array(f[dataset_name])
             logger.info(f"Array loaded from {file_path}")
 
         return data

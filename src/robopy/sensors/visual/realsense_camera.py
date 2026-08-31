@@ -5,15 +5,15 @@ import logging
 import time
 from datetime import datetime, timezone
 from threading import Event, Lock, Thread
-from typing import Any, Literal
+from typing import Any
 
-import cv2
 import numpy as np
 from numpy.typing import NDArray
 
 from robopy.config.sensor_config.visual_config.camera_config import CameraLog, RealsenseCameraConfig
 
 from .camera import Camera
+from .frame_ops import ColorFrame, ColorMode, DepthFrame, to_chw_color, to_chw_depth
 
 try:
     import pyrealsense2 as rs  # type: ignore
@@ -23,12 +23,16 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class RealsenseCamera(Camera[NDArray[np.float32]]):
+class RealsenseCamera(Camera[ColorFrame]):
     """Implementation class for Intel RealSense cameras using pyrealsense2
 
     This implementation uses threading to avoid blocking the main thread.
     The camera runs a background thread that continuously captures frames,
     allowing async_read() to return the latest frame without blocking.
+
+    Colour frames are returned as **uint8** in CHW layout and depth frames as
+    **uint16** millimetres; see :mod:`robopy.sensors.visual.frame_ops` for why
+    they are not widened to float32.
 
     Based on LeRobot's implementation adapted for robopy architecture.
     """
@@ -55,8 +59,8 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
         self.stop_event: Event | None = None
         self.frame_lock: Lock = Lock()
         self.depth_lock: Lock = Lock()
-        self.latest_color_frame: NDArray[np.float32] | None = None
-        self.latest_depth_frame: NDArray[np.float32] | None = None
+        self.latest_color_frame: ColorFrame | None = None
+        self.latest_depth_frame: NDArray[np.uint16] | None = None
         self.new_frame_event: Event = Event()
         self.new_depth_event: Event = Event()
         self.align: rs.align | None = None  # type: ignore
@@ -170,7 +174,7 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
         self._is_connected = False
         logger.info(f"{self.name} disconnected.")
 
-    def read(self, specific_color: Literal["rgb", "bgr"] | None = None) -> NDArray[np.float32]:
+    def read(self, specific_color: ColorMode | None = None) -> ColorFrame:
         """Read frames from the camera synchronously (blocking).
 
         This method provides synchronous frame reading similar to LeRobot's read().
@@ -180,7 +184,7 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
             specific_color: Color format override. If None, uses config.color_mode.
 
         Returns:
-            NDArray: Captured frame in CHW format.
+            ColorFrame: Captured frame as uint8 in CHW format.
         """
         if not self._is_connected:
             raise OSError("Camera is not connected.")
@@ -196,16 +200,9 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
         end_time = time.perf_counter()
         self.log["delta_time"] = end_time - start_time
 
-        if len(color_image.shape) == 3 and color_image.shape[0] != 3:
-            logger.warning(
-                f"Unexpected frame shape {color_image.shape} from {self.name}, "
-                "expected 3 channels in CHW format."
-            )
-            color_image = color_image.transpose(2, 1, 0)  # Convert HWC to CHW
-
         return color_image
 
-    def async_read(self, timeout_ms: float = 16) -> NDArray[np.float32]:
+    def async_read(self, timeout_ms: float = 16) -> ColorFrame:
         """Read the latest available frame asynchronously (non-blocking).
 
         This method retrieves the most recent frame captured by the background
@@ -215,7 +212,7 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
             timeout_ms: Maximum time to wait for a new frame.
 
         Returns:
-            NDArray: Latest captured frame in CHW format.
+            ColorFrame: Latest captured frame as uint8 in CHW format.
         """
         if not self._is_connected:
             raise OSError("Camera is not connected.")
@@ -239,23 +236,16 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
         if frame is None:
             raise RuntimeError(f"Internal error: Event set but no frame available for {self.name}.")
 
-        if len(frame.shape) == 3 and frame.shape[0] != 3:
-            logger.warning(
-                f"Unexpected frame shape {frame.shape} from {self.name}, "
-                "expected 3 channels in CHW format."
-            )
-            frame = frame.transpose(2, 1, 0)  # Convert HWC to CHW
-
         return frame
 
-    def read_depth(self, timeout_ms: int = 1000) -> NDArray[np.float32]:
+    def read_depth(self, timeout_ms: int = 1000) -> DepthFrame:
         """Read depth frame synchronously.
 
         Args:
             timeout_ms: Timeout for frame capture.
 
         Returns:
-            NDArray: Depth map in millimeters.
+            DepthFrame: Depth map in millimeters as uint16, shape (1, H, W).
         """
         if not self._is_connected:
             raise OSError("Camera is not connected.")
@@ -280,27 +270,21 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
         if not depth_frame:
             raise OSError("Failed to get depth frame from frameset.")
 
-        # Convert to numpy array
+        # Convert to numpy array (z16 is already uint16 millimetres)
         depth_image = np.asanyarray(depth_frame.get_data())
-
-        # Ensure depth_image is not None before slicing
-        if depth_image is not None:
-            depth_image = depth_image[..., np.newaxis]  # Add channel dimension if needed
-        else:
+        if depth_image is None:
             raise OSError("Depth image is None after conversion.")
-        depth_image = depth_image.transpose(2, 0, 1)  # Convert HWC to CHW
-        depth_image = np.clip(depth_image, 0, self.config.max_depth)
 
-        return depth_image  # type: ignore[no-any-return]
+        return to_chw_depth(depth_image, self.config.max_depth)
 
-    def async_read_depth(self, timeout_ms: float = 200) -> NDArray[np.float32]:
+    def async_read_depth(self, timeout_ms: float = 200) -> DepthFrame:
         """Read the latest depth frame asynchronously.
 
         Args:
             timeout_ms: Maximum time to wait for a new frame.
 
         Returns:
-            NDArray: Latest depth frame.
+            DepthFrame: Latest depth frame in millimeters as uint16, shape (1, H, W).
         """
         if not self._is_connected:
             raise OSError("Camera is not connected.")
@@ -322,11 +306,7 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
         if depth_frame is None:
             raise RuntimeError(f"No depth frame available for {self.name}.")
 
-        depth_frame = depth_frame[..., np.newaxis]  # Add channel dimension if needed
-        depth_frame = depth_frame.transpose(2, 0, 1)  # Convert HWC to CHW
-        depth_frame = np.clip(depth_frame, 0, self.config.max_depth)
-
-        return depth_frame
+        return to_chw_depth(depth_frame, self.config.max_depth)
 
     def record(self) -> None:
         """Start recording (placeholder for Camera interface)."""
@@ -381,8 +361,8 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
         return found_cameras_info
 
     def _read_frame_sync(
-        self, timeout_ms: int = 1000, color_mode: str | None = None
-    ) -> NDArray[np.float32]:
+        self, timeout_ms: int = 1000, color_mode: ColorMode | None = None
+    ) -> ColorFrame:
         """Read a single frame synchronously from the camera.
 
         Args:
@@ -390,7 +370,7 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
             color_mode: Color mode override.
 
         Returns:
-            NDArray: Processed frame in CHW format.
+            ColorFrame: Processed frame as uint8 in CHW format.
         """
         if color_mode is None:
             color_mode = self.config.color_mode
@@ -412,8 +392,8 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
         if not color_frame:
             raise OSError("Failed to get color frame from frameset.")
 
-        # Convert to numpy array
-        color_image = np.asanyarray(color_frame.get_data(), dtype=np.float32)
+        # Convert to numpy array. The stream is rgb8, so this stays uint8.
+        color_image = np.asanyarray(color_frame.get_data())
 
         # Process the image
         processed_image = self._postprocess_image(color_image, color_mode)
@@ -421,28 +401,22 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
         return processed_image
 
     def _postprocess_image(
-        self, image: NDArray, color_mode: str | None = None
-    ) -> NDArray[np.float32]:
+        self, image: NDArray[np.generic], color_mode: ColorMode | None = None
+    ) -> ColorFrame:
         """Process raw image data according to configuration.
 
         Args:
-            image: Raw image data from RealSense (RGB format).
+            image: Raw HWC image data from RealSense (RGB format).
             color_mode: Target color mode.
 
         Returns:
-            NDArray: Processed image in CHW format.
+            ColorFrame: uint8 image in CHW format.
         """
         if color_mode is None:
             color_mode = self.config.color_mode
 
-        processed_image = image
-
-        # Convert color format if needed (RealSense outputs RGB by default)
-        if color_mode == "bgr":
-            processed_image = cv2.cvtColor(processed_image, cv2.COLOR_RGB2BGR)
-
-        # Validate resolution
-        H, W, _ = processed_image.shape
+        # Validate resolution while the frame is still HWC.
+        H, W = image.shape[0], image.shape[1]
         if self.config.width and self.config.height:
             if H != self.config.height or W != self.config.width:
                 raise OSError(
@@ -450,13 +424,8 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
                     f"{self.config.width}x{self.config.height}."
                 )
 
-        # Convert HWC to CHW
-        if processed_image.shape[-1] == 3:
-            processed_image = processed_image.transpose(2, 0, 1)
-
-        processed_image = processed_image.astype("float32")
-
-        return processed_image
+        # RealSense delivers RGB; the frame stays uint8 (see frame_ops).
+        return to_chw_color(image, source_color="rgb", target_color=color_mode)
 
     def _find_camera_serial(self) -> None:
         """Find camera serial number by index."""

@@ -95,7 +95,7 @@ class So101Robot(ComposedRobot[So101PairSys, Sensors, So101Obs]):
 
         leader_obs: List[NDArray[np.float32]] = []
         follower_obs: List[NDArray[np.float32]] = []
-        camera_obs: DefaultDict[str, List[NDArray[np.float32] | NDArray[np.uint8] | None]] = (
+        camera_obs: DefaultDict[str, List[NDArray[np.uint8] | NDArray[np.uint16] | None]] = (
             defaultdict(list)
         )
 
@@ -132,7 +132,7 @@ class So101Robot(ComposedRobot[So101PairSys, Sensors, So101Obs]):
         follower_arr = np.asarray(follower_obs, dtype=np.float32)
         arms = So101ArmObs(leader=leader_arr, follower=follower_arr)
 
-        camera_obs_np: Dict[str, NDArray[np.uint8] | NDArray[np.float32] | None] = {}
+        camera_obs_np: Dict[str, NDArray[np.uint8] | NDArray[np.uint16] | None] = {}
         for cam_name, frames in camera_obs.items():
             if frames and all(frame is not None for frame in frames):
                 camera_obs_np[cam_name] = np.asarray(frames)
@@ -182,7 +182,7 @@ class So101Robot(ComposedRobot[So101PairSys, Sensors, So101Obs]):
 
         leader_obs: List[NDArray[np.float32]] = []
         follower_obs: List[NDArray[np.float32]] = []
-        camera_obs: DefaultDict[str, List[NDArray[np.float32] | NDArray[np.uint8] | None]] = (
+        camera_obs: DefaultDict[str, List[NDArray[np.uint8] | NDArray[np.uint16] | None]] = (
             defaultdict(list)
         )
 
@@ -268,7 +268,7 @@ class So101Robot(ComposedRobot[So101PairSys, Sensors, So101Obs]):
         follower_arr = np.asarray(follower_obs, dtype=np.float32)
         arms = So101ArmObs(leader=leader_arr, follower=follower_arr)
 
-        camera_obs_np: Dict[str, NDArray[np.uint8] | NDArray[np.float32] | None] = {}
+        camera_obs_np: Dict[str, NDArray[np.uint8] | NDArray[np.uint16] | None] = {}
         for cam_name, frames in camera_obs.items():
             if frames and all(frame is not None for frame in frames):
                 camera_obs_np[cam_name] = np.asarray(frames)
@@ -307,7 +307,7 @@ class So101Robot(ComposedRobot[So101PairSys, Sensors, So101Obs]):
 
     def sensors_observation(
         self, *, async_mode: bool = True, timeout_ms: float = 16.0
-    ) -> Dict[str, NDArray[np.float32] | NDArray[np.uint8] | None]:
+    ) -> Dict[str, NDArray[np.uint8] | NDArray[np.uint16] | None]:
         if not self.is_connected:
             raise ConnectionError("So101Robot is not connected. Call connect() first.")
 
@@ -645,8 +645,8 @@ class So101Robot(ComposedRobot[So101PairSys, Sensors, So101Obs]):
 
     def _capture_camera_data(
         self, *, async_mode: bool, timeout_ms: float
-    ) -> Dict[str, NDArray[np.float32] | NDArray[np.uint8] | None]:
-        camera_data: Dict[str, NDArray[np.float32] | NDArray[np.uint8] | None] = {}
+    ) -> Dict[str, NDArray[np.uint8] | NDArray[np.uint16] | None]:
+        camera_data: Dict[str, NDArray[np.uint8] | NDArray[np.uint16] | None] = {}
 
         for cam in self._cameras:
             color_key = f"{cam.name}.rgb"

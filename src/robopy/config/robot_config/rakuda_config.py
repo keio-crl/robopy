@@ -60,7 +60,7 @@ class RakudaArmObs:
 
 @dataclass
 class RakudaSensorObs:
-    cameras: Dict[str, NDArray[np.float32] | None]
+    cameras: Dict[str, NDArray[np.uint8] | None]
     tactile: Dict[str, NDArray[np.float32] | None]
     audio: Dict[str, NDArray[np.float32] | None]
 

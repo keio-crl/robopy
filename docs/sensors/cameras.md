@@ -73,6 +73,23 @@ hd_config = WebCameraConfig(
 )
 ```
 
+## :material-image-outline: フレームの形式
+
+`read()` / `async_read()` はいずれも **uint8 (0-255)** の CHW 配列
+（`(C, H, W)`）を返します。センサ出力が 8 bit なので、そのまま保持します。
+深度（`read_depth()` / `async_read_depth()`）は uint16 のミリメートル値で
+`(1, H, W)` です。
+
+学習側で 0-1 正規化が必要な場合は、利用側で明示的に行ってください。
+
+```python
+frame = camera.read()                  # uint8, (3, H, W)
+normalized = frame.astype(np.float32) / 255.0
+```
+
+float32 に広げない理由と実測値は
+[Performance / Dynamixel & Cameras](../performance/dynamixel.md) を参照してください。
+
 ## :material-cog: 基本的な使用方法
 
 ### カメラの作成と接続
@@ -98,7 +115,7 @@ camera.connect()
 try:
     # 画像取得
     image = camera.capture()
-    print(f"画像サイズ: {image.shape}")
+    print(f"画像サイズ: {image.shape}, dtype: {image.dtype}")  # (3, 480, 640), uint8
 
     # 接続状態確認
     if camera.is_connected:
@@ -129,7 +146,7 @@ camera.connect()
 try:
     # 画像取得
     image = camera.capture()
-    print(f"画像サイズ: {image.shape}")
+    print(f"画像サイズ: {image.shape}, dtype: {image.dtype}")  # (3, 480, 640), uint8
 
 finally:
     camera.disconnect()
@@ -340,3 +357,4 @@ ls -la /dev/video*
 - [**WebCamera**](../api/sensors.md#robopy.sensors.visual.web_camera.WebCamera) - Webカメラクラス
 - [**RealsenseCameraConfig**](../api/sensors.md#robopy.config.sensor_config.visual_config.RealsenseCameraConfig) - RealSense設定
 - [**WebCameraConfig**](../api/sensors.md#robopy.config.sensor_config.visual_config.WebCameraConfig) - Webカメラ設定
+- [**frame_ops**](../api/sensors.md#robopy.sensors.visual.frame_ops) - フレーム後処理（CHW変換・dtype）

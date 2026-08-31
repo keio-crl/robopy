@@ -1,7 +1,8 @@
-name: Dynamixel transports
+name: Hardware-free tests
 
-# Builds the optional C++ transport and runs the hardware-free Dynamixel tests
-# (they drive a protocol 2.0 simulator on a pty) against both backends.
+# Builds the optional C++ transport and runs the tests that need no hardware:
+# the Dynamixel transports (driven against a protocol 2.0 simulator on a pty,
+# with and without the native backend) and the camera frame dtype contract.
 
 on:
   push:
@@ -12,19 +13,27 @@ on:
       - "native/**"
       - "src/robopy/motor/**"
       - "src/robopy/robots/rakuda/**"
+      - "src/robopy/sensors/visual/**"
+      - "src/robopy/utils/h5_handler.py"
+      - "src/robopy/utils/worker/**"
       - "tests/support/**"
       - "tests/test_dynamixel_bus.py"
       - "tests/test_rakuda_dynamixel_integration.py"
-      - ".github/workflows/dynamixel-tests.yml"
+      - "tests/test_camera_frames.py"
+      - ".github/workflows/hardware-free-tests.yml"
   pull_request:
     paths:
       - "native/**"
       - "src/robopy/motor/**"
       - "src/robopy/robots/rakuda/**"
+      - "src/robopy/sensors/visual/**"
+      - "src/robopy/utils/h5_handler.py"
+      - "src/robopy/utils/worker/**"
       - "tests/support/**"
       - "tests/test_dynamixel_bus.py"
       - "tests/test_rakuda_dynamixel_integration.py"
-      - ".github/workflows/dynamixel-tests.yml"
+      - "tests/test_camera_frames.py"
+      - ".github/workflows/hardware-free-tests.yml"
   workflow_dispatch:
 
 concurrency:
@@ -49,13 +58,16 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
-      - name: Run the tests on the pure-Python transport
+      - name: Run the camera frame tests
+        run: uv run pytest tests/test_camera_frames.py -q
+
+      - name: Run the transport tests on the pure-Python backend
         run: uv run pytest tests/test_dynamixel_bus.py tests/test_rakuda_dynamixel_integration.py -q
 
       - name: Build the C++ transport
         run: uv pip install ./native/robopy_dxl
 
-      - name: Run the tests on both transports
+      - name: Run the transport tests on both backends
         run: uv run pytest tests/test_dynamixel_bus.py tests/test_rakuda_dynamixel_integration.py -q
 
       - name: Smoke-test the benchmark

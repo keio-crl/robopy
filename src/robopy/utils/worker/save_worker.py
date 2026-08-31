@@ -10,7 +10,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 T = TypeVar("T")
-HierarchicalTaskData: TypeAlias = Dict[str, dict[str, NDArray[np.float32] | NDArray[np.uint8]]]
+# Heterogeneous by design: camera frames are uint8, depth uint16, arm and
+# tactile/audio data float32.
+HierarchicalTaskData: TypeAlias = Dict[str, dict[str, NDArray[Any]]]
 
 logger = getLogger(__name__)
 

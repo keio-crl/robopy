@@ -78,7 +78,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
 
         leader_obs: List[NDArray[np.float32]] = []
         follower_obs: List[NDArray[np.float32]] = []
-        camera_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
+        camera_obs: Dict[str, List[NDArray[np.uint8] | None]] = defaultdict(list)
         tactile_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
         audio_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
 
@@ -125,7 +125,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
         follower_obs_np = np.array(follower_obs)
         arms: RakudaArmObs = RakudaArmObs(leader=leader_obs_np, follower=follower_obs_np)
         # process camera observations
-        camera_obs_np: Dict[str, NDArray[np.float32] | None] = {}
+        camera_obs_np: Dict[str, NDArray[np.uint8] | None] = {}
         for cam_name, frames in camera_obs.items():
             if frames:
                 camera_obs_np[cam_name] = np.array(frames)
@@ -134,17 +134,17 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
 
         # process tactile observations
         tactile_obs_np: Dict[str, NDArray[np.float32] | None] = {}
-        for tac_name, frames in tactile_obs.items():
-            if frames:
-                tactile_obs_np[tac_name] = np.array(frames)
+        for tac_name, tac_frames in tactile_obs.items():
+            if tac_frames:
+                tactile_obs_np[tac_name] = np.array(tac_frames)
             else:
                 tactile_obs_np[tac_name] = None
 
         # process audio observations
         audio_obs_np: Dict[str, NDArray[np.float32] | None] = {}
-        for audio_name, frames in audio_obs.items():
-            if frames:
-                audio_obs_np[audio_name] = np.array(frames)
+        for audio_name, audio_frames in audio_obs.items():
+            if audio_frames:
+                audio_obs_np[audio_name] = np.array(audio_frames)
             else:
                 audio_obs_np[audio_name] = None
 
@@ -193,7 +193,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
 
         leader_obs: List[NDArray[np.float32]] = []
         follower_obs: List[NDArray[np.float32]] = []
-        camera_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
+        camera_obs: Dict[str, List[NDArray[np.uint8] | None]] = defaultdict(list)
         tactile_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
         audio_obs: Dict[str, List[NDArray[np.float32] | None]] = defaultdict(list)
 
@@ -228,7 +228,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                 try:
                     with ThreadPoolExecutor(max_workers=4) as executor:
                         # Camera futures
-                        camera_futures: Dict[str, Future[NDArray[np.float32] | None]] = {}
+                        camera_futures: Dict[str, Future[NDArray[np.uint8] | None]] = {}
                         if self._sensors.cameras:
                             for cam in self._sensors.cameras:
                                 if cam.is_connected:
@@ -256,10 +256,10 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
 
                         timeout = max_processing_time * 0.5
 
-                        camera_data: Dict[str, NDArray[np.float32] | None] = {}
-                        for cam_name, future in camera_futures.items():
+                        camera_data: Dict[str, NDArray[np.uint8] | None] = {}
+                        for cam_name, cam_future in camera_futures.items():
                             try:
-                                camera_data[cam_name] = future.result(timeout=timeout / 2)
+                                camera_data[cam_name] = cam_future.result(timeout=timeout / 2)
                             except Exception as e:
                                 logger.warning(
                                     f"Camera {cam_name} failed in frame {frame_count}: {e}"
@@ -267,9 +267,9 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                                 camera_data[cam_name] = None
 
                         tactile_data: Dict[str, NDArray[np.float32] | None] = {}
-                        for tac_name, future in tactile_futures.items():
+                        for tac_name, tac_future in tactile_futures.items():
                             try:
-                                tactile_data[tac_name] = future.result(timeout=timeout / 2)
+                                tactile_data[tac_name] = tac_future.result(timeout=timeout / 2)
                             except Exception as e:
                                 logger.warning(
                                     f"Tactile {tac_name} failed in frame {frame_count}: {e}"
@@ -277,9 +277,9 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                                 tactile_data[tac_name] = None
 
                         audio_data: Dict[str, NDArray[np.float32] | None] = {}
-                        for audio_name, future in audio_futures.items():
+                        for audio_name, audio_future in audio_futures.items():
                             try:
-                                audio_data[audio_name] = future.result(timeout=timeout / 2)
+                                audio_data[audio_name] = audio_future.result(timeout=timeout / 2)
                             except Exception as e:
                                 logger.warning(
                                     f"Audio {audio_name} failed in frame {frame_count}: {e}"
@@ -340,7 +340,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
         follower_obs_np = np.array(follower_obs)
         arms: RakudaArmObs = RakudaArmObs(leader=leader_obs_np, follower=follower_obs_np)
 
-        camera_obs_np: Dict[str, NDArray[np.float32] | None] = {}
+        camera_obs_np: Dict[str, NDArray[np.uint8] | None] = {}
         for cam_name, frames in camera_obs.items():
             if frames and all(frame is not None for frame in frames):
                 camera_obs_np[cam_name] = np.array(frames)
@@ -348,16 +348,16 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                 camera_obs_np[cam_name] = None
 
         tactile_obs_np: Dict[str, NDArray[np.float32] | None] = {}
-        for tac_name, frames in tactile_obs.items():
-            if frames and all(frame is not None for frame in frames):
-                tactile_obs_np[tac_name] = np.array(frames).transpose(0, 3, 1, 2)
+        for tac_name, tac_frames in tactile_obs.items():
+            if tac_frames and all(frame is not None for frame in tac_frames):
+                tactile_obs_np[tac_name] = np.array(tac_frames).transpose(0, 3, 1, 2)
             else:
                 tactile_obs_np[tac_name] = None
 
         audio_obs_np: Dict[str, NDArray[np.float32] | None] = {}
-        for audio_name, frames in audio_obs.items():
-            if frames and all(frame is not None for frame in frames):
-                audio_obs_np[audio_name] = np.array(frames)
+        for audio_name, audio_frames in audio_obs.items():
+            if audio_frames and all(frame is not None for frame in audio_frames):
+                audio_obs_np[audio_name] = np.array(audio_frames)
             else:
                 audio_obs_np[audio_name] = None
 
@@ -491,9 +491,9 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                         timeout = max_processing_time * 0.5
 
                         camera_data: Dict[str, NDArray | None] = {}
-                        for cam_name, future in camera_futures.items():
+                        for cam_name, cam_future in camera_futures.items():
                             try:
-                                camera_data[cam_name] = future.result(timeout=timeout / 2)
+                                camera_data[cam_name] = cam_future.result(timeout=timeout / 2)
                             except Exception as e:
                                 logger.warning(
                                     f"Camera {cam_name} failed in frame {frame_count}: {e}"
@@ -501,9 +501,9 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                                 camera_data[cam_name] = None
 
                         tactile_data: Dict[str, NDArray | None] = {}
-                        for tac_name, future in tactile_futures.items():
+                        for tac_name, tac_future in tactile_futures.items():
                             try:
-                                tactile_data[tac_name] = future.result(timeout=timeout / 2)
+                                tactile_data[tac_name] = tac_future.result(timeout=timeout / 2)
                             except Exception as e:
                                 logger.warning(
                                     f"Tactile {tac_name} failed in frame {frame_count}: {e}"
@@ -511,9 +511,9 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                                 tactile_data[tac_name] = None
 
                         audio_data: Dict[str, NDArray | None] = {}
-                        for audio_name, future in audio_futures.items():
+                        for audio_name, audio_future in audio_futures.items():
                             try:
-                                audio_data[audio_name] = future.result(timeout=timeout / 2)
+                                audio_data[audio_name] = audio_future.result(timeout=timeout / 2)
                             except Exception as e:
                                 logger.warning(
                                     f"Audio {audio_name} failed in frame {frame_count}: {e}"
@@ -574,7 +574,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
         follower_obs_np = np.array(follower_obs)
         arms: RakudaArmObs = RakudaArmObs(leader=leader_obs_np, follower=follower_obs_np)
 
-        camera_obs_np: Dict[str, NDArray[np.float32] | None] = {}
+        camera_obs_np: Dict[str, NDArray[np.uint8] | None] = {}
         for cam_name, frames in camera_obs.items():
             if frames and all(frame is not None for frame in frames):
                 camera_obs_np[cam_name] = np.array(frames)
@@ -582,16 +582,16 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
                 camera_obs_np[cam_name] = None
 
         tactile_obs_np: Dict[str, NDArray[np.float32] | None] = {}
-        for tac_name, frames in tactile_obs.items():
-            if frames and all(frame is not None for frame in frames):
-                tactile_obs_np[tac_name] = np.array(frames).transpose(0, 3, 1, 2)
+        for tac_name, tac_frames in tactile_obs.items():
+            if tac_frames and all(frame is not None for frame in tac_frames):
+                tactile_obs_np[tac_name] = np.array(tac_frames).transpose(0, 3, 1, 2)
             else:
                 tactile_obs_np[tac_name] = None
 
         audio_obs_np: Dict[str, NDArray[np.float32] | None] = {}
-        for audio_name, frames in audio_obs.items():
-            if frames and all(frame is not None for frame in frames):
-                audio_obs_np[audio_name] = np.array(frames)
+        for audio_name, audio_frames in audio_obs.items():
+            if audio_frames and all(frame is not None for frame in audio_frames):
+                audio_obs_np[audio_name] = np.array(audio_frames)
             else:
                 audio_obs_np[audio_name] = None
 
@@ -625,7 +625,7 @@ class RakudaRobot(ComposedRobot[RakudaPairSys, Sensors, RakudaObs]):
             raise RuntimeError("Sensors are not initialized.")
 
         # Get camera data with reduced timeout for better performance
-        camera_data: Dict[str, NDArray[np.float32] | None] = {}
+        camera_data: Dict[str, NDArray[np.uint8] | None] = {}
         if self._sensors.cameras is not None:
             for cam in self._sensors.cameras:
                 if cam.is_connected:

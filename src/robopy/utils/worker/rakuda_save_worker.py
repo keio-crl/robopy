@@ -1,7 +1,7 @@
 import os
 from concurrent.futures import Future
 from logging import getLogger
-from typing import Dict, cast
+from typing import Any, Dict, cast
 
 import matplotlib
 from rich.console import Console
@@ -28,6 +28,20 @@ logger = getLogger(__name__)
 console = Console()
 
 
+def _to_displayable(frames: NDArray[Any]) -> NDArray[Any]:
+    """Reorder (N, C, H, W) sensor frames into what `imshow` expects.
+
+    uint8 frames are handed to matplotlib as-is: it reads them as 0..255
+    directly, so normalising would only cost a float copy four times the size.
+    Anything else is assumed to be a 0..255 float image and is scaled into
+    0..1 in float32 (never float64, which would quadruple a recording in RAM).
+    """
+    reordered = frames.transpose(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
+    if reordered.dtype == np.uint8:
+        return reordered
+    return np.clip(reordered.astype(np.float32) / 255.0, 0.0, 1.0)
+
+
 class RakudaSaveWorker(SaveWorker[RakudaObs]):
     def __init__(self, cfg: RakudaConfig, worker_num: int, fps: int) -> None:
         super().__init__(worker_num=worker_num)
@@ -37,7 +51,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
     def _process_task(self, task: SaveTask) -> Future[None] | None:
         match task.task_type:
             case "camera":
-                camera_data = cast(Dict[str, NDArray[np.float32]], task.data)
+                camera_data = cast(Dict[str, NDArray[np.uint8]], task.data)
                 logger.debug(f"Processing camera save task to {task.save_path}")
                 return self._executor.submit(self._save_camera_data, camera_data, task.save_path)
             case "tactile":
@@ -60,7 +74,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
             case "animation":
                 data = cast(
                     tuple[
-                        Dict[str, NDArray[np.float32]],
+                        Dict[str, NDArray[np.uint8]],
                         Dict[str, NDArray[np.float32]],
                         Dict[str, NDArray[np.float32]],
                     ],
@@ -112,7 +126,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
     def prepare_rakuda_obs(
         self, obs: RakudaObs, save_dir: str
     ) -> tuple[
-        Dict[str, NDArray[np.float32]],
+        Dict[str, NDArray[np.uint8]],
         Dict[str, NDArray[np.float32]],
         Dict[str, NDArray[np.float32]],
         NDArray[np.float32],
@@ -164,7 +178,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
 
     @staticmethod
     def make_rakuda_obs_animation(
-        camera_data: Dict[str, NDArray[np.float32]],
+        camera_data: Dict[str, NDArray[np.uint8]],
         tactile_data: Dict[str, NDArray[np.float32]],
         audio_data: Dict[str, NDArray[np.float32]],
         save_dir: str,
@@ -173,7 +187,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
         """Generate and save animation from camera, tactile and audio sensor data.
 
         Args:
-            camera_data (Dict[str, NDArray[np.float32]]): Camera data.
+            camera_data (Dict[str, NDArray[np.uint8]]): Camera data.
                 Shape: (frames, C, H, W)
             tactile_data (Dict[str, NDArray[np.float32]]): Tactile sensor data.
                 Shape: (frames, C, H, W)
@@ -185,22 +199,9 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
 
         logger.info("Starting batch preprocessing of animation data...")
 
-        processed_camera = {}
-        for name, cam_data in camera_data.items():
-            cam_data = cam_data.transpose(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
-            processed_camera[name] = np.clip(cam_data / 255.0, 0, 1)
-
-        for name, data in tactile_data.items():
-            data = data.transpose(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
-            tactile_data[name] = np.clip(data / 255.0, 0, 1)
-
-        for name, data in audio_data.items():
-            data = data.transpose(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
-            audio_data[name] = np.clip(data / 255.0, 0, 1)
-
-        camera_items = list(processed_camera.items())
-        tactile_items = list(tactile_data.items())
-        audio_items = list(audio_data.items())
+        camera_items = [(name, _to_displayable(data)) for name, data in camera_data.items()]
+        tactile_items = [(name, _to_displayable(data)) for name, data in tactile_data.items()]
+        audio_items = [(name, _to_displayable(data)) for name, data in audio_data.items()]
 
         num_frames = camera_items[0][1].shape[0]
 
@@ -323,13 +324,11 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
 
         logger.info(f"Arm observation plot saved to {save_path}")
 
-    def _save_camera_data(
-        self, camera_data: Dict[str, NDArray[np.float32]], save_path: str
-    ) -> None:
+    def _save_camera_data(self, camera_data: Dict[str, NDArray[np.uint8]], save_path: str) -> None:
         """Save camera data using BLOSC compression.
 
         Args:
-            camera_data (Dict[str, NDArray[np.float32]]): Camera data by name.
+            camera_data (Dict[str, NDArray[np.uint8]]): Camera data by name.
             save_path (str): Base path to save the camera data files.
         """
         for name, data in camera_data.items():
@@ -414,7 +413,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
 
     def _build_hierarchical_data(
         self,
-        camera_data: Dict[str, NDArray[np.float32]],
+        camera_data: Dict[str, NDArray[np.uint8]],
         tactile_data: Dict[str, NDArray[np.float32]],
         audio_data: Dict[str, NDArray[np.float32]],
         leader: NDArray[np.float32],
@@ -423,7 +422,7 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
         """Build hierarchical data structure for HDF5 storage.
 
         Args:
-            camera_data (Dict[str, NDArray[np.float32]]): Camera data by name.
+            camera_data (Dict[str, NDArray[np.uint8]]): Camera data by name.
             tactile_data (Dict[str, NDArray[np.float32]]): Tactile sensor data by name.
             audio_data (Dict[str, NDArray[np.float32]]): Audio sensor data by name.
             leader (NDArray[np.float32]): Leader arm positions.
@@ -443,19 +442,19 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
         }
 
         # Add camera data to hierarchy
-        for name, data in camera_data.items():
-            if data is not None:
-                hierarchical_data["camera"][name] = data
+        for name, cam_frames in camera_data.items():
+            if cam_frames is not None:
+                hierarchical_data["camera"][name] = cam_frames
 
         # Add tactile data to hierarchy
-        for name, data in tactile_data.items():
-            if data is not None:
-                hierarchical_data["tactile"][name] = data
+        for name, tac_frames in tactile_data.items():
+            if tac_frames is not None:
+                hierarchical_data["tactile"][name] = tac_frames
 
         # Add audio data to hierarchy
-        for name, data in audio_data.items():
-            if data is not None:
-                hierarchical_data["audio"][name] = data
+        for name, audio_frames in audio_data.items():
+            if audio_frames is not None:
+                hierarchical_data["audio"][name] = audio_frames
 
         return hierarchical_data
 
@@ -478,12 +477,12 @@ class RakudaSaveWorker(SaveWorker[RakudaObs]):
 
         table.add_row("Leader Arm Data", str(leader.shape))
         table.add_row("Follower Arm Data", str(follower.shape))
-        for name, data in camera_data.items():
-            table.add_row(f"Camera: {name}", str(data.shape))
-        for name, data in tactile_data.items():
-            table.add_row(f"Tactile Sensor: {name}", str(data.shape))
-        for name, data in audio_data.items():
-            table.add_row(f"Audio Sensor: {name}", str(data.shape))
+        for name, cam_frames in camera_data.items():
+            table.add_row(f"Camera: {name}", str(cam_frames.shape))
+        for name, tac_frames in tactile_data.items():
+            table.add_row(f"Tactile Sensor: {name}", str(tac_frames.shape))
+        for name, audio_frames in audio_data.items():
+            table.add_row(f"Audio Sensor: {name}", str(audio_frames.shape))
         console.print(table)
 
         if not os.path.exists(save_path):

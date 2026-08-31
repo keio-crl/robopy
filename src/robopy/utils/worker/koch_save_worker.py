@@ -2,7 +2,7 @@ import os
 from concurrent.futures import Future
 from dataclasses import dataclass
 from logging import getLogger
-from typing import Dict, cast
+from typing import Any, Dict, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -22,7 +22,7 @@ class KochArmObs:
 @dataclass
 class KochObs:
     arms: KochArmObs
-    cameras: Dict[str, NDArray[np.uint8] | NDArray[np.float32] | None]
+    cameras: Dict[str, NDArray[np.uint8] | NDArray[np.uint16] | None]
 
 
 class KochSaveWorker(SaveWorker[KochObs]):
@@ -113,9 +113,7 @@ class KochSaveWorker(SaveWorker[KochObs]):
 
     def _prepare_koch_obs(
         self, obs: KochObs, save_dir: str
-    ) -> tuple[
-        Dict[str, NDArray[np.float32] | NDArray[np.uint8]], NDArray[np.float32], NDArray[np.float32]
-    ]:
+    ) -> tuple[Dict[str, NDArray[Any]], NDArray[np.float32], NDArray[np.float32]]:
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
@@ -127,7 +125,7 @@ class KochSaveWorker(SaveWorker[KochObs]):
         follower = obs.arms.follower
         return camera_data, leader, follower
 
-    def _save_camera_gif(self, frames: NDArray[np.float32] | NDArray[np.uint8], path: str) -> None:
+    def _save_camera_gif(self, frames: NDArray[Any], path: str) -> None:
         """シンプルなGIFを書き出す."""
         try:
             import imageio.v2 as imageio
@@ -153,7 +151,7 @@ class KochSaveWorker(SaveWorker[KochObs]):
 
     def _build_hierarchical_data(
         self,
-        camera_data: Dict[str, NDArray[np.float32] | NDArray[np.uint8]],
+        camera_data: Dict[str, NDArray[Any]],
         leader: NDArray[np.float32],
         follower: NDArray[np.float32],
     ) -> HierarchicalTaskData:

@@ -1,7 +1,7 @@
-# Dynamixel 制御ループの高速化
+# 制御ループとカメラの高速化
 
-Dynamixel のみで動く robot（Rakuda / Koch など）の制御ループを速くするための、
-robopy 側の仕組みと設定のまとめです。
+Dynamixel のみで動く robot（Rakuda / Koch など）の制御ループと、
+カメラのフレーム経路を速くするための、robopy 側の仕組みと設定のまとめです。
 
 ## :material-timer-outline: どこに時間がかかっているのか
 
@@ -143,26 +143,56 @@ config = RakudaConfig(
 )
 ```
 
-## :material-camera: RealSense はどうか
+## :material-camera: RealSense / カメラ
 
 **C++ で書き直しても速くなりません。** `pyrealsense2` は既に librealsense2（C++）の
 pybind11 バインディングで、キャプチャ経路は最初から C++ です。Python 側にあるのは
 `wait_for_frames()` と `get_data()` の薄い呼び出しだけです。
 
-robopy の RealSense 経路で実際にコストになっているのは、C++ / Python の境界ではなく
-**フレームの dtype** です。`RealsenseCamera` は uint8 のフレームを float32 に変換して
-保持しています。
+robopy のカメラ経路で実際にコストになっていたのは、C++ / Python の境界ではなく
+**フレームの dtype** でした。センサが 8 bit で出したものを float32 に広げていたため、
+情報は 1 bit も増えないのに CPU も容量も 4 倍かかっていました。
 
-| | 1 フレームあたり CPU | 1 フレームあたりバイト数 |
+現在は **uint8 のまま** CHW で保持します（深度は `z16` のまま uint16 ミリメートル）。
+
+| 640x480 の 1 フレーム | 変更前（float32） | 現在（uint8） |
 | --- | --- | --- |
-| 現状（float32 CHW, 640×480） | 2.67 ms | 3,686,400 |
-| uint8 のまま CHW にする場合 | **0.33 ms** | **921,600** |
+| 後処理の CPU | 2.74 ms | **0.32 ms** |
+| バイト数 | 3,686,400 | **921,600** |
 
-30 fps × カメラ 2 台なら、CPU が 160 ms/s から 20 ms/s になり、HDF5 の容量も 1/4 になります。
-ただしこれは記録データのフォーマット変更（`RakudaObs` 以下すべてが float32 前提）なので、
-robopy 側では既定を変えていません。変更するかどうかは学習側のパイプライン次第です。
+30 fps × カメラ 2 台なら、後処理の CPU が 164 ms/s から 19 ms/s になります。
 
-その他 RealSense 側で効く点:
+### データフォーマットへの影響
 
-- 深度を使わないカメラでも `rs.align` を毎フレーム呼ばない
+これは**記録データの形式変更**です。
+
+- `RakudaObs.sensors.cameras` などカメラ観測は `NDArray[np.uint8]`、値域 0-255。
+- `RealsenseCamera.read_depth()` / `async_read_depth()` は `NDArray[np.uint16]`（mm）。
+- `H5Handler` は dtype をそのまま保存・復元します（以前は何でも float32 に丸めていました）。
+  BLOSC 側は元から dtype を保持しています。
+- 触覚（DIGIT）と音声は今までどおり float32 です。
+
+学習側で 0-1 正規化が必要なら、読み込んだ後に明示的に行ってください。
+robopy 側でやらないのは、正規化の流儀（0-1 / ImageNet 統計 / …）が用途ごとに違ううえ、
+記録して保存するだけの経路にまで一番重い表現を強制することになるからです。
+
+```python
+frames = H5Handler.load_hierarchical(path)["camera"]["main"]  # uint8 (N, C, H, W)
+normalized = frames.astype(np.float32) / 255.0
+```
+
+!!! warning "既存の記録データについて"
+    この変更以前に取った HDF5 / BLOSC は float32 のままです。ファイル側は
+    そのまま読めますが、新旧を混ぜて学習する場合は dtype を見て分岐してください。
+
+    ```python
+    if frames.dtype == np.uint8:
+        frames = frames.astype(np.float32) / 255.0
+    ```
+
+### 残っている改善余地
+
+- 深度を使わないカメラでも `rs.align` を毎フレーム呼んでいる
 - `wait_for_frames` のポーリングではなくフレームコールバックを使う
+- DIGIT 触覚センサーも uint8 のフレームを float32 に広げている（同じ 4 倍の無駄。
+  ただしこれも記録フォーマットの変更になるため、今回は変更していません）
