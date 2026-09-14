@@ -2,7 +2,9 @@ import queue
 import time
 from logging import getLogger
 from threading import Event, Lock, Thread
-from typing import Any, override
+# from typing import Any, override
+from typing import Any
+from typing_extensions import override
 
 import librosa
 import numpy as np
