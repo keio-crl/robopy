@@ -209,7 +209,12 @@ class SimulatedDynamixelBus:
                         goal_rad = self._count_to_rad(registers, registers.goal_position_count)
                         error = goal_rad - registers.joint.position_rad
                         gain = registers.position_p_gain / 128.0
-                        torque = gain * error - 0.02 * registers.joint.velocity_rad_s
+                        # Damp it close to critical for the joint's inertia. A
+                        # real position-mode servo does not ring; leaving this
+                        # underdamped would make every position-mode test a
+                        # test of the fixture's oscillation instead.
+                        damping = 1.8 * math.sqrt(max(gain, 0.0) * registers.joint.inertia_kg_m2)
+                        torque = gain * error - damping * registers.joint.velocity_rad_s
                 registers.joint.integrate(torque, dt)
                 if registers.bus_watchdog > 0:
                     registers._watchdog_elapsed_s += dt

@@ -1,7 +1,7 @@
 import logging
 import pickle
 import time
-from typing import Dict
+from typing import TYPE_CHECKING, Dict
 
 import numpy as np
 from rich import print
@@ -12,12 +12,16 @@ from robopy.config.robot_config.rakuda_config import (
     RakudaArmObs,
     RakudaConfig,
 )
+from robopy.control.types import ControlMode
 from robopy.motor.dynamixel_bus import DynamixelBus
 from robopy.motor.dynamixel_control_table import XControlTable
 
 from ..common.robot import Robot
 from .rakuda_follower import RakudaFollower
 from .rakuda_leader import RakudaLeader
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from .rakuda_control import RakudaControlSystem
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +60,11 @@ class RakudaPairSys(Robot):
             else set(cfg.follower_torque_enabled)
         )
 
+        # Set while a RakudaControlSystem owns the buses. The legacy write paths
+        # below refuse to run then, so the old teleoperation loop and the new
+        # servo loop can never both be writing goal values.
+        self._control_system: "RakudaControlSystem | None" = None
+
     def connect(self) -> None:
         """Connect to both leader and follower arms."""
         if self.is_connected:
@@ -77,13 +86,27 @@ class RakudaPairSys(Robot):
 
     def disconnect(self) -> None:
         """Disconnect from both leader and follower arms."""
+        self.stop_control()
         self.leader.disconnect()
         self.follower.disconnect()
 
     def get_observation(self) -> RakudaArmObs:
-        """Get the current observation from both arms."""
+        """Get the current observation from both arms.
+
+        The array shape, ordering and units are unchanged: degrees, in bus motor
+        order, exactly as before.  The only difference is where the numbers come
+        from -- while a control system owns the buses this reads its cached
+        snapshot instead of issuing its own SyncRead, because a second reader on
+        a port is what the single-owner rule exists to prevent.  Richer state
+        (velocity, current, timestamps, validity) is available through
+        :meth:`detailed_state`.
+        """
         if not self.is_connected:
             raise ConnectionError("RakudaPairSys is not connected. Call connect() first.")
+
+        cached = self._cached_observation()
+        if cached is not None:
+            return cached
 
         leader_motor_names = self._leader_motor_names
         follower_motor_names = self._follower_motor_names
@@ -98,6 +121,42 @@ class RakudaPairSys(Robot):
         leader_obs_array = np.array(list(leader_obs.values()), dtype=np.float32)
         follower_obs_array = np.array(list(follower_obs.values()), dtype=np.float32)
         return RakudaArmObs(leader=leader_obs_array, follower=follower_obs_array)
+
+    def detailed_state(self) -> Dict[str, object]:
+        """Full SI-unit snapshots from the running control system.
+
+        Returns:
+            ``{"leader": JointState | None, "follower": JointState | None}``.
+            Both are ``None`` when no control system is running -- the legacy
+            path publishes no such snapshot.
+        """
+        if self._control_system is None:
+            return {"leader": None, "follower": None}
+        return {
+            "leader": self._control_system.leader.latest_state(),
+            "follower": self._control_system.follower.latest_state(),
+        }
+
+    def _cached_observation(self) -> RakudaArmObs | None:
+        """Build a legacy-shaped observation from the servo cache, if running."""
+        if self._control_system is None:
+            return None
+        leader_state = self._control_system.leader.latest_state()
+        follower_state = self._control_system.follower.latest_state()
+        if leader_state is None or follower_state is None:
+            return None
+
+        def as_degrees(state: object, motor_names: list[str]) -> np.ndarray:
+            positions = state.positions_dict()  # type: ignore[attr-defined]
+            return np.array(
+                [np.degrees(positions.get(name, float("nan"))) for name in motor_names],
+                dtype=np.float32,
+            )
+
+        return RakudaArmObs(
+            leader=as_degrees(leader_state, self._leader_motor_names),
+            follower=as_degrees(follower_state, self._follower_motor_names),
+        )
 
     def teleoperate(self, max_seconds: float | None = None) -> None:
         """
@@ -193,6 +252,7 @@ class RakudaPairSys(Robot):
         """
         if not self.is_connected:
             raise ConnectionError("RakudaPairSys is not connected. Call connect() first.")
+        self._require_no_control_system("control_step")
 
         # Read leader positions
         leader_positions = self.get_leader_action()
@@ -249,6 +309,7 @@ class RakudaPairSys(Robot):
         """Send action to the leader arm only."""
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
+        self._require_no_control_system("send_leader_action")
         filtered = _filter_action_by_enabled_joints(action, self._leader_torque_enabled)
         if not filtered:
             return
@@ -270,11 +331,115 @@ class RakudaPairSys(Robot):
         """Send action to the follower arm only."""
         if not self._is_connected:
             raise ConnectionError("KochPairSys is not connected. Call connect() first.")
+        self._require_no_control_system("send_follower_action")
         filtered = _filter_action_by_enabled_joints(action, self._follower_torque_enabled)
         if not filtered:
             return
 
         self._follower.motors.sync_write(XControlTable.GOAL_POSITION, filtered)
+
+    # ------------------------------------------------------------------
+    # Mode-based control (dual-arm IK / bilateral)
+    #
+    # `control_step()` and `teleoperate()` above remain the position
+    # teleoperation path and are unchanged. They are simply refused while a
+    # control system holds the buses.
+    # ------------------------------------------------------------------
+
+    @property
+    def control_system(self) -> "RakudaControlSystem | None":
+        """The attached control system, or ``None`` for plain teleoperation."""
+        return self._control_system
+
+    def _require_no_control_system(self, what: str) -> None:
+        """Raise if a control system currently owns the buses."""
+        if self._control_system is not None:
+            raise RuntimeError(
+                f"{what}() is refused while a {type(self._control_system).__name__} owns these "
+                "buses. Exactly one writer per port: call stop_control() before using the legacy "
+                "position teleoperation path."
+            )
+
+    def build_control_system(
+        self,
+        *,
+        leader_gravity: object | None = None,
+        follower_gravity: object | None = None,
+    ) -> "RakudaControlSystem":
+        """Construct the control system described by ``config.control``.
+
+        Args:
+            leader_gravity: Validated leader gravity model, if any.
+            follower_gravity: Validated follower gravity model, if any.
+
+        Returns:
+            The control system, not yet configured or started.
+
+        Raises:
+            ValueError: If no ``control:`` section is configured.
+            ConnectionError: If the arms are not connected.
+        """
+        from .rakuda_control import RakudaControlSystem
+
+        if self.config.control is None:
+            raise ValueError(
+                "No control section is configured. Add a `control:` block to "
+                ".robopy/rakuda/config.yaml, or keep using the position teleoperation path."
+            )
+        if not self.is_connected:
+            raise ConnectionError("RakudaPairSys is not connected. Call connect() first.")
+
+        return RakudaControlSystem.from_buses(
+            self.config.control,
+            self._leader.motors,
+            self._follower.motors,
+            leader_torque_enabled=sorted(self._leader_torque_enabled),
+            follower_torque_enabled=sorted(self._follower_torque_enabled),
+            leader_gravity=leader_gravity,  # type: ignore[arg-type]
+            follower_gravity=follower_gravity,  # type: ignore[arg-type]
+        )
+
+    def start_control(self, system: "RakudaControlSystem | None" = None) -> "RakudaControlSystem":
+        """Configure, align and start a control system, taking the buses over.
+
+        Args:
+            system: An already-built system, or ``None`` to build one from the
+                configuration.
+
+        Returns:
+            The running system.
+
+        Raises:
+            RuntimeError: If a control system is already running.
+        """
+        if self._control_system is not None:
+            raise RuntimeError("A control system is already running; stop it first.")
+        system = system or self.build_control_system()
+        system.configure()
+        system.align()
+        system.start()
+        self._control_system = system
+        logger.info("Started %s control for Rakuda.", system.mode.value)
+        return system
+
+    def stop_control(self) -> list[str]:
+        """Stop the running control system and hand the buses back.
+
+        Returns:
+            What each servo did while stopping.
+        """
+        if self._control_system is None:
+            return []
+        results = self._control_system.stop()
+        self._control_system = None
+        return results
+
+    @property
+    def control_mode(self) -> ControlMode:
+        """The running mode, or position teleoperation when nothing is running."""
+        if self._control_system is None:
+            return ControlMode.POSITION_TELEOP
+        return self._control_system.mode
 
     @property
     def is_connected(self) -> bool:

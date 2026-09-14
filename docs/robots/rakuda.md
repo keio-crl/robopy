@@ -213,3 +213,132 @@ obs = robot.record_parallel(max_frame=100, fps=20)
 - [`RakudaPairSys`](../api/robots.md#robopy.robots.rakuda.rakuda_pair_sys.RakudaPairSys) - アーム協調制御
 - [`RakudaLeader`](../api/robots.md#robopy.robots.rakuda.rakuda_leader.RakudaLeader) - リーダーアーム
 - [`RakudaFollower`](../api/robots.md#robopy.robots.rakuda.rakuda_follower.RakudaFollower) - フォロワーアーム
+
+## :material-arm-flex: 制御モード（双腕IK / バイラテラル）
+
+`.robopy/rakuda/config.yaml` に `control:` セクションを書くと、従来の関節位置テレオペに加えて
+2つのモードが使えます。**セクションを書かなければ挙動は一切変わりません**（モデルも読み込まず、
+電流も一切出力しません）。
+
+| モード | 入力と動作 | IK | 使用する制御モード |
+| --- | --- | --- | --- |
+| `position_teleop` | 既存どおり、リーダ関節位置をフォロワへ送る | 不要 | 位置制御(3) |
+| `cartesian_teleop` | 左右TCP目標からフォロワ関節目標を生成する | 双腕IK | 位置制御(3) |
+| `bilateral_joint` | 両側の関節位置・速度から仮想ばね・ダンパのトルクを計算する | 使用しない | 電流制御(0) |
+
+### 実機なしで動かす
+
+どちらのモードも、模擬バス（[`SimulatedDynamixelBus`](../api/robots.md)）で最後まで実行できます。
+
+```bash
+# バイラテラル（模擬。接触反力の例は --contact）
+uv run python examples/robot/rakuda_bilateral.py --contact
+
+# 双腕IK（kinematics extra が必要）
+uv sync --extra kinematics
+uv run --extra kinematics python examples/robot/rakuda_cartesian_teleop.py --collision
+```
+
+### 起動
+
+```python
+from robopy.robots.rakuda import RakudaPairSys
+
+pair = RakudaPairSys(config)
+pair.connect()
+
+system = pair.start_control()      # configure → align → start
+...
+pair.stop_control()                # 停止方針を適用してバスを返す
+```
+
+`start_control()` 実行中は両バスの指令権を制御システムが保持し、
+`control_step()` / `send_follower_action()` などの旧経路は明示的に拒否されます
+（1ポート1書き手）。観測API (`get_observation()`) は配列の形・順序・単位（degree）を
+変えずに、サーボのキャッシュを読みます。SI単位の詳細状態は `pair.detailed_state()` で取れます。
+
+## :material-ruler: 単位と校正
+
+### 電流定数の表記
+
+`RAKUDA_CONTROLTABLE_VALUES` の電流値（`FOLLOWER_GRIP_GOAL_CURRENT = 128` など）は
+**raw制御テーブル値**です。以前のコメントは "mA" と書かれていましたが、コードは一貫して
+rawを送っていました。**挙動は維持**してあり、128 は今も raw 128（フォロワXM430で約0.34 A）です。
+アンペアが必要な場合は `RAKUDA_CONTROLTABLE_VALUES.raw_current_to_a(128, "xm430-w350")` を使います。
+
+| 型番 | 電流1 count | 電流測定位置 |
+| --- | --- | --- |
+| XM430-W350 | 0.00269 A | モータ巻線 |
+| XM540-W270 | 0.00269 A | モータ巻線 |
+| XC330-T288 | 0.001 A | 電源入力側（XMと同じトルク観測モデルは流用不可） |
+
+### 変換境界
+
+raw値とSI単位の変換は [`robopy.control.joint_mapping`](../api/robots.md) の1箇所だけで行います。
+
+- 位置: `q = direction * (count - zero_count) * 2*pi/4096`
+- 速度: `v = direction * raw * 0.229 * 2*pi/60`（位置オフセットは加えない）
+- 電流: `i = direction * raw * (型番ごとの単位)`
+
+multi-turn位置は `[-pi, pi]` へ折り返しません。`zero_count` は
+**モータ内の Drive Mode / Homing Offset 適用後の `PRESENT_POSITION` 読出し値**に対して定義し、
+その2つのレジスタ値も校正と一緒に記録します。
+
+## :material-alert: 実機で必要な未確定値
+
+以下は**測定値であり、推測で埋めてはいけません**。未測定の項目は `null` のままにしてください。
+`JointMap.require()` が不足項目を列挙して停止します。
+
+| 項目 | 影響 |
+| --- | --- |
+| モータ名 ↔ URDF関節名の対応 | 名前から推定しない（`*_sh_pitch2`, `*_el_yaw`, `*_wr_roll` 等） |
+| `zero_count` / `direction` / 可動範囲 | 位置指令すべて |
+| `torque_constant_nm_per_a` / `current_limit_a` | 電流出力（バイラテラル） |
+| TCP（`gripper_*_dof` からのオフセット） | Cartesian精度 |
+| continuous関節の実可動域（胴体yaw・両肩pitch） | URDFに範囲がない。ソフト制限必須 |
+| 重力補償モデル（リーダ・フォロワ別） | 電流制御時の自重落下 |
+
+`control.allow_hardware_current_output` は既定で `false` です。上記が測定され
+`validated: true` になるまで、バイラテラルモードは `configure()` で拒否されます。
+
+### モデルの監査
+
+URDFは使う前に監査します（kinematics extra は不要）。
+
+```bash
+python -m robopy.kinematics.urdf_audit path/to/robot.urdf --package-dir path/to/pkgs
+```
+
+総質量が非現実的（CAD出力では数mgになることがあります）、`effort=1 velocity=1` の
+プレースホルダ、`*_dof` という名前の固定関節、範囲のないcontinuous関節などを警告します。
+**質量を書き換えて「動力学検証済み」にしないでください。** 幾何専用モデルとして扱います。
+
+## :material-stop-circle: 停止方針と異常時
+
+`control.stop_policy` は機構と支持条件に応じて選びます。万能な既定値はありません。
+
+| 方針 | 内容 | 前提 |
+| --- | --- | --- |
+| `zero_current` | 電流ゼロ、トルクはON | バックドライバブルで支持されている、または水平 |
+| `torque_off` | トルクOFF | 落下するものがない |
+| `hold_position` | 測定姿勢で位置制御に切替えて保持 | その姿勢を自力で保持できる |
+
+- 片側の読取り／書込み失敗、状態の古さ、周期超過、温度・電圧異常、範囲超過、不正数値で
+  両側を `FAULT` にします。`FAULT` からの復帰は `CONFIGURING` 経由のみで、再検証が必須です。
+- 通信不能側には書き込めません。その場合はモータ側の `BUS_WATCHDOG`
+  （`control.bus_watchdog_counts`、20 ms/count）に委ねます。
+- Bus Watchdog は**全Instruction Packet**が対象なので、読取りを続けている限り
+  Goal更新を止めただけでは発火しないことがあります。読取りだけ生きている状況も別途検出します。
+
+## :material-chart-line: 周期の報告
+
+設定周期と実測周期は別に表示されます。
+
+```python
+report = system.report()
+report["timing"]["configured_rate_hz"]        # 設定値
+report["timing"]["measured_period_s"]         # p50/p95/p99/max、期限超過数
+report["timing"]["servos"]["follower"]["read"]
+```
+
+数百Hzでの動作は、この実測値が出るまで保証されません。

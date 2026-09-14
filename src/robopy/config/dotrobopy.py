@@ -46,10 +46,21 @@ def _parse_torque_enabled_yaml(
         - 'all' -> all_joint_names
         - 'default'/'null' -> None
         - 'none'/'off' -> []
+    - bool False (which is what YAML 1.1 makes of a bare `off`/`no`) -> []
     """
 
     if value is None:
         return None
+    if isinstance(value, bool):
+        # YAML 1.1 turns a bare `off` / `no` into False (and `on` / `yes` into
+        # True) before this parser ever sees a string, so the documented `off`
+        # keyword arrives as a boolean. False means the same thing as `off`.
+        if value is False:
+            return []
+        raise ValueError(
+            f"{field_name}: a bare `on`/`yes`/`true` is ambiguous here because YAML reads it as a "
+            "boolean. Write `all` to enable every joint, or list the joints explicitly."
+        )
     if isinstance(value, list):
         if not all(isinstance(x, str) for x in value):
             raise ValueError(f"{field_name} must be a list[str], a keyword, or null.")

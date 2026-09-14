@@ -152,3 +152,182 @@ ee_pose = So101Robot.forward_kinematics(joint_angles)
 # EEアクション送信（接続済みロボットで）
 # robot.send_ee_frame_action(np.array([0.1, 0.0, 0.15, 0.0, 0.0, 50.0]))
 ```
+
+---
+
+## :material-robot-industrial: 全身モデルと双腕IK（optional extra）
+
+既存の `KinematicChain` / `IKSolver`（5自由度直列アーム、numpyのみ）はそのままです。
+以下は **URDF全体**を扱い、左右TCPのSE(3)目標を**1つのQP**で同時に解くための追加APIです。
+
+依存は optional extra `kinematics` にまとめてあり、**遅延import**されます。
+未導入でも従来のrobopyはそのまま使えます。
+
+```bash
+uv sync --extra kinematics
+# または
+uv pip install 'robopy[kinematics]'
+```
+
+導入されるのは [Pinocchio](https://github.com/stack-of-tasks/pinocchio)（PyPI名 `pin`）、
+[Pink](https://github.com/stephane-caron/pink)（PyPI名 `pin-pink`）、`qpsolvers` と `quadprog` です。
+**PyPI上の同名別パッケージに注意してください。正しい名前は `pin` と `pin-pink` です。**
+
+### URDF監査
+
+```bash
+python -m robopy.kinematics.urdf_audit robot.urdf --package-dir pkgs --json
+```
+
+::: robopy.kinematics.urdf_audit.UrdfAudit
+    options:
+      show_root_heading: true
+      members:
+        - n_links
+        - n_joints
+        - n_movable
+        - joint
+        - usable_for_dynamics
+        - summary
+        - to_json
+
+::: robopy.kinematics.urdf_audit.audit_urdf
+    options:
+      show_root_heading: true
+
+### 全身モデル
+
+`nq`（配置次元）と `nv`（速度次元）は continuous 関節があると一致しません。
+位置は `positions_from_q` / `q_from_positions`、配置の更新は `integrate` を通してください。
+
+::: robopy.kinematics.urdf_model.WholeBodyModel
+    options:
+      show_root_heading: true
+      members:
+        - from_urdf
+        - nq
+        - nv
+        - movable_joint_names
+        - has_joint
+        - is_continuous
+        - joint_v_index
+        - joint_q_slice
+        - neutral_q
+        - positions_from_q
+        - q_from_positions
+        - integrate
+        - difference
+        - set_soft_limits
+        - position_limits
+        - unbounded_joints
+        - add_fixed_frame
+        - frame_pose
+        - frame_jacobian
+        - classify_collision_pairs
+        - add_all_collision_pairs
+        - collision_report
+        - distance_jacobian_row
+
+### 双腕IK
+
+胴体yawは左右の共通祖先にある**1変数**として扱われます。左右を別々に解いて胴体角を平均する
+実装は行いません。頭部はモデルには入りますが（衝突形状を動かすため）、QPの決定変数からは
+外れているので、IKが頭部を動かすことはありません。
+
+::: robopy.kinematics.dual_arm_ik.DualArmIK
+    options:
+      show_root_heading: true
+      members:
+        - active_joints
+        - solve_step
+        - reset
+        - set_posture_reference
+
+::: robopy.kinematics.dual_arm_ik.DualArmIKConfig
+    options:
+      show_root_heading: true
+
+::: robopy.kinematics.dual_arm_ik.DualArmIKResult
+    options:
+      show_root_heading: true
+      members:
+        - is_commandable
+
+::: robopy.kinematics.dual_arm_ik.DualArmIKStatus
+    options:
+      show_root_heading: true
+
+### 合成モデル（テスト用）
+
+Rakuda本体のURDFが手元にない場合でも、同じトポロジ（共有胴体1 + 左右各6 + 頭部2、
+`*_dof` という名前の固定グリッパフレーム付き）を持つ合成モデルで実装とテストを進められます。
+**リンク長・軸・質量は架空の値**であり、実機の幾何や動力学の主張ではありません。
+
+::: robopy.kinematics.synthetic_dual_arm.synthetic_dual_arm_urdf
+    options:
+      show_root_heading: true
+
+::: robopy.kinematics.synthetic_dual_arm.write_synthetic_dual_arm_urdf
+    options:
+      show_root_heading: true
+
+### 使用例
+
+```python
+import numpy as np
+from robopy.control.types import DualArmTarget, TorsoPolicy
+from robopy.kinematics.dual_arm_ik import DualArmIK, DualArmIKConfig
+from robopy.kinematics.urdf_model import WholeBodyModel
+
+model = WholeBodyModel.from_urdf("robot.urdf", build_collision=True, geometry_only=True)
+
+# TCPは既存フレームからの「測定した」固定変換で定義する。
+tcp = np.eye(4)
+tcp[2, 3] = -0.02
+model.add_fixed_frame("left_tcp", "gripper_left_dof", tcp)
+model.add_fixed_frame("right_tcp", "gripper_right_dof", tcp)
+
+# continuous関節はURDFに範囲がないので、実測のソフト制限が必須。
+model.set_soft_limits({"torso_yaw_dof": (-1.5, 1.5)})
+
+# 除外する衝突ペアは分類して、理由つきで明示的に決める。
+groups = model.classify_collision_pairs(model.neutral_q())
+model.add_all_collision_pairs(
+    excluded=groups["parent_child"] + groups["same_body"] + groups["interfering_at_q"]
+)
+
+ik = DualArmIK(
+    model,
+    left_frame="left_tcp",
+    right_frame="right_tcp",
+    torso_joint="torso_yaw_dof",
+    left_arm_joints=[...],   # 肩→手首の6関節
+    right_arm_joints=[...],
+    head_joints=["head_yaw_dof", "head_pitch_dof"],
+    config=DualArmIKConfig(),
+)
+
+result = ik.solve_step(state, DualArmTarget(
+    left_target=T_left, right_target=T_right, torso_policy=TorsoPolicy.OPTIMIZE
+), dt=0.02)
+
+if result.is_commandable:
+    send(result.joint_targets_rad)
+else:
+    # 計算失敗・時間超過・古い状態・到達不能・開始時衝突は区別される。
+    # 無効な結果は新しい運動目標として発行しない。
+    log(result.status, result.message)
+```
+
+### 胴体方針
+
+| `TorsoPolicy` | 動作 |
+| --- | --- |
+| `FIXED` | 腕IKへの胴体速度をゼロに拘束する |
+| `MANUAL` | 制限した胴体速度を既知量として両手タスクへ反映する（腕が補償する） |
+| `OPTIMIZE` | 胴体を自由変数にする |
+
+片腕だけを駆動する場合、反対側TCPは**操作開始時または明示的な再基準化時**に保存した
+保持目標を追い続けます。毎周期の測定姿勢で保持目標を上書きすることはありません。
+保持は有限重みの目標なので、「厳密な固定」とは表示せず残差
+（`left_hold_residual_m` / `right_hold_residual_m`）を返します。

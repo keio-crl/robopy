@@ -48,7 +48,10 @@ class BusLike(Protocol):
     the whole control stack runs against a simulated bus with no hardware.
     """
 
-    motors: Mapping[str, Any]
+    @property
+    def motors(self) -> Mapping[str, Any]:
+        """The motors on this bus, keyed by name."""
+        ...
 
     def read_state_block(
         self, motor_names: Sequence[str], *, timeout_s: float = ...
@@ -813,6 +816,11 @@ class ServoLoop:
     def servos(self) -> Tuple[ArmServo, ...]:
         """The servos this loop drives."""
         return self._servos
+
+    @property
+    def control_period_s(self) -> float:
+        """The *configured* cycle period.  See :meth:`timing_report` for the achieved one."""
+        return self._config.control_period_s
 
     @property
     def is_running(self) -> bool:

@@ -156,7 +156,7 @@ def _expand(
     else:
         array = np.full(len(joint_names), float(value), dtype=np.float64)
     if non_negative and np.any(array < 0.0):
-        offenders = [joint_names[i] for i in np.flatnonzero(array < 0.0)]
+        offenders = [joint_names[int(i)] for i in np.flatnonzero(array < 0.0)]
         raise ValueError(f"{name} must be non-negative; negative for {offenders}.")
     return array
 
@@ -286,8 +286,11 @@ class BilateralController:
 
         self._leader_filter = _FilterState()
         self._follower_filter = _FilterState()
-        self._previous_leader_torque: NDArray[np.float64] | None = None
-        self._previous_follower_torque: NDArray[np.float64] | None = None
+        # The rate limiter starts from zero rather than from "unknown": after a
+        # reset the machine has just been commanded zero current, so the first
+        # cycle is a step from zero and must be limited like any other.
+        self._previous_leader_torque: NDArray[np.float64] = np.zeros(len(self._joint_names))
+        self._previous_follower_torque: NDArray[np.float64] = np.zeros(len(self._joint_names))
         self._engaged_elapsed_s = 0.0
         self._engaged = False
 
@@ -350,11 +353,16 @@ class BilateralController:
     # -- lifecycle ----------------------------------------------------------
 
     def reset(self) -> None:
-        """Clear every piece of internal state and disengage the coupling."""
+        """Clear every piece of internal state and disengage the coupling.
+
+        The remembered torque goes back to zero, not to "unknown", so the first
+        cycle after a mode change or a clutch is rate limited from zero instead
+        of being free to step straight to full coupling torque.
+        """
         self._leader_filter.reset()
         self._follower_filter.reset()
-        self._previous_leader_torque = None
-        self._previous_follower_torque = None
+        self._previous_leader_torque = np.zeros(len(self._joint_names))
+        self._previous_follower_torque = np.zeros(len(self._joint_names))
         self._engaged_elapsed_s = 0.0
         self._engaged = False
 
@@ -535,15 +543,13 @@ class BilateralController:
     def _limit(
         self,
         torque: NDArray[np.float64],
-        previous: NDArray[np.float64] | None,
+        previous: NDArray[np.float64],
         dt: float,
     ) -> Tuple[NDArray[np.float64], NDArray[np.bool_], NDArray[np.bool_]]:
-        rate_limited = np.zeros(len(self._joint_names), dtype=bool)
-        if previous is not None:
-            max_delta = self._tau_rate_max * dt
-            delta = np.clip(torque - previous, -max_delta, max_delta)
-            rate_limited = np.abs(torque - previous) > max_delta + 1e-12
-            torque = previous + delta
+        max_delta = self._tau_rate_max * dt
+        delta = np.clip(torque - previous, -max_delta, max_delta)
+        rate_limited = np.abs(torque - previous) > max_delta + 1e-12
+        torque = previous + delta
         saturated = np.abs(torque) > self._tau_max
         torque = np.clip(torque, -self._tau_max, self._tau_max)
         return torque, saturated, rate_limited

@@ -145,6 +145,9 @@ class WholeBodyModel:
         self._joint_id = {name: model.getJointId(name) for name in self._movable_joint_names}
         self._soft_lower: Dict[str, float] = {}
         self._soft_upper: Dict[str, float] = {}
+        # Set by :meth:`from_urdf`. True means the inertial data is not
+        # trustworthy, so the model is for geometry only.
+        self._geometry_only: bool = False
 
     # -- construction ------------------------------------------------------
 
@@ -194,7 +197,7 @@ class WholeBodyModel:
                     model, str(path), pin.GeometryType.COLLISION
                 )
         instance = cls(model, collision_model=collision_model, source=str(path))
-        instance._geometry_only = geometry_only  # noqa: SLF001 - own attribute
+        instance._geometry_only = geometry_only
         return instance
 
     # -- basic properties ---------------------------------------------------
@@ -218,6 +221,16 @@ class WholeBodyModel:
     def source(self) -> str:
         """Where this model came from."""
         return self._source
+
+    @property
+    def geometry_only(self) -> bool:
+        """Whether this model's inertial data was declared untrustworthy.
+
+        ``True`` changes nothing about the kinematics; it marks the model so
+        that anything needing dynamics refuses it rather than quietly using
+        placeholder masses.
+        """
+        return self._geometry_only
 
     @property
     def nq(self) -> int:
