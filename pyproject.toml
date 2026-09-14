@@ -28,6 +28,17 @@ dependencies = [
 audio = ["pyaudio>=0.2.14"]
 realsense = ["pyrealsense2>=2.54.2"]
 spacemouse = ["pyspacemouse>=0.0.7"]
+# Whole-body URDF model + differential IK.  "pin" is the official PyPI
+# distribution of Pinocchio and "pin-pink" is the official distribution of Pink
+# (https://github.com/stephane-caron/pink).  Do not substitute similarly named
+# packages.  robopy imports these lazily, so the rest of the library keeps
+# working without this extra installed.
+kinematics = [
+    "pin>=3.2.0",
+    "pin-pink>=3.1.0",
+    "qpsolvers>=4.3.2",
+    "quadprog>=0.1.12",
+]
 
 [dependency-groups]
 dev = [

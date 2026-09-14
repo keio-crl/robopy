@@ -64,19 +64,30 @@ class RakudaLeader(RakudaArm):
 
         # Always read all joints, but only torque-enable configured joints.
         self._motors.torque_disabled()
-        enabled = self.config.leader_torque_enabled
-        self._motors.torque_enabled(specific_motor_names=["l_arm_grip", "r_arm_grip"])
 
-        # Fix leader initial gripper pose.
-        # NOTE: 2600 is used as the max/open position for the Rakuda leader grippers.
-        for motor_name in ["l_arm_grip", "r_arm_grip"]:
-            self.motors.write(
-                XControlTable.GOAL_POSITION,
-                motor_name,
-                RAKUDA_CONTROLTABLE_VALUES.GRIP_MAX_POSITION,
-            )
-        if enabled:
-            self._motors.torque_enabled(specific_motor_names=enabled)
+        # `None` means "use the default", which for the leader is grippers only.
+        # An explicit list -- including an explicit empty list -- is honoured as
+        # written: a configuration that asks for no torque gets no torque.
+        enabled = self.config.leader_torque_enabled
+        if enabled is None:
+            enabled = list(self.GRIPPER_MOTORS)
+
+        grippers_enabled = [name for name in self.GRIPPER_MOTORS if name in enabled]
+        if grippers_enabled:
+            self._motors.torque_enabled(specific_motor_names=grippers_enabled)
+            # Fix leader initial gripper pose. Only meaningful for a gripper
+            # whose torque is actually on.
+            # NOTE: 2600 is used as the max/open position for the Rakuda leader grippers.
+            for motor_name in grippers_enabled:
+                self.motors.write(
+                    XControlTable.GOAL_POSITION,
+                    motor_name,
+                    RAKUDA_CONTROLTABLE_VALUES.GRIP_MAX_POSITION,
+                )
+
+        remaining = [name for name in enabled if name not in self.GRIPPER_MOTORS]
+        if remaining:
+            self._motors.torque_enabled(specific_motor_names=remaining)
 
     def disconnect(self) -> None:
         if self._is_connected:

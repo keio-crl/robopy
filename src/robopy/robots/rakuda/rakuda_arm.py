@@ -23,35 +23,45 @@ class RakudaArm(Arm):
         """Create motor configuration specific to each arm type."""
         pass
 
+    #: Gripper motors, configured separately from the arm joints.
+    GRIPPER_MOTORS: tuple[str, ...] = ("l_arm_grip", "r_arm_grip")
+
     @abstractmethod
     def _init_control_mode(self) -> None:
-        """Initialize control mode specific to each arm type."""
-        # Set 2 gripper motors to Current-based position control mode: 5
-        # NOTE: details:https://emanual.robotis.com/docs/en/dxl/x/xm430-w350/
-        for motor_name in ["l_arm_grip", "r_arm_grip"]:
-            # Set gripper motors to Current-based position control mode
+        """Initialize control mode specific to each arm type.
+
+        Order matters on a DYNAMIXEL: ``OPERATING_MODE`` is an EEPROM item and is
+        rejected while torque is enabled, and changing the mode resets the goal
+        values and the position gains.  So torque is disabled first, then the
+        mode is set, then the gains -- not the other way round.
+        """
+        # Torque must be off before OPERATING_MODE (an EEPROM item) is written.
+        self.motors.torque_disabled(list(self.GRIPPER_MOTORS))
+
+        gains = (
+            RAKUDA_CONTROLTABLE_VALUES.GRIP_PID_SLOW
+            if self.config.slow_mode
+            else RAKUDA_CONTROLTABLE_VALUES.GRIP_PID
+        )
+        gain_items = (
+            XControlTable.POSITION_P_GAIN,
+            XControlTable.POSITION_I_GAIN,
+            XControlTable.POSITION_D_GAIN,
+        )
+
+        for motor_name in self.GRIPPER_MOTORS:
+            # Set gripper motors to current-based position control mode (5).
+            # https://emanual.robotis.com/docs/en/dxl/x/xm430-w350/#operating-mode11
             self.motors.write(
                 XControlTable.OPERATING_MODE,
                 motor_name,
                 RAKUDA_CONTROLTABLE_VALUES.CURRENT_BASED_OPERATING_MODE,
             )
-            # Set PID gains for gripper motors
-            # Use slower PID gains if in slow mode
-            map(
-                lambda pid, val: self.motors.write(
-                    pid,
-                    motor_name,
-                    val,
-                ),
-                [
-                    XControlTable.POSITION_P_GAIN,
-                    XControlTable.POSITION_I_GAIN,
-                    XControlTable.POSITION_D_GAIN,
-                ],
-                RAKUDA_CONTROLTABLE_VALUES.GRIP_PID
-                if not self.config.slow_mode
-                else RAKUDA_CONTROLTABLE_VALUES.GRIP_PID_SLOW,
-            )
+            # The gains are written after the mode change, which resets them.
+            # This used to be a `map(...)` whose result was never consumed, so
+            # none of these writes actually happened.
+            for item, value in zip(gain_items, gains):
+                self.motors.write(item, motor_name, value)
 
     def connect(self) -> None:
         if self._is_connected:
