@@ -8,6 +8,7 @@ class CameraParams:
     height: int
     fps: int
     index: int = 0  # Add index attribute for RealSense camera
+    serial_no: str | None = None
 
 
 @dataclass

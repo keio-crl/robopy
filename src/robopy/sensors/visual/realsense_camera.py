@@ -62,7 +62,7 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
         self.align: rs.align | None = None  # type: ignore
 
         # Serial number for device identification (more reliable than index)
-        self.serial_number: str | None = None
+        self.serial_number: str | None = self.config.serial_no
 
         # Set capture dimensions considering rotation
         self.capture_width: int | float | None = None
@@ -82,8 +82,9 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
             logger.warning(f"{self.name} is already connected.")
             return
 
-        # Find camera by index or serial number
-        self._find_camera_serial()
+        # If serial number is not specified, resolve it from index.
+        if self.serial_number is None:
+            self._find_camera_serial()
 
         # Initialize RealSense pipeline
         self.rs_pipeline = rs.pipeline()  # type: ignore
