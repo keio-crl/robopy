@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 import sys
 import tempfile
 from pathlib import Path
 from typing import Sequence
+
+from robopy.config.robot_config import RAKUDA_MOTOR_TRAVEL_RAD
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -112,6 +115,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             "head_joints": spec.head_joints or None,
         }
 
+    # Rakuda's joints are driven over the whole DYNAMIXEL count range in
+    # leader-follower teleoperation, which is wider than several of the ranges
+    # its CAD export declares. The sliders show that travel, so the viewer and
+    # the machine speak of the same angles; the synthetic fixture has no motors
+    # and keeps its own URDF ranges.
+    joint_travel: tuple[float, float] | None = RAKUDA_MOTOR_TRAVEL_RAD
+
     tmpdir = None
     if urdf is None and not args.synthetic:
         from robopy.models import find_rakuda_model
@@ -127,23 +137,35 @@ def main(argv: Sequence[str] | None = None) -> int:
             if hint:
                 print(f"  {hint}")
             if not soft_limits:
-                # The three continuous joints have no URDF range. These bounds are
-                # NOT measured on the machine; they only let the solver build.
-                # Measured values belong in .robopy/rakuda/config.yaml (--config).
+                # The three continuous joints have no URDF range at all, and the
+                # solver needs a finite one. The motor travel is what the
+                # machine is driven over, so that is what they get -- it is not
+                # a measurement of where they actually stop, and a measured
+                # range belongs in .robopy/rakuda/config.yaml (--config).
                 soft_limits = {
-                    "torso_yaw_dof": (-1.57, 1.57),
-                    "shoulder_pitch_left_dof": (-3.14, 3.14),
-                    "shoulder_pitch_right_dof": (-3.14, 3.14),
+                    joint: RAKUDA_MOTOR_TRAVEL_RAD
+                    for joint in (
+                        "torso_yaw_dof",
+                        "shoulder_pitch_left_dof",
+                        "shoulder_pitch_right_dof",
+                    )
                 }
                 print(
-                    "  Soft limits for the continuous joints are provisional (not measured); "
-                    "pass --soft-limit or use --config for the real ranges."
+                    "  Continuous joints get the motor travel as their solver range; it is not "
+                    "measured. Pass --soft-limit or use --config for the real ranges."
                 )
+            low, high = RAKUDA_MOTOR_TRAVEL_RAD
+            print(
+                f"  Joint sliders span the motor travel ({math.degrees(low):.0f} to "
+                f"{math.degrees(high):.0f} deg about the count zero), as in leader-follower "
+                "position teleoperation; the solver still obeys the URDF range."
+            )
     if urdf is None:
         from robopy.kinematics.synthetic_dual_arm import write_synthetic_dual_arm_urdf
 
         tmpdir = tempfile.TemporaryDirectory()
         urdf = write_synthetic_dual_arm_urdf(Path(tmpdir.name) / "synthetic_dual_arm.urdf")
+        joint_travel = None  # no motors behind it; its URDF ranges are all there is
         print("Serving the synthetic fixture (Rakuda's topology, not its geometry).")
         soft_limits = {
             "torso_yaw_dof": (-1.5, 1.5),
@@ -157,6 +179,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             urdf,
             package_dirs=package_dirs,
             soft_limits=soft_limits,
+            joint_travel_rad=joint_travel,
             tcp_offsets=tcp_offsets,
             geometry_source=args.geometry,
         )

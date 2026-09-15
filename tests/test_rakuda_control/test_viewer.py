@@ -7,6 +7,7 @@ involved here; the page itself is exercised manually with Playwright.
 from __future__ import annotations
 
 import json
+import math
 import threading
 import urllib.error
 import urllib.request
@@ -90,6 +91,39 @@ class TestModelBundle:
         described = bundle.describe()["geometries"]
         assert [g["id"] for g in described if g["static"]] == ["root#0"]
         assert not [g for g in described if g["link"] == "torso_link" and g["static"]]
+
+    def test_the_motor_travel_becomes_the_slider_range(self, tmp_path: Path) -> None:
+        # Rakuda's joints are driven over the whole DYNAMIXEL count range, which
+        # is wider than several ranges its CAD export declares. The page's
+        # sliders span that travel; the model -- and so the solver -- keeps the
+        # URDF range, which describe() reports alongside.
+        from robopy.kinematics.synthetic_dual_arm import write_synthetic_dual_arm_urdf
+
+        travelled = ModelBundle.load(
+            write_synthetic_dual_arm_urdf(tmp_path / "travel.urdf"),
+            soft_limits=SOFT_LIMITS,
+            joint_travel_rad=(-math.pi, math.pi),
+        )
+        joints = {j["name"]: j for j in travelled.describe()["joints"]}
+
+        elbow = joints["elbow_pitch_left_dof"]  # URDF range +/-2.4 rad
+        assert elbow["limit_source"] == "motor"
+        assert (elbow["lower"], elbow["upper"]) == pytest.approx((-math.pi, math.pi))
+        assert (elbow["model_lower"], elbow["model_upper"]) == pytest.approx((-2.4, 2.4))
+
+        # A soft limit is a measurement of this joint, so it still narrows the
+        # slider; the motor travel only replaces the URDF's declared range.
+        torso = joints["torso_yaw_dof"]
+        assert torso["limit_source"] == "soft"
+        assert (torso["lower"], torso["upper"]) == pytest.approx(SOFT_LIMITS["torso_yaw_dof"])
+        assert any("actuator travel" in w for w in travelled.warnings)
+
+    def test_without_a_travel_the_range_stays_the_model_s(self, bundle: ModelBundle) -> None:
+        joints = {j["name"]: j for j in bundle.describe()["joints"]}
+        elbow = joints["elbow_pitch_left_dof"]
+        assert elbow["limit_source"] == "urdf"
+        assert (elbow["lower"], elbow["upper"]) == pytest.approx((-2.4, 2.4))
+        assert joints["torso_yaw_dof"]["limit_source"] == "soft"
 
     def test_poses_place_every_geometry_and_both_tcps(self, bundle: ModelBundle) -> None:
         poses = bundle.poses({"torso_yaw_dof": 0.3})

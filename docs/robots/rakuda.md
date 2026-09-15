@@ -284,14 +284,20 @@ uv run robopy-viewer --urdf <path>/assembly_2.urdf --package-dir <models> \
 uv run robopy-viewer --config
 ```
 
-引数なし起動時の continuous 関節のソフト制限（±1.57 / ±3.14 rad）は**未計測の仮値**で、ソルバを構築する
-ためだけのものです。実測値は `.robopy/rakuda/config.yaml` に書いて `--config` で使ってください。
+**関節範囲は実機 leader-follower と同じ「モータの可動範囲」に揃えてあります**: スライダは
+0〜4095カウント（ゼロ点2048）に対応する **±180°**、初期値は 0°（＝ゼロカウント）です。
+CADエクスポート（URDF）が宣言する範囲ではありません — URDF側は `shoulder_roll_left_dof` が
+−22.5°〜197.5°、`elbow_yaw_left_dof` が −139.1°〜220.9° のように非対称で、実機で動かせる範囲と一致しません。
+ただしこれは**サーボが許す範囲**であって可動域の実測ではありません。実際に止まる位置は計測値なので、
+`.robopy/rakuda/config.yaml`（`--config`）か `--soft-limit` でソフト制限として与えてください（与えればスライダも狭まります）。
+ソルバ（IK）は従来どおりURDFの範囲＋ソフト制限を守ります。その範囲外へスライダで動かしてから solve すると、
+実機と同じく「limits を既に逸脱している」と言って動きません。
 
 `http://127.0.0.1:8765` を開きます（`--port`, `--host`, `--no-browser`, `--no-ik` あり）。
 
 | タブ | 内容 |
 | --- | --- |
-| Joints | 胴体／左腕／右腕／頭部ごとのスライダ・数値入力・±ジョグ（deg/rad切替、ステップ幅）。`zero all`、`copy JSON`（rad） |
+| Joints | 胴体／左腕／右腕／頭部ごとのスライダ・数値入力・±ジョグ（deg/rad切替、ステップ幅）。範囲はモータ可動範囲 ±180°（初期値0°）、ツールチップに出典とソルバ側の範囲を表示。`zero all`、`copy JSON`（rad） |
 | End effector | 左右TCPの現在姿勢（mm / deg）と目標。各成分のスライダ（ドラッグ中も逐次IK）・数値入力・±ジョグ、`capture`、片手の有効/無効（無効側は保持目標）、胴体方針 fixed/manual/optimize、姿勢モード soft/keep/free、`solve`／ジョグごとに自動solve |
 | Info | URDFパス、nq/nv、IKの関節グループ（名前から推定した場合もここに明示）、モデル監査の警告 |
 
@@ -300,6 +306,10 @@ uv run robopy-viewer --config
 - **運動学は全てサーバ側**（`WholeBodyModel` / `DualArmIK`）。ページはFK/IKの結果を描くだけなので、
   表示と制御スタックの解が食い違いません。Pinocchio/Pinkが必要（`kinematics` extra）。
 - 3D描画は three.js を**同梱**（`src/robopy/viewer/static/vendor/`、MIT）。オフラインの実験室でも動きます。
+- **関節範囲の出典**: `/api/model` は各関節について、スライダ範囲（`lower`/`upper`）とその出典（`limit_source`:
+  `motor` / `soft` / `urdf` / `display`）、そしてソルバが守る範囲（`model_lower`/`model_upper`）を別々に返します。
+  「実機で動かせる範囲」と「モデルが認める範囲」を混ぜないための区別です。`--synthetic` の合成モデルには
+  モータが無いので、従来どおりURDFの範囲を使います。
 - **接地面**: グリッドは床です。関節で動かないジオメトリ（＝土台）の最下面に置きます。モデル原点ではありません —
   Rakudaのエクスポートでは原点は土台の底から約 26 cm 上にあり、原点に描いていたグリッドは胴体を突き抜けていました。
   土台を描かないモデルでは従来どおり root フレーム（z = 0）に置きます。

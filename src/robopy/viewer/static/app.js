@@ -283,6 +283,29 @@ function jointStepRad() {
   return state.unitDeg ? step / DEG : step;
 }
 
+// Where a slider's range came from. "motor" is the actuator travel -- for
+// Rakuda the DYNAMIXEL count range leader-follower teleoperation drives -- and
+// it is wider than several of the ranges the CAD export declares, so the
+// solver's own range is named too whenever it is the narrower of the two.
+const LIMIT_NOTE = {
+  motor: 'motor travel: the range leader-follower position teleoperation drives, not a measured mechanical limit',
+  soft: 'measured soft limit',
+  urdf: 'range declared by the URDF',
+  display: 'display range only: a continuous joint with no measured soft limit',
+};
+const LIMIT_TAG = { motor: ' (motor)', display: ' (display)' };
+
+function limitText(j) {
+  return `${fmtLimit(j.lower)} … ${fmtLimit(j.upper)}${LIMIT_TAG[j.limit_source] || ''}`;
+}
+function limitTitle(j) {
+  let note = LIMIT_NOTE[j.limit_source] || LIMIT_NOTE.urdf;
+  if (j.model_lower != null && (j.model_lower > j.lower + 1e-9 || j.model_upper < j.upper - 1e-9)) {
+    note += `. The solver keeps this joint within ${fmtLimit(j.model_lower)} … ${fmtLimit(j.model_upper)}, the model's own range.`;
+  }
+  return note;
+}
+
 function buildJointsPanel(model) {
   const groups = { torso: [], left: [], right: [], head: [] };
   for (const j of model.joints) (groups[j.group] || groups.torso).push(j);
@@ -301,9 +324,12 @@ function buildJointsPanel(model) {
       row.dataset.joint = j.name;
       row.innerHTML = `
         <div class="name"><span>${j.name}${j.continuous ? ' <span class="dim" title="continuous joint">∞</span>' : ''}</span>
-          <span class="lim ${j.limit_is_display_only ? 'display-only' : ''}" title="${j.limit_is_display_only ? 'display range only: no measured soft limit' : 'URDF or soft limit'}">
-            ${fmtLimit(j.lower)} … ${fmtLimit(j.upper)}${j.limit_is_display_only ? ' (display)' : ''}</span></div>
-        <input type="range" min="${j.lower}" max="${j.upper}" step="0.0005" value="0">
+          <span class="lim ${j.limit_is_display_only ? 'display-only' : ''}" title="${limitTitle(j)}">
+            ${limitText(j)}</span></div>
+        <!-- step="any": a stepped range snaps to multiples of (max - min) from
+             its minimum, and with the motor travel (+/-pi) that grid misses
+             zero, so the home pose sat a few thousandths of a degree off. -->
+        <input type="range" min="${j.lower}" max="${j.upper}" step="any" value="0">
         <input type="text" class="num" value="0">
         <button class="jog" data-dir="-1">−</button>
         <button class="jog" data-dir="1">+</button>`;
@@ -343,7 +369,9 @@ function refreshJointInputs() {
     if (document.activeElement !== slider) slider.value = v;
     if (document.activeElement !== text) text.value = jointValueDisplay(v);
     const j = state.model.joints.find((x) => x.name === name);
-    row.querySelector('.lim').firstChild.textContent = `${fmtLimit(j.lower)} … ${fmtLimit(j.upper)}${j.limit_is_display_only ? ' (display)' : ''}`;
+    const lim = row.querySelector('.lim');
+    lim.firstChild.textContent = limitText(j);
+    lim.title = limitTitle(j);
   }
 }
 
@@ -623,6 +651,9 @@ function buildInfo(model) {
   const rows = [
     ['URDF', model.urdf], ['nq / nv', `${model.nq} / ${model.nv}`], ['joints', `${model.joints.length} movable`],
     ['shapes', `${model.geometries.length} (${model.geometries.filter((g) => g.shape.type === 'mesh').length} meshes, drawn from <${model.geometry_source}>)`],
+    ['joint range', model.joints.some((j) => j.limit_source === 'motor')
+      ? 'motor travel, narrowed by any measured soft limit (the solver still obeys the URDF range)'
+      : 'URDF range, narrowed by any measured soft limit'],
     ['TCP frames', JSON.stringify(model.tcp_frames)],
     ['IK', model.ik ? `groups: ${JSON.stringify(model.ik.groups)}` : 'not available'],
   ];

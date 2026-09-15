@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
@@ -88,6 +89,20 @@ RAKUDA_MOTOR_MAPPING: Dict[str, str] = {
 
 # Canonical Rakuda joint names (used for validation and config templates).
 RAKUDA_JOINT_NAMES: Tuple[str, ...] = tuple(RAKUDA_MOTOR_MAPPING.keys())
+
+
+#: Travel one Rakuda joint has under leader-follower position teleoperation.
+#:
+#: The leader and the follower run DYNAMIXEL position control over the whole
+#: 0..4095 count range with the zero at 2048 (:class:`RakudaJointCalibrationSpec`
+#: ``zero_count``), so every joint can be commanded ``+/-pi`` about that zero.
+#: That is what the servos allow, **not** a measurement of where the machine
+#: actually stops: a cable, a cover or a neighbouring link may end the travel
+#: much sooner, and that number is a measurement which belongs in
+#: ``.robopy/rakuda/config.yaml`` as a soft limit.  Anything that narrows the
+#: range -- a measured soft limit, the URDF's own range -- still applies on top
+#: of this.
+RAKUDA_MOTOR_TRAVEL_RAD: Tuple[float, float] = (-math.pi, math.pi)
 
 
 # --- Dual-arm IK and bilateral control configuration ---------------------------
