@@ -36,8 +36,7 @@ window.__robopy_state = state;
 // ------------------------------------------------------------------ three.js scene
 const viewport = $('#viewport');
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(window.devicePixelRatio);
-viewport.appendChild(renderer.domElement);
+viewport.appendChild(renderer.domElement);   // sized by resize(), below
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x14171c);
@@ -62,7 +61,16 @@ scene.add(frameGroup);
 
 function resize() {
   const w = viewport.clientWidth, h = viewport.clientHeight;
-  renderer.setSize(w, h, false);
+  if (!w || !h) return;                       // a collapsed viewport has no aspect ratio
+  // The canvas must be told its CSS size, not only its backing-store size: with
+  // the size left to the width/height attributes the element lays out at one
+  // layout pixel per device pixel, so on a HiDPI screen -- or at any browser
+  // zoom other than 100%, which moves devicePixelRatio too -- the canvas came
+  // out devicePixelRatio times too large, overflowed #viewport and covered the
+  // control panel next to it. The ratio is re-read here because zooming
+  // changes it while the page is open.
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  renderer.setSize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }

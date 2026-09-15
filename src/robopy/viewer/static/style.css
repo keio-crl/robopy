@@ -19,7 +19,7 @@ body { display: flex; flex-direction: column; }
 .stats { color: var(--dim); font-family: ui-monospace, monospace; font-size: 12px; }
 
 main { flex: 1; display: flex; min-height: 0; }
-#viewport { flex: 1; position: relative; min-width: 0; }
+#viewport { flex: 1; position: relative; min-width: 0; overflow: hidden; }  /* the canvas can never spill over the panel */
 #viewport canvas { display: block; }
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); pointer-events: none; font-size: 14px; }
 .overlay[hidden] { display: none; }

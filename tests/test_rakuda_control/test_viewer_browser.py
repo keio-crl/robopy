@@ -99,8 +99,16 @@ def browser():  # type: ignore[no-untyped-def]
         b.close()
 
 
-def _open(browser, url: str, *, mesh_delay_s: float):  # type: ignore[no-untyped-def]
-    page = browser.new_page(viewport={"width": 1200, "height": 800})
+def _open(  # type: ignore[no-untyped-def]
+    browser,
+    url: str,
+    *,
+    mesh_delay_s: float,
+    device_scale_factor: float = 1.0,
+):
+    page = browser.new_page(
+        viewport={"width": 1200, "height": 800}, device_scale_factor=device_scale_factor
+    )
     errors: list[str] = []
     page.on("pageerror", lambda e: errors.append(str(e)))
 
@@ -162,12 +170,47 @@ class TestMeshPlacement:
             page.close()
 
 
+class TestCanvasSizing:
+    """The canvas needs its CSS size set, not only its backing store."""
+
+    def test_the_canvas_does_not_cover_the_panel_on_a_hidpi_screen(
+        self, server: ViewerServer, browser
+    ) -> None:
+        # Sized through the width/height attributes alone, the canvas laid out
+        # at one layout pixel per device pixel: at devicePixelRatio 2 -- a
+        # HiDPI screen, or any browser zoom off 100% -- it came out twice as
+        # wide as its box, spilled out of #viewport and hid the controls.
+        page, errors = _open(browser, server.url, mesh_delay_s=0.0, device_scale_factor=2)
+        try:
+            box = page.evaluate(
+                """() => {
+                  const canvas = document.querySelector('#viewport canvas');
+                  const viewport = document.querySelector('#viewport');
+                  const c = canvas.getBoundingClientRect();
+                  const p = document.querySelector('#panel').getBoundingClientRect();
+                  return {
+                    ratio: window.devicePixelRatio, buffer: canvas.width,
+                    canvasRight: c.right, canvasWidth: c.width,
+                    panelLeft: p.left, panelWidth: p.width,
+                    viewportWidth: viewport.clientWidth,
+                  };
+                }"""
+            )
+            assert box["ratio"] == 2
+            assert box["panelWidth"] > 0
+            assert box["canvasRight"] <= box["panelLeft"] + 1
+            assert box["canvasWidth"] == pytest.approx(box["viewportWidth"], abs=1)
+            # ... while still drawing at the screen's full resolution.
+            assert box["buffer"] == pytest.approx(box["viewportWidth"] * 2, abs=2)
+            assert errors == []
+        finally:
+            page.close()
+
+
 class TestGroundPlane:
     """The grid is the floor: it belongs under the base, not on the origin."""
 
-    def test_the_grid_sits_on_the_bottom_of_the_base(
-        self, server: ViewerServer, browser
-    ) -> None:
+    def test_the_grid_sits_on_the_bottom_of_the_base(self, server: ViewerServer, browser) -> None:
         # This export's origin is not on the floor -- the base plate's
         # underside is about 26 cm below it -- so a grid drawn at z = 0 cut
         # through the middle of the torso.
@@ -212,9 +255,9 @@ class TestTargetBars:
                 arg=before,
                 timeout=15_000,
             )
-            assert page.evaluate("() => window.__robopy_state.ee.left.target.p[0]") == pytest.approx(
-                (start + 60) / 1000, abs=1e-6
-            )
+            assert page.evaluate(
+                "() => window.__robopy_state.ee.left.target.p[0]"
+            ) == pytest.approx((start + 60) / 1000, abs=1e-6)
             assert errors == []
         finally:
             page.close()
