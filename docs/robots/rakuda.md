@@ -299,8 +299,20 @@ CADエクスポート（URDF）が宣言する範囲ではありません — UR
 | タブ | 内容 |
 | --- | --- |
 | Joints | 胴体／左腕／右腕／頭部ごとのスライダ・数値入力・±ジョグ（deg/rad切替、ステップ幅）。範囲はモータ可動範囲 ±180°（初期値0°）、ツールチップに出典とソルバ側の範囲を表示。`zero all`、`copy JSON`（rad） |
-| End effector | 左右TCPの現在姿勢（mm / deg）と目標。3Dビュー上の球を直接ドラッグ、各成分のスライダ（ドラッグ中も逐次IK）・数値入力・±ジョグ、`capture`、片手の有効/無効（無効側は保持目標）、胴体方針 fixed/manual/optimize、姿勢モード soft/keep/free、`solve`／ジョグごとに自動solve |
+| End effector | 左右TCPの現在姿勢（mm / deg）と目標。3Dビュー上の球を直接ドラッグ、各成分のスライダ（ドラッグ中も逐次IK）・数値入力・±ジョグ、`capture`、左右の `track TCP`、非操作腕の follow torso / hold TCP in world、胴体方針 fixed/manual/optimize、姿勢モード soft/keep/free、`solve`／ジョグごとに自動solve |
 | Info | URDFパス、nq/nv、IKの関節グループ（名前から推定した場合もここに明示）、モデル監査の警告 |
+
+片腕操作では、反対側の `track TCP` を外してください。既定の `follow torso (keep joints)`
+では非操作腕の6関節にIKによる運動を指令せず、TCPのワールド座標は共有胴体と一緒に変化します。
+胴体をIKに選ばせるには `torso: optimize` を選びます。両方の `track TCP` が有効なら、
+両手の目標を追跡します。再度有効にした腕の目標は、その時点のTCP姿勢で取り直します。
+
+Python APIも同じ既定動作です。例えば右腕のみなら
+`DualArmTarget(left_enabled=False, right_target=T_right, torso_policy=TorsoPolicy.OPTIMIZE)`
+とします。従来の非操作TCPのワールド座標保持が必要な場合だけ、
+`inactive_arm_policy=InactiveArmPolicy.HOLD_WORLD` を指定してください。
+`InactiveArmPolicy` は `robopy.control` からインポートできます。
+非操作腕の衝突形状・関節範囲のチェックは残ります。この設定はモータのトルクOFFを意味しません。
 
 設計上のポイント:
 

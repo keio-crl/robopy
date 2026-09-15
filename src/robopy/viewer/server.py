@@ -35,6 +35,7 @@ import numpy as np
 
 from robopy.control.types import (
     DualArmTarget,
+    InactiveArmPolicy,
     JointState,
     TorsoPolicy,
     monotonic_ns,
@@ -162,6 +163,7 @@ class IKSetup:
         iterations: int = 200,
         dt: float = 0.02,
         orientation_weight: float | None = None,
+        inactive_arm_policy: str = "hold_joints",
     ) -> Dict[str, Any]:
         """Iterate the differential solver from ``positions`` until it converges.
 
@@ -170,6 +172,8 @@ class IKSetup:
             targets: ``{"left"|"right": {"p": [3], "q": [4]}}`` for the driven hands.
             torso_policy: ``fixed`` / ``manual`` / ``optimize``.
             torso_velocity_rad_s: Torso rate for the ``manual`` policy.
+            inactive_arm_policy: ``hold_joints`` lets an undriven TCP move with
+                the torso; ``hold_world`` requests the legacy world TCP hold.
             iterations: Iteration budget.
             dt: Per-iteration step time; with the step bounds this sets the
                 largest joint move per iteration.
@@ -207,6 +211,7 @@ class IKSetup:
             right_enabled=right is not None,
             torso_policy=policy,
             torso_velocity_rad_s=torso_velocity_rad_s if policy is TorsoPolicy.MANUAL else 0.0,
+            inactive_arm_policy=InactiveArmPolicy(inactive_arm_policy),
         )
 
         if orientation_weight is not None:
@@ -271,6 +276,7 @@ class IKSetup:
             "torso_velocity_rad_s": result.torso_velocity_rad_s,
             "stalled": stalled,
             "orientation_weight": self.solver.orientation_cost,
+            "inactive_arm_policy": target.inactive_arm_policy.value,
         }
 
     def _state(self, positions: Mapping[str, float]) -> JointState:
@@ -480,6 +486,7 @@ class ViewerServer(ThreadingHTTPServer):
                 joints,
                 targets,
                 torso_policy=str(body.get("torso_policy", "fixed")),
+                inactive_arm_policy=str(body.get("inactive_arm_policy", "hold_joints")),
                 torso_velocity_rad_s=float(body.get("torso_velocity_rad_s", 0.0)),
                 iterations=int(body.get("iterations", 200)),
                 dt=float(body.get("dt", 0.02)),

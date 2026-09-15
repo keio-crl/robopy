@@ -304,6 +304,21 @@ class TestDraggingTheHand:
         finally:
             page.close()
 
+    def test_an_untracked_hand_keeps_no_handle(self, server: ViewerServer, browser) -> None:
+        # A hand nothing tracks must not leave a grabbable target behind: its
+        # arm holds its joints and its TCP goes where the torso takes it.
+        page, errors = _open(browser, server.url, mesh_delay_s=0.0)
+        try:
+            _bend_the_elbows(page)
+            assert page.evaluate("() => window.__robopy_state.handleScreen('left')") is not None
+            page.locator(".side[data-side=left] .ee-enable").uncheck()
+            page.wait_for_timeout(300)
+            assert page.evaluate("() => window.__robopy_state.handleScreen('left')") is None
+            assert page.evaluate("() => window.__robopy_state.handleScreen('right')") is not None
+            assert errors == []
+        finally:
+            page.close()
+
     def test_dragging_anywhere_else_still_orbits_the_view(
         self, server: ViewerServer, browser
     ) -> None:
