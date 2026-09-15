@@ -319,6 +319,41 @@ class TestDraggingTheHand:
         finally:
             page.close()
 
+    def test_a_single_arm_drag_turns_the_torso_and_leaves_the_other_arm(
+        self, server: ViewerServer, browser
+    ) -> None:
+        # One hand on its own reaches barely past its own arm's workspace: the
+        # shared torso is what takes it further, which is why the page asks for
+        # torso "optimize" by default. The idle arm keeps its joint angles and
+        # is carried along.
+        page, errors = _open(browser, server.url, mesh_delay_s=0.0)
+        try:
+            assert (
+                page.evaluate("() => document.querySelector('#torso-policy').value") == "optimize"
+            )
+            _bend_the_elbows(page)
+            page.locator(".side[data-side=left] .ee-enable").uncheck()
+            page.wait_for_timeout(300)
+
+            idle = """() => Object.fromEntries(Object.entries(window.__robopy_state.joints)
+                .filter(([name]) => name.includes('left') && !name.includes('head')))"""
+            idle_before = page.evaluate(idle)
+            before = page.evaluate("() => window.__robopy_state.ee.right.current.p")
+            handle = page.evaluate("() => window.__robopy_state.handleScreen('right')")
+            self._drag(page, handle, 160, 0)
+            page.wait_for_function(
+                "(b) => { const p = window.__robopy_state.ee.right.current.p;"
+                " return Math.hypot(p[0]-b[0], p[1]-b[1], p[2]-b[2]) > 0.10; }",
+                arg=before,
+                timeout=20_000,
+            )
+            assert abs(page.evaluate("() => window.__robopy_state.joints.torso_yaw_dof")) > 0.1
+            idle_after = page.evaluate(idle)
+            assert idle_after == idle_before
+            assert errors == []
+        finally:
+            page.close()
+
     def test_dragging_anywhere_else_still_orbits_the_view(
         self, server: ViewerServer, browser
     ) -> None:

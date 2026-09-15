@@ -60,11 +60,11 @@
       <div id="ik-unavailable" class="notice" hidden></div>
       <div id="ik-study" class="notice warn" hidden></div>
       <div class="toolbar">
-        <label>torso
+        <label title="optimize lets the solver turn the shared torso, which is what reaches past one arm's own workspace; fixed locks it, so only the six joints of the driven arm can move.">torso
           <select id="torso-policy">
+            <option value="optimize" selected>optimize</option>
             <option value="fixed">fixed</option>
             <option value="manual">manual</option>
-            <option value="optimize">optimize</option>
           </select>
         </label>
         <label id="torso-velocity-wrap" hidden>ω <input id="torso-velocity" type="number" value="0.1" step="0.05" class="num short"> rad/s</label>
@@ -89,7 +89,7 @@
         <label><input type="checkbox" id="ik-live" checked> solve on every jog</label>
         <button id="ee-capture-all" title="Set both targets to the current poses">capture both</button>
       </div>
-      <p class="help">For right-arm-only control, uncheck the left TCP's <b>track TCP</b> box (and vice versa). Check both to control both TCPs. Use torso <b>optimize</b> to let IK choose the torso angle.</p>
+      <p class="help">For right-arm-only control, uncheck the left TCP's <b>track TCP</b> box (and vice versa). Check both to control both TCPs. Torso <b>optimize</b> (the default) lets the solver turn the shared torso, which is how a hand reaches past its own arm's workspace; the other arm keeps its joint angles and is carried along. <b>fixed</b> locks the torso, leaving one arm's six joints to do everything.</p>
       <div id="ee-sides"></div>
       <div id="ik-status" class="status">—</div>
     </section>

@@ -610,6 +610,7 @@ async function solveIK(opts = {}) {
           + (res.active_limits.some((l) => l.includes(':at_') || l.endsWith(':lower') || l.endsWith(':upper'))
             ? ' A joint is on its limit (see limits above).'
             : ' The target is probably outside the reachable workspace from this pose -- at q = 0 the arm is fully extended, so bend the elbow first (each elbow bends one way only; see its slider range).')
+          + ($('#torso-policy').value === 'fixed' ? ' The torso is fixed, so only this arm\'s six joints may move; torso: optimize lets the shared torso turn, which is what reaches further (the other arm keeps its joint angles and is carried with it).' : '')
           + (res.orientation_weight > 0 ? ' A two-axis wrist also cannot keep the full orientation while translating; orientation: free jogs position only.' : '')
         : '',
     ];
