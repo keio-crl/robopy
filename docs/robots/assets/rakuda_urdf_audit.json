@@ -1,0 +1,2764 @@
+{
+  "path": "/tmp/claude-0/-home-user-robopy/aeb7250e-93ad-5562-b7f0-dee1b53f316e/scratchpad/model/assembly_2/urdf/assembly_2_convex_collision.urdf",
+  "robot_name": "assembly_2",
+  "root_links": [
+    "root"
+  ],
+  "link_names": [
+    "_5シリーズ2列_nfs5_2040_297_1___nfs5_2040_910",
+    "_ゴム足Φ24x10_c_30_rk_24_black_1__none_1",
+    "_ゴム足Φ24x10_c_30_rk_24_black_1__none_2__1_",
+    "_ゴム足Φ24x10_c_30_rk_24_black_1__none_3__1_",
+    "_ゴム足Φ24x10_c_30_rk_24_black_1__none__1_",
+    "axk1106_1___axk1106",
+    "axk1106_1___axk1106_1",
+    "axk1106_1___axk1106_2",
+    "base_plate_03jk_rakuda_1__ソリッド1",
+    "cable_guide_fr12_hinge_head_r4_1__ソリッド1",
+    "elbow_cover_right",
+    "fr12_h104_1__ソリッド1",
+    "fr12_h104_1__ソリッド1_1",
+    "fr12_h104_1__ソリッド1_2",
+    "fr12_h104_1__ソリッド1_3",
+    "fr12_h104_1__ソリッド1_4",
+    "fr12_s101_1__ソリッド1",
+    "fr12_s101_1__ソリッド1_1",
+    "fr12_s102_1__ソリッド1",
+    "fr12_s102_1__ソリッド1_1",
+    "fr13_h101_1__ソリッド1",
+    "fr13_h101_1__ソリッド1_1",
+    "gripper_left_dof",
+    "gripper_right_dof",
+    "head_camera_link",
+    "hn12_i101_1__ソリッド1",
+    "hn12_i101_1__ソリッド1_1",
+    "hn12_i101_1__ソリッド1_2",
+    "hn12_i101_1__ソリッド1_3",
+    "hn12_i101_1__ソリッド1_4",
+    "hn12_n101_1__ソリッド1",
+    "hn12_n101_1__ソリッド1_1",
+    "hn12_n101_1__ソリッド1_2",
+    "hn12_n101_1__ソリッド1_3",
+    "hn12_n101_1__ソリッド1_4",
+    "hn12_n101_1__ソリッド1_5",
+    "hn12_n101_1__ソリッド1_6",
+    "hn12_n101_1__ソリッド1_7",
+    "hn12_n101_1__ソリッド1_8",
+    "hn12_n101_1__ソリッド1_9",
+    "hn13_c101_1__ソリッド1",
+    "hn13_c101_1__ソリッド1_1",
+    "hn13_c101_1__ソリッド1_2",
+    "hn13_i101_1__ソリッド1",
+    "hn13_i101_1__ソリッド1_1",
+    "hn13_n101_1__ソリッド1",
+    "hn13_n101_1__ソリッド1_1",
+    "igus_jfm_1113_05_1__1",
+    "igus_jfm_1113_05_1__1_1",
+    "igus_jfm_1113_05_1__1_2",
+    "igus_jfm_1113_05_1__1_3",
+    "intel_realsense_depth_camera_d435_1__ソリッド1_1",
+    "rakuda29_joint_upper_arm_r1_1__ソリッド1",
+    "rakuda29_joint_upper_arm_r1_1__ソリッド1_1",
+    "rakuda2_r3_waist_base_1__ソリッド1",
+    "rakuda34_r2__spacer_axk1160_waist_ring_r1_1__ソリッド1",
+    "rakuda34_r2__spacer_axk1160_waist_ring_r1_1__ソリッド1_1",
+    "rakuda_r3__arm_cover_elbow_r1_1__ソリッド1",
+    "rakuda_r3__arm_cover_upperarm_side_1__ソリッド1",
+    "rakuda_r3__arm_cover_upperarm_side_1__ソリッド1_1",
+    "rakuda_r3__arm_joint_upper_arm_back_1__ソリッド2",
+    "rakuda_r3__arm_joint_upper_arm_back_1__ソリッド2_1",
+    "rakuda_r3__base_cable_guide_d435usb_r1_1__ソリッド1",
+    "rakuda_r3__chest_cover_r1_1__ソリッド1",
+    "rakuda_r3__chest_cover_r1_1__ソリッド1_1__1_",
+    "rakuda_r3__head_cable_guide_d435usb_1__ソリッド1",
+    "rakuda_r3__head_cover_front_1__ソリッド1",
+    "rakuda_r3__head_mount_d435_1__ソリッド1",
+    "rakuda_r3__neck_cable_guide2head_base_1__ソリッド1",
+    "rakuda_r3__neck_cover_r4_1__ソリッド1",
+    "rakuda_r3__plate_waist_x540_r8_1__ソリッド1",
+    "rakuda_r3__shoulder_base_hinge_1__ソリッド1",
+    "rakuda_r3__shoulder_base_hinge_1__ソリッド1_1",
+    "rakuda_r3__shoulder_hinge_cover_1__ソリッド1",
+    "rakuda_r3__shoulder_hinge_cover_1__ソリッド1_1__1_",
+    "rakuda_r3__shoulder_hinge_cover_1__ソリッド1_2",
+    "rakuda_r3__shoulder_hinge_cover_1__ソリッド1_3__1_",
+    "rakuda_r3__spacer_axk1160_waist_r2_1__ソリッド1",
+    "rakuda_r3__upper_arm_cover_inside_l_1__ソリッド1",
+    "rakuda_r3__upper_arm_cover_inside_l_r1_1__ソリッド1",
+    "rakuda_r3__upper_arm_cover_inside_r_1__ソリッド1",
+    "rakuda_r3__upper_arm_cover_inside_r_1__ソリッド1_1",
+    "rakuda_r3__waist_cover_hip_1__ソリッド1",
+    "rakuda_r3__x540_thrust_axk1160_1__ソリッド1",
+    "rakuda_r3__x540_thrust_axk1160_1__ソリッド1_1",
+    "root",
+    "x430_thrust_washer_1__part_1",
+    "x430_thrust_washer_1__part_1_1",
+    "x430_thrust_washer_1__part_1_2",
+    "x430_thrust_washer_1__part_1_3",
+    "x430_thrust_washer_1__part_1_4",
+    "xm430_w350_1__ソリッド2_11",
+    "xm430_w350_1__ソリッド2_2",
+    "xm430_w350_1__ソリッド2_3",
+    "xm430_w350_1__ソリッド2_4",
+    "xm430_w350_1__ソリッド2_5",
+    "xm430_w350_1__ソリッド2_6",
+    "xm430_w350_1__ソリッド2_7",
+    "xm430_w350_1__ソリッド2_9",
+    "xm430_w350_1__ソリッド3",
+    "xm430_w350_1__ソリッド3_1",
+    "xm430_w350_1__ソリッド3_10",
+    "xm430_w350_1__ソリッド3_11",
+    "xm430_w350_1__ソリッド3_2",
+    "xm430_w350_1__ソリッド3_3",
+    "xm430_w350_1__ソリッド3_4",
+    "xm430_w350_1__ソリッド3_5",
+    "xm430_w350_1__ソリッド3_6",
+    "xm430_w350_1__ソリッド3_7",
+    "xm430_w350_1__ソリッド3_8",
+    "xm430_w350_1__ソリッド3_9",
+    "xm430_w350_1__ソリッド4",
+    "xm430_w350_1__ソリッド4_1",
+    "xm430_w350_1__ソリッド4_10",
+    "xm430_w350_1__ソリッド4_11",
+    "xm430_w350_1__ソリッド4_2",
+    "xm430_w350_1__ソリッド4_3",
+    "xm430_w350_1__ソリッド4_4",
+    "xm430_w350_1__ソリッド4_5",
+    "xm430_w350_1__ソリッド4_6",
+    "xm430_w350_1__ソリッド4_7",
+    "xm430_w350_1__ソリッド4_8",
+    "xm430_w350_1__ソリッド4_9",
+    "xm430_w350_1__ソリッド5",
+    "xm430_w350_1__ソリッド5_1",
+    "xm430_w350_1__ソリッド5_10",
+    "xm430_w350_1__ソリッド5_11",
+    "xm430_w350_1__ソリッド5_2",
+    "xm430_w350_1__ソリッド5_3",
+    "xm430_w350_1__ソリッド5_4",
+    "xm430_w350_1__ソリッド5_5",
+    "xm430_w350_1__ソリッド5_6",
+    "xm430_w350_1__ソリッド5_7",
+    "xm430_w350_1__ソリッド5_8",
+    "xm430_w350_1__ソリッド5_9",
+    "xm540_w270_1__ソリッド2_1__1_",
+    "xm540_w270_1__ソリッド2_2",
+    "xm540_w270_1__ソリッド2_3",
+    "xm540_w270_1__ソリッド2_4",
+    "xm540_w270_1__ソリッド2_torso__1_",
+    "xm540_w270_1__ソリッド4_1",
+    "xm540_w270_1__ソリッド4_1_1__1_",
+    "xm540_w270_1__ソリッド4_1_2",
+    "xm540_w270_1__ソリッド4_1_3__1_",
+    "xm540_w270_1__ソリッド4_1_4",
+    "xm540_w270_1__ソリッド4_2",
+    "xm540_w270_1__ソリッド4_3",
+    "xm540_w270_1__ソリッド4_4",
+    "xm540_w270_1__ソリッド5_1__1_",
+    "xm540_w270_1__ソリッド5_2",
+    "xm540_w270_1__ソリッド5_3",
+    "xm540_w270_1__ソリッド5_4",
+    "xm540_w270_1__ソリッド5__1_"
+  ],
+  "joints": [
+    {
+      "name": "elbow_pitch_left_dof",
+      "joint_type": "revolute",
+      "parent": "xm430_w350_1__ソリッド5_3",
+      "child": "hn12_n101_1__ソリッド1_4",
+      "axis": [
+        -7.49739e-15,
+        -0.939693,
+        -0.34202
+      ],
+      "lower": -0.746788,
+      "upper": 2.30754,
+      "effort": 1.0,
+      "velocity": 1.0
+    },
+    {
+      "name": "elbow_pitch_right_dof",
+      "joint_type": "revolute",
+      "parent": "xm430_w350_1__ソリッド5_5",
+      "child": "hn12_n101_1__ソリッド1_5",
+      "axis": [
+        -0.5,
+        0.813798,
+        -0.296198
+      ],
+      "lower": -2.79253,
+      "upper": 0.0,
+      "effort": 1.0,
+      "velocity": 1.0
+    },
+    {
+      "name": "elbow_yaw_left_dof",
+      "joint_type": "revolute",
+      "parent": "xm430_w350_1__ソリッド5_2",
+      "child": "hn12_n101_1__ソリッド1_2",
+      "axis": [
+        -3.28673e-15,
+        -0.34202,
+        0.939693
+      ],
+      "lower": -2.42791,
+      "upper": 3.85528,
+      "effort": 1.0,
+      "velocity": 1.0
+    },
+    {
+      "name": "elbow_yaw_right_dof",
+      "joint_type": "revolute",
+      "parent": "xm430_w350_1__ソリッド5_4",
+      "child": "hn12_n101_1__ソリッド1_3",
+      "axis": [
+        1.6088e-15,
+        0.34202,
+        0.939693
+      ],
+      "lower": -3.45569,
+      "upper": 2.82749,
+      "effort": 1.0,
+      "velocity": 1.0
+    },
+    {
+      "name": "fixed_node_to_root_joint",
+      "joint_type": "fixed",
+      "parent": "root",
+      "child": "_ゴム足Φ24x10_c_30_rk_24_black_1__none_1",
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "fixed_node_to_root_joint_1",
+      "joint_type": "fixed",
+      "parent": "root",
+      "child": "_ゴム足Φ24x10_c_30_rk_24_black_1__none_2__1_",
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "fixed_node_to_root_joint_2",
+      "joint_type": "fixed",
+      "parent": "root",
+      "child": "base_plate_03jk_rakuda_1__ソリッド1",
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "fixed_node_to_root_joint_3",
+      "joint_type": "fixed",
+      "parent": "root",
+      "child": "_5シリーズ2列_nfs5_2040_297_1___nfs5_2040_910",
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "fixed_node_to_root_joint_4",
+      "joint_type": "fixed",
+      "parent": "root",
+      "child": "_ゴム足Φ24x10_c_30_rk_24_black_1__none_3__1_",
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "fixed_node_to_root_joint_5",
+      "joint_type": "fixed",
+      "parent": "root",
+      "child": "rakuda2_r3_waist_base_1__ソリッド1",
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "fixed_node_to_root_joint_6",
+      "joint_type": "fixed",
+      "parent": "root",
+      "child": "_ゴム足Φ24x10_c_30_rk_24_black_1__none__1_",
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "gripper_left_dof",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド5_10",
+      "child": "gripper_left_dof",
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "gripper_right_dof",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド5_11",
+      "child": "gripper_right_dof",
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "head_camera_link",
+      "joint_type": "fixed",
+      "parent": "intel_realsense_depth_camera_d435_1__ソリッド1_1",
+      "child": "head_camera_link",
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "head_pitch_dof",
+      "joint_type": "revolute",
+      "parent": "hn12_n101_1__ソリッド1_1",
+      "child": "xm430_w350_1__ソリッド5_1",
+      "axis": [
+        1.73388e-15,
+        -1.0,
+        5.19104e-16
+      ],
+      "lower": -1.50009,
+      "upper": 0.594303,
+      "effort": 1.0,
+      "velocity": 1.0
+    },
+    {
+      "name": "head_yaw_dof",
+      "joint_type": "revolute",
+      "parent": "xm430_w350_1__ソリッド5",
+      "child": "hn12_n101_1__ソリッド1",
+      "axis": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "lower": -1.81055,
+      "upper": 1.33104,
+      "effort": 1.0,
+      "velocity": 1.0
+    },
+    {
+      "name": "shoulder_pitch_left_dof",
+      "joint_type": "continuous",
+      "parent": "xm540_w270_1__ソリッド2_1__1_",
+      "child": "hn13_c101_1__ソリッド1_1",
+      "axis": [
+        0.0,
+        -1.0,
+        0.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "shoulder_pitch_right_dof",
+      "joint_type": "continuous",
+      "parent": "xm540_w270_1__ソリッド2_3",
+      "child": "hn13_c101_1__ソリッド1_2",
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "shoulder_roll_left_dof",
+      "joint_type": "revolute",
+      "parent": "hn13_n101_1__ソリッド1",
+      "child": "xm540_w270_1__ソリッド2_2",
+      "axis": [
+        1.0,
+        -9.31406e-15,
+        1.17634e-16
+      ],
+      "lower": -0.392932,
+      "upper": 3.44679,
+      "effort": 1.0,
+      "velocity": 1.0
+    },
+    {
+      "name": "shoulder_roll_right_dof",
+      "joint_type": "revolute",
+      "parent": "hn13_n101_1__ソリッド1_1",
+      "child": "xm540_w270_1__ソリッド2_4",
+      "axis": [
+        1.0,
+        -2.12217e-14,
+        5.81155e-15
+      ],
+      "lower": -3.36135,
+      "upper": 0.478376,
+      "effort": 1.0,
+      "velocity": 1.0
+    },
+    {
+      "name": "torso_yaw_dof",
+      "joint_type": "continuous",
+      "parent": "rakuda2_r3_waist_base_1__ソリッド1",
+      "child": "hn13_c101_1__ソリッド1",
+      "axis": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "wrist_pitch_left_dof",
+      "joint_type": "revolute",
+      "parent": "xm430_w350_1__ソリッド5_8",
+      "child": "hn12_n101_1__ソリッド1_8",
+      "axis": [
+        -7.41699e-15,
+        -0.939693,
+        -0.34202
+      ],
+      "lower": -1.69893,
+      "upper": 1.96627,
+      "effort": 1.0,
+      "velocity": 1.0
+    },
+    {
+      "name": "wrist_pitch_right_dof",
+      "joint_type": "revolute",
+      "parent": "xm430_w350_1__ソリッド5_9",
+      "child": "hn12_n101_1__ソリッド1_9",
+      "axis": [
+        -0.469846,
+        0.881697,
+        0.0430586
+      ],
+      "lower": -2.48005,
+      "upper": 1.41204,
+      "effort": 1.0,
+      "velocity": 1.0
+    },
+    {
+      "name": "wrist_yaw_left_dof",
+      "joint_type": "revolute",
+      "parent": "xm430_w350_1__ソリッド5_6",
+      "child": "hn12_n101_1__ソリッド1_6",
+      "axis": [
+        -0.707107,
+        -0.241845,
+        0.664463
+      ],
+      "lower": -2.25701,
+      "upper": 1.93178,
+      "effort": 1.0,
+      "velocity": 1.0
+    },
+    {
+      "name": "wrist_yaw_right_dof",
+      "joint_type": "revolute",
+      "parent": "xm430_w350_1__ソリッド5_7",
+      "child": "hn12_n101_1__ソリッド1_7",
+      "axis": [
+        -0.866025,
+        -0.469846,
+        0.17101
+      ],
+      "lower": -0.891121,
+      "upper": 3.29767,
+      "effort": 1.0,
+      "velocity": 1.0
+    },
+    {
+      "name": "固定_1",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_1",
+      "child": "xm430_w350_1__ソリッド3_1",
+      "axis": [
+        1.73388e-15,
+        -1.0,
+        5.19104e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_10",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4",
+      "child": "xm430_w350_1__ソリッド5",
+      "axis": [
+        -0.0,
+        -0.0,
+        -1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_100",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_3",
+      "child": "xm430_w350_1__ソリッド3_3",
+      "axis": [
+        7.74067e-15,
+        0.939693,
+        0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_101",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド3_3",
+      "child": "xm430_w350_1__ソリッド2_3",
+      "axis": [
+        -1.0,
+        8.48664e-15,
+        -6.84623e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_102",
+      "joint_type": "fixed",
+      "parent": "hn12_n101_1__ソリッド1_4",
+      "child": "fr12_h104_1__ソリッド1_1",
+      "axis": [
+        -7.63278e-15,
+        -0.939693,
+        -0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_103",
+      "joint_type": "fixed",
+      "parent": "fr12_h104_1__ソリッド1_1",
+      "child": "hn12_i101_1__ソリッド1_1",
+      "axis": [
+        -7.63278e-15,
+        -0.939693,
+        -0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_104",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_3",
+      "child": "rakuda_r3__arm_cover_elbow_r1_1__ソリッド1",
+      "axis": [
+        1.0,
+        -8.62817e-15,
+        1.6052e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_105",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド3_6",
+      "child": "xm430_w350_1__ソリッド4_6",
+      "axis": [
+        -0.707107,
+        -0.241845,
+        0.664463
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_106",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド3_6",
+      "child": "xm430_w350_1__ソリッド2_6",
+      "axis": [
+        -0.707107,
+        0.241845,
+        -0.664463
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_107",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_6",
+      "child": "xm430_w350_1__ソリッド5_6",
+      "axis": [
+        -0.707107,
+        -0.241845,
+        0.664463
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_108",
+      "joint_type": "fixed",
+      "parent": "fr12_h104_1__ソリッド1_1",
+      "child": "xm430_w350_1__ソリッド3_6",
+      "axis": [
+        -0.707107,
+        -0.241845,
+        0.664463
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_109",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_6",
+      "child": "rakuda_r3__upper_arm_cover_inside_r_1__ソリッド1_1",
+      "axis": [
+        0.707107,
+        -0.241845,
+        0.664463
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_11",
+      "joint_type": "fixed",
+      "parent": "rakuda_r3__plate_waist_x540_r8_1__ソリッド1",
+      "child": "xm430_w350_1__ソリッド3",
+      "axis": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_110",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド5_6",
+      "child": "x430_thrust_washer_1__part_1_3",
+      "axis": [
+        -0.707107,
+        -0.241845,
+        0.664463
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_111",
+      "joint_type": "fixed",
+      "parent": "hn12_n101_1__ソリッド1_6",
+      "child": "fr12_s102_1__ソリッド1",
+      "axis": [
+        -0.707107,
+        -0.241845,
+        0.664463
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_112",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド5_8",
+      "child": "xm430_w350_1__ソリッド4_8",
+      "axis": [
+        8.16014e-15,
+        0.939693,
+        0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_113",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_8",
+      "child": "xm430_w350_1__ソリッド3_8",
+      "axis": [
+        8.16014e-15,
+        0.939693,
+        0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_114",
+      "joint_type": "fixed",
+      "parent": "fr12_s102_1__ソリッド1",
+      "child": "xm430_w350_1__ソリッド5_8",
+      "axis": [
+        8.16014e-15,
+        0.939693,
+        0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_115",
+      "joint_type": "fixed",
+      "parent": "fr12_h104_1__ソリッド1_3",
+      "child": "hn12_i101_1__ソリッド1_3",
+      "axis": [
+        -7.41699e-15,
+        -0.939693,
+        -0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_117",
+      "joint_type": "fixed",
+      "parent": "fr12_h104_1__ソリッド1_3",
+      "child": "xm430_w350_1__ソリッド3_10",
+      "axis": [
+        -1.0,
+        7.53099e-15,
+        9.94614e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_118",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド3_10",
+      "child": "xm430_w350_1__ソリッド4_10",
+      "axis": [
+        -1.0,
+        7.53099e-15,
+        9.94614e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_119",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_10",
+      "child": "xm430_w350_1__ソリッド5_10",
+      "axis": [
+        -1.0,
+        7.53099e-15,
+        9.94614e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_12",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4",
+      "child": "rakuda_r3__neck_cover_r4_1__ソリッド1",
+      "axis": [
+        1.0,
+        -3.33067e-16,
+        -1.38778e-17
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_122",
+      "joint_type": "fixed",
+      "parent": "rakuda2_r3_waist_base_1__ソリッド1",
+      "child": "axk1106_1___axk1106",
+      "axis": [
+        1.10934e-31,
+        -4.93038e-32,
+        -1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_123",
+      "joint_type": "fixed",
+      "parent": "rakuda_r3__x540_thrust_axk1160_1__ソリッド1_1",
+      "child": "rakuda34_r2__spacer_axk1160_waist_ring_r1_1__ソリッド1_1",
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_124",
+      "joint_type": "fixed",
+      "parent": "rakuda34_r2__spacer_axk1160_waist_ring_r1_1__ソリッド1_1",
+      "child": "axk1106_1___axk1106_2",
+      "axis": [
+        4.85723e-17,
+        1.0,
+        1.04157e-17
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_125",
+      "joint_type": "fixed",
+      "parent": "rakuda_r3__x540_thrust_axk1160_1__ソリッド1",
+      "child": "rakuda34_r2__spacer_axk1160_waist_ring_r1_1__ソリッド1",
+      "axis": [
+        0.0,
+        -1.0,
+        0.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_126",
+      "joint_type": "fixed",
+      "parent": "rakuda_r3__x540_thrust_axk1160_1__ソリッド1",
+      "child": "axk1106_1___axk1106_1",
+      "axis": [
+        4.85723e-17,
+        -1.0,
+        -1.04157e-17
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_127",
+      "joint_type": "fixed",
+      "parent": "hn12_i101_1__ソリッド1_2",
+      "child": "igus_jfm_1113_05_1__1_1",
+      "axis": [
+        -0.5,
+        0.813798,
+        -0.296198
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_128",
+      "joint_type": "fixed",
+      "parent": "hn12_i101_1__ソリッド1_4",
+      "child": "igus_jfm_1113_05_1__1_3",
+      "axis": [
+        -0.469846,
+        0.881697,
+        0.0430586
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_129",
+      "joint_type": "fixed",
+      "parent": "hn12_i101_1__ソリッド1_1",
+      "child": "igus_jfm_1113_05_1__1",
+      "axis": [
+        -7.74067e-15,
+        -0.939693,
+        -0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_13",
+      "joint_type": "fixed",
+      "parent": "fr12_h104_1__ソリッド1",
+      "child": "hn12_n101_1__ソリッド1_1",
+      "axis": [
+        3.60822e-16,
+        -1.0,
+        4.44089e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_130",
+      "joint_type": "fixed",
+      "parent": "hn12_i101_1__ソリッド1_3",
+      "child": "igus_jfm_1113_05_1__1_2",
+      "axis": [
+        -8.16014e-15,
+        -0.939693,
+        -0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_14",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド5",
+      "child": "x430_thrust_washer_1__part_1",
+      "axis": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_15",
+      "joint_type": "fixed",
+      "parent": "hn12_n101_1__ソリッド1",
+      "child": "fr12_h104_1__ソリッド1",
+      "axis": [
+        -1.57917e-16,
+        1.95467e-31,
+        -1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_16",
+      "joint_type": "fixed",
+      "parent": "fr12_h104_1__ソリッド1",
+      "child": "hn12_i101_1__ソリッド1",
+      "axis": [
+        -1.80411e-16,
+        1.0,
+        -4.44089e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_17",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_1",
+      "child": "rakuda_r3__head_cover_front_1__ソリッド1",
+      "axis": [
+        -0.939693,
+        -1.47812e-15,
+        0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_18",
+      "joint_type": "fixed",
+      "parent": "fr12_h104_1__ソリッド1",
+      "child": "rakuda_r3__neck_cable_guide2head_base_1__ソリッド1",
+      "axis": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_19",
+      "joint_type": "fixed",
+      "parent": "fr12_h104_1__ソリッド1",
+      "child": "cable_guide_fr12_hinge_head_r4_1__ソリッド1",
+      "axis": [
+        1.664e-16,
+        -1.0,
+        4.50262e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_2",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド5_1",
+      "child": "xm430_w350_1__ソリッド4_1",
+      "axis": [
+        1.73388e-15,
+        -1.0,
+        5.19104e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_20",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_1",
+      "child": "rakuda_r3__head_mount_d435_1__ソリッド1",
+      "axis": [
+        0.939693,
+        1.47509e-15,
+        -0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_21",
+      "joint_type": "fixed",
+      "parent": "rakuda_r3__head_mount_d435_1__ソリッド1",
+      "child": "rakuda_r3__head_cable_guide_d435usb_1__ソリッド1",
+      "axis": [
+        -0.939693,
+        -1.47509e-15,
+        0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_22",
+      "joint_type": "fixed",
+      "parent": "rakuda_r3__head_mount_d435_1__ソリッド1",
+      "child": "intel_realsense_depth_camera_d435_1__ソリッド1_1",
+      "axis": [
+        -0.939693,
+        -1.48905e-15,
+        0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_23",
+      "joint_type": "fixed",
+      "parent": "rakuda_r3__waist_cover_hip_1__ソリッド1",
+      "child": "rakuda_r3__base_cable_guide_d435usb_r1_1__ソリッド1",
+      "axis": [
+        1.0,
+        1.52682e-16,
+        -3.73578e-31
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_24",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド4_1_3__1_",
+      "child": "xm540_w270_1__ソリッド4_3",
+      "axis": [
+        -0.0,
+        -0.0,
+        -1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_25",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド4_1_3__1_",
+      "child": "xm540_w270_1__ソリッド5_3",
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_26",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド5_3",
+      "child": "xm540_w270_1__ソリッド2_3",
+      "axis": [
+        -0.0,
+        1.0,
+        -0.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_27",
+      "joint_type": "fixed",
+      "parent": "rakuda_r3__plate_waist_x540_r8_1__ソリッド1",
+      "child": "xm540_w270_1__ソリッド4_1_3__1_",
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_28",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド5_3",
+      "child": "rakuda_r3__chest_cover_r1_1__ソリッド1_1__1_",
+      "axis": [
+        1.0,
+        -3.05794e-15,
+        -7.28926e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_29",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド4_1_1__1_",
+      "child": "xm540_w270_1__ソリッド5_1__1_",
+      "axis": [
+        -0.0,
+        -1.0,
+        -0.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_3",
+      "joint_type": "fixed",
+      "parent": "hn13_c101_1__ソリッド1",
+      "child": "xm540_w270_1__ソリッド2_torso__1_",
+      "axis": [
+        2.04475e-74,
+        8.40779e-45,
+        -1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_30",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド5_1__1_",
+      "child": "xm540_w270_1__ソリッド2_1__1_",
+      "axis": [
+        -0.0,
+        -1.0,
+        -0.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_31",
+      "joint_type": "fixed",
+      "parent": "rakuda_r3__plate_waist_x540_r8_1__ソリッド1",
+      "child": "xm540_w270_1__ソリッド4_1_1__1_",
+      "axis": [
+        0.0,
+        -1.0,
+        0.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_32",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド5_1__1_",
+      "child": "rakuda_r3__chest_cover_r1_1__ソリッド1",
+      "axis": [
+        1.0,
+        4.21871e-17,
+        4.11842e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_33",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド2_3",
+      "child": "rakuda_r3__x540_thrust_axk1160_1__ソリッド1_1",
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_34",
+      "joint_type": "fixed",
+      "parent": "hn13_c101_1__ソリッド1_2",
+      "child": "rakuda_r3__shoulder_base_hinge_1__ソリッド1_1",
+      "axis": [
+        -2.46263e-31,
+        1.0,
+        2.46519e-32
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_35",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド2_1__1_",
+      "child": "rakuda_r3__x540_thrust_axk1160_1__ソリッド1",
+      "axis": [
+        -0.0,
+        -1.0,
+        -0.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_36",
+      "joint_type": "fixed",
+      "parent": "hn13_c101_1__ソリッド1_1",
+      "child": "rakuda_r3__shoulder_base_hinge_1__ソリッド1",
+      "axis": [
+        2.46263e-31,
+        -1.0,
+        2.46519e-32
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_37",
+      "joint_type": "fixed",
+      "parent": "rakuda_r3__shoulder_base_hinge_1__ソリッド1_1",
+      "child": "fr13_h101_1__ソリッド1_1",
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_38",
+      "joint_type": "fixed",
+      "parent": "fr13_h101_1__ソリッド1_1",
+      "child": "rakuda_r3__shoulder_hinge_cover_1__ソリッド1_2",
+      "axis": [
+        1.0,
+        7.00262e-15,
+        -7.9157e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_39",
+      "joint_type": "fixed",
+      "parent": "fr13_h101_1__ソリッド1_1",
+      "child": "rakuda_r3__shoulder_hinge_cover_1__ソリッド1_3__1_",
+      "axis": [
+        -1.0,
+        -7.43028e-15,
+        7.9157e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_4",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド2_torso__1_",
+      "child": "rakuda_r3__spacer_axk1160_waist_r2_1__ソリッド1",
+      "axis": [
+        -0.0,
+        -0.0,
+        1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_40",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド5_4",
+      "child": "xm540_w270_1__ソリッド4_1_4",
+      "axis": [
+        1.0,
+        -2.12217e-14,
+        5.81155e-15
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_41",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド2_4",
+      "child": "xm540_w270_1__ソリッド5_4",
+      "axis": [
+        1.0,
+        -2.12217e-14,
+        5.81155e-15
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_42",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド4_1_4",
+      "child": "xm540_w270_1__ソリッド4_4",
+      "axis": [
+        -1.79718e-15,
+        -0.34202,
+        -0.939693
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_43",
+      "joint_type": "fixed",
+      "parent": "fr13_h101_1__ソリッド1_1",
+      "child": "hn13_n101_1__ソリッド1_1",
+      "axis": [
+        1.0,
+        -6.49508e-15,
+        -7.9157e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_44",
+      "joint_type": "fixed",
+      "parent": "fr13_h101_1__ソリッド1_1",
+      "child": "hn13_i101_1__ソリッド1_1",
+      "axis": [
+        -1.0,
+        7.06424e-15,
+        7.04448e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_45",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド5_4",
+      "child": "rakuda_r3__arm_cover_upperarm_side_1__ソリッド1_1",
+      "axis": [
+        2.7807e-14,
+        0.939693,
+        -0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_46",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド2_4",
+      "child": "rakuda29_joint_upper_arm_r1_1__ソリッド1_1",
+      "axis": [
+        -1.0,
+        2.12217e-14,
+        -5.81155e-15
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_47",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド4_1_4",
+      "child": "rakuda_r3__arm_joint_upper_arm_back_1__ソリッド2_1",
+      "axis": [
+        1.0,
+        -2.12217e-14,
+        5.81155e-15
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_48",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド3_4",
+      "child": "xm430_w350_1__ソリッド2_4",
+      "axis": [
+        -1.0,
+        2.07522e-14,
+        -5.64068e-15
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_49",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_4",
+      "child": "xm430_w350_1__ソリッド3_4",
+      "axis": [
+        -1.79718e-15,
+        -0.34202,
+        -0.939693
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_5",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド2_torso__1_",
+      "child": "xm540_w270_1__ソリッド5__1_",
+      "axis": [
+        2.04475e-74,
+        8.40779e-45,
+        -1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_50",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_4",
+      "child": "xm430_w350_1__ソリッド5_4",
+      "axis": [
+        1.79718e-15,
+        0.34202,
+        0.939693
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_51",
+      "joint_type": "fixed",
+      "parent": "rakuda29_joint_upper_arm_r1_1__ソリッド1_1",
+      "child": "xm430_w350_1__ソリッド4_4",
+      "axis": [
+        1.0,
+        -2.07522e-14,
+        5.64068e-15
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_52",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド5_4",
+      "child": "x430_thrust_washer_1__part_1_2",
+      "axis": [
+        1.79718e-15,
+        0.34202,
+        0.939693
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_53",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_4",
+      "child": "rakuda_r3__upper_arm_cover_inside_r_1__ソリッド1",
+      "axis": [
+        1.0,
+        -2.12217e-14,
+        5.81155e-15
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_54",
+      "joint_type": "fixed",
+      "parent": "hn12_n101_1__ソリッド1_3",
+      "child": "fr12_s101_1__ソリッド1_1",
+      "axis": [
+        1.55259e-15,
+        0.34202,
+        0.939693
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_55",
+      "joint_type": "fixed",
+      "parent": "fr12_s101_1__ソリッド1_1",
+      "child": "xm430_w350_1__ソリッド5_5",
+      "axis": [
+        0.5,
+        -0.813798,
+        0.296198
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_56",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド5_5",
+      "child": "xm430_w350_1__ソリッド4_5",
+      "axis": [
+        0.5,
+        -0.813798,
+        0.296198
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_57",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_5",
+      "child": "xm430_w350_1__ソリッド3_5",
+      "axis": [
+        0.5,
+        -0.813798,
+        0.296198
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_58",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド3_5",
+      "child": "xm430_w350_1__ソリッド2_5",
+      "axis": [
+        -0.866025,
+        -0.469846,
+        0.17101
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_59",
+      "joint_type": "fixed",
+      "parent": "fr12_h104_1__ソリッド1_2",
+      "child": "hn12_i101_1__ソリッド1_2",
+      "axis": [
+        -0.5,
+        0.813798,
+        -0.296198
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_6",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド5__1_",
+      "child": "xm540_w270_1__ソリッド4_1",
+      "axis": [
+        2.04475e-74,
+        8.40779e-45,
+        -1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_60",
+      "joint_type": "fixed",
+      "parent": "hn12_n101_1__ソリッド1_5",
+      "child": "fr12_h104_1__ソリッド1_2",
+      "axis": [
+        -0.5,
+        0.813798,
+        -0.296198
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_61",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド3_7",
+      "child": "xm430_w350_1__ソリッド2_7",
+      "axis": [
+        -1.02696e-15,
+        -0.34202,
+        -0.939693
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_62",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド3_7",
+      "child": "xm430_w350_1__ソリッド4_7",
+      "axis": [
+        -0.866025,
+        -0.469846,
+        0.17101
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_63",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_7",
+      "child": "xm430_w350_1__ソリッド5_7",
+      "axis": [
+        -0.866025,
+        -0.469846,
+        0.17101
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_64",
+      "joint_type": "fixed",
+      "parent": "fr12_h104_1__ソリッド1_2",
+      "child": "xm430_w350_1__ソリッド3_7",
+      "axis": [
+        -0.866025,
+        -0.469846,
+        0.17101
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_65",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_7",
+      "child": "rakuda_r3__upper_arm_cover_inside_l_r1_1__ソリッド1",
+      "axis": [
+        1.02696e-15,
+        0.34202,
+        0.939693
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_66",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド5_7",
+      "child": "x430_thrust_washer_1__part_1_4",
+      "axis": [
+        -0.866025,
+        -0.469846,
+        0.17101
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_67",
+      "joint_type": "fixed",
+      "parent": "hn12_n101_1__ソリッド1_7",
+      "child": "fr12_s102_1__ソリッド1_1",
+      "axis": [
+        -0.866025,
+        -0.469846,
+        0.17101
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_68",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド5_9",
+      "child": "xm430_w350_1__ソリッド4_9",
+      "axis": [
+        0.469846,
+        -0.881697,
+        -0.0430586
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_69",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_9",
+      "child": "xm430_w350_1__ソリッド3_9",
+      "axis": [
+        0.469846,
+        -0.881697,
+        -0.0430586
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_7",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド4_1",
+      "child": "rakuda_r3__plate_waist_x540_r8_1__ソリッド1",
+      "axis": [
+        2.05104e-29,
+        2.25084e-44,
+        -1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_70",
+      "joint_type": "fixed",
+      "parent": "hn12_n101_1__ソリッド1_9",
+      "child": "fr12_h104_1__ソリッド1_4",
+      "axis": [
+        -0.469846,
+        0.881697,
+        0.0430586
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_71",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド3_9",
+      "child": "xm430_w350_1__ソリッド2_9",
+      "axis": [
+        -0.866025,
+        -0.469846,
+        0.17101
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_72",
+      "joint_type": "fixed",
+      "parent": "fr12_s102_1__ソリッド1_1",
+      "child": "xm430_w350_1__ソリッド5_9",
+      "axis": [
+        0.469846,
+        -0.881697,
+        -0.0430586
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_73",
+      "joint_type": "fixed",
+      "parent": "fr12_h104_1__ソリッド1_4",
+      "child": "hn12_i101_1__ソリッド1_4",
+      "axis": [
+        -0.469846,
+        0.881697,
+        0.0430586
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_74",
+      "joint_type": "fixed",
+      "parent": "fr12_h104_1__ソリッド1_4",
+      "child": "xm430_w350_1__ソリッド3_11",
+      "axis": [
+        -0.0589608,
+        -0.0800138,
+        0.995048
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_75",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド3_11",
+      "child": "xm430_w350_1__ソリッド4_11",
+      "axis": [
+        -0.0589608,
+        -0.0800138,
+        0.995048
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_76",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_11",
+      "child": "xm430_w350_1__ソリッド5_11",
+      "axis": [
+        -0.0589608,
+        -0.0800138,
+        0.995048
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_77",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド3_11",
+      "child": "xm430_w350_1__ソリッド2_11",
+      "axis": [
+        0.880777,
+        0.464981,
+        0.0895798
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_78",
+      "joint_type": "fixed",
+      "parent": "hn12_n101_1__ソリッド1_8",
+      "child": "fr12_h104_1__ソリッド1_3",
+      "axis": [
+        -7.41699e-15,
+        -0.939693,
+        -0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_79",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_5",
+      "child": "elbow_cover_right",
+      "axis": [
+        0.866025,
+        0.469846,
+        -0.17101
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_8",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド5__1_",
+      "child": "rakuda_r3__waist_cover_hip_1__ソリッド1",
+      "axis": [
+        1.0,
+        9.86076e-32,
+        0.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_80",
+      "joint_type": "fixed",
+      "parent": "rakuda_r3__shoulder_base_hinge_1__ソリッド1",
+      "child": "fr13_h101_1__ソリッド1",
+      "axis": [
+        3.43591e-31,
+        -1.0,
+        -1.50611e-17
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_81",
+      "joint_type": "fixed",
+      "parent": "fr13_h101_1__ソリッド1",
+      "child": "hn13_n101_1__ソリッド1",
+      "axis": [
+        1.0,
+        7.77434e-16,
+        6.52793e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_82",
+      "joint_type": "fixed",
+      "parent": "fr13_h101_1__ソリッド1",
+      "child": "hn13_i101_1__ソリッド1",
+      "axis": [
+        -1.0,
+        -5.55112e-16,
+        -6.52793e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_83",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド2_2",
+      "child": "xm540_w270_1__ソリッド5_2",
+      "axis": [
+        1.0,
+        -9.31406e-15,
+        1.17634e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_84",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド5_2",
+      "child": "xm540_w270_1__ソリッド4_1_2",
+      "axis": [
+        1.0,
+        -9.31406e-15,
+        1.17634e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_85",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド4_1_2",
+      "child": "xm540_w270_1__ソリッド4_2",
+      "axis": [
+        3.29614e-15,
+        0.34202,
+        -0.939693
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_86",
+      "joint_type": "fixed",
+      "parent": "fr13_h101_1__ソリッド1",
+      "child": "rakuda_r3__shoulder_hinge_cover_1__ソリッド1_1__1_",
+      "axis": [
+        1.0,
+        7.68945e-16,
+        6.52793e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_87",
+      "joint_type": "fixed",
+      "parent": "fr13_h101_1__ソリッド1",
+      "child": "rakuda_r3__shoulder_hinge_cover_1__ソリッド1",
+      "axis": [
+        -1.0,
+        -3.41278e-16,
+        -6.4054e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_88",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド5_2",
+      "child": "rakuda_r3__arm_cover_upperarm_side_1__ソリッド1",
+      "axis": [
+        -7.90712e-15,
+        -0.939693,
+        -0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_89",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド2_2",
+      "child": "rakuda29_joint_upper_arm_r1_1__ソリッド1",
+      "axis": [
+        -1.0,
+        9.31406e-15,
+        -1.17634e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_9",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド3",
+      "child": "xm430_w350_1__ソリッド4",
+      "axis": [
+        -0.0,
+        -0.0,
+        -1.0
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_90",
+      "joint_type": "fixed",
+      "parent": "xm540_w270_1__ソリッド4_1_2",
+      "child": "rakuda_r3__arm_joint_upper_arm_back_1__ソリッド2",
+      "axis": [
+        1.0,
+        -9.31406e-15,
+        1.17634e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_91",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド3_2",
+      "child": "xm430_w350_1__ソリッド2_2",
+      "axis": [
+        -1.0,
+        8.84459e-15,
+        -2.88508e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_92",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_2",
+      "child": "xm430_w350_1__ソリッド3_2",
+      "axis": [
+        3.29614e-15,
+        0.34202,
+        -0.939693
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_93",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_2",
+      "child": "xm430_w350_1__ソリッド5_2",
+      "axis": [
+        -3.29614e-15,
+        -0.34202,
+        0.939693
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_94",
+      "joint_type": "fixed",
+      "parent": "rakuda_r3__arm_joint_upper_arm_back_1__ソリッド2",
+      "child": "xm430_w350_1__ソリッド4_2",
+      "axis": [
+        -1.0,
+        8.84459e-15,
+        -2.88508e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_95",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド4_2",
+      "child": "rakuda_r3__upper_arm_cover_inside_l_1__ソリッド1",
+      "axis": [
+        1.0,
+        -9.31406e-15,
+        1.17634e-16
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_96",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド5_2",
+      "child": "x430_thrust_washer_1__part_1_1",
+      "axis": [
+        -3.29614e-15,
+        -0.34202,
+        0.939693
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_97",
+      "joint_type": "fixed",
+      "parent": "hn12_n101_1__ソリッド1_2",
+      "child": "fr12_s101_1__ソリッド1",
+      "axis": [
+        -3.35165e-15,
+        -0.34202,
+        0.939693
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_98",
+      "joint_type": "fixed",
+      "parent": "fr12_s101_1__ソリッド1",
+      "child": "xm430_w350_1__ソリッド5_3",
+      "axis": [
+        7.74067e-15,
+        0.939693,
+        0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    },
+    {
+      "name": "固定_99",
+      "joint_type": "fixed",
+      "parent": "xm430_w350_1__ソリッド5_3",
+      "child": "xm430_w350_1__ソリッド4_3",
+      "axis": [
+        7.74067e-15,
+        0.939693,
+        0.34202
+      ],
+      "lower": null,
+      "upper": null,
+      "effort": null,
+      "velocity": null
+    }
+  ],
+  "joint_type_counts": {
+    "revolute": 12,
+    "fixed": 137,
+    "continuous": 3
+  },
+  "movable_joint_names": [
+    "elbow_pitch_left_dof",
+    "elbow_pitch_right_dof",
+    "elbow_yaw_left_dof",
+    "elbow_yaw_right_dof",
+    "head_pitch_dof",
+    "head_yaw_dof",
+    "shoulder_pitch_left_dof",
+    "shoulder_pitch_right_dof",
+    "shoulder_roll_left_dof",
+    "shoulder_roll_right_dof",
+    "torso_yaw_dof",
+    "wrist_pitch_left_dof",
+    "wrist_pitch_right_dof",
+    "wrist_yaw_left_dof",
+    "wrist_yaw_right_dof"
+  ],
+  "mesh_references": [
+    "package://assembly_2/meshes/_5____2__NFS5_2040_297_1___NFS5_2040_910.stl",
+    "package://assembly_2/collision_meshes/_5____2__NFS5_2040_297_1___NFS5_2040_910.stl",
+    "package://assembly_2/meshes/_____24x10_C_30_RK_24_black_1__NONE_1.stl",
+    "package://assembly_2/collision_meshes/_____24x10_C_30_RK_24_black_1__NONE_1.stl",
+    "package://assembly_2/meshes/AXK1106_1___AXK1106.stl",
+    "package://assembly_2/collision_meshes/AXK1106_1___AXK1106.stl",
+    "package://assembly_2/meshes/AXK1106_1___AXK1106_1.stl",
+    "package://assembly_2/collision_meshes/AXK1106_1___AXK1106_1.stl",
+    "package://assembly_2/meshes/AXK1106_1___AXK1106_2.stl",
+    "package://assembly_2/collision_meshes/AXK1106_1___AXK1106_2.stl",
+    "package://assembly_2/meshes/Base_Plate_03JK_rakuda_1______1.stl",
+    "package://assembly_2/collision_meshes/Base_Plate_03JK_rakuda_1______1.stl",
+    "package://assembly_2/meshes/cable_guide_fr12_hinge_head_r4_1______1.stl",
+    "package://assembly_2/collision_meshes/cable_guide_fr12_hinge_head_r4_1______1.stl",
+    "package://assembly_2/meshes/elbow_cover_right.stl",
+    "package://assembly_2/collision_meshes/elbow_cover_right.stl",
+    "package://assembly_2/meshes/fr12_h104_1______1.stl",
+    "package://assembly_2/collision_meshes/fr12_h104_1______1.stl",
+    "package://assembly_2/meshes/fr12_h104_1______1_1.stl",
+    "package://assembly_2/collision_meshes/fr12_h104_1______1_1.stl",
+    "package://assembly_2/meshes/fr12_h104_1______1_2.stl",
+    "package://assembly_2/collision_meshes/fr12_h104_1______1_2.stl",
+    "package://assembly_2/meshes/fr12_h104_1______1_3.stl",
+    "package://assembly_2/collision_meshes/fr12_h104_1______1_3.stl",
+    "package://assembly_2/meshes/fr12_h104_1______1_4.stl",
+    "package://assembly_2/collision_meshes/fr12_h104_1______1_4.stl",
+    "package://assembly_2/meshes/fr12_s101_1______1.stl",
+    "package://assembly_2/collision_meshes/fr12_s101_1______1.stl",
+    "package://assembly_2/meshes/fr12_s101_1______1_1.stl",
+    "package://assembly_2/collision_meshes/fr12_s101_1______1_1.stl",
+    "package://assembly_2/meshes/fr12_s102_1______1.stl",
+    "package://assembly_2/collision_meshes/fr12_s102_1______1.stl",
+    "package://assembly_2/meshes/fr12_s102_1______1_1.stl",
+    "package://assembly_2/collision_meshes/fr12_s102_1______1_1.stl",
+    "package://assembly_2/meshes/fr13_h101_1______1.stl",
+    "package://assembly_2/collision_meshes/fr13_h101_1______1.stl",
+    "package://assembly_2/meshes/fr13_h101_1______1_1.stl",
+    "package://assembly_2/collision_meshes/fr13_h101_1______1_1.stl",
+    "package://assembly_2/meshes/HN12_I101_1______1.stl",
+    "package://assembly_2/collision_meshes/HN12_I101_1______1.stl",
+    "package://assembly_2/meshes/HN12_I101_1______1_1.stl",
+    "package://assembly_2/collision_meshes/HN12_I101_1______1_1.stl",
+    "package://assembly_2/meshes/HN12_I101_1______1_2.stl",
+    "package://assembly_2/collision_meshes/HN12_I101_1______1_2.stl",
+    "package://assembly_2/meshes/HN12_I101_1______1_3.stl",
+    "package://assembly_2/collision_meshes/HN12_I101_1______1_3.stl",
+    "package://assembly_2/meshes/HN12_I101_1______1_4.stl",
+    "package://assembly_2/collision_meshes/HN12_I101_1______1_4.stl",
+    "package://assembly_2/meshes/HN12_N101_1______1.stl",
+    "package://assembly_2/collision_meshes/HN12_N101_1______1.stl",
+    "package://assembly_2/meshes/HN12_N101_1______1_1.stl",
+    "package://assembly_2/collision_meshes/HN12_N101_1______1_1.stl",
+    "package://assembly_2/meshes/HN12_N101_1______1_2.stl",
+    "package://assembly_2/collision_meshes/HN12_N101_1______1_2.stl",
+    "package://assembly_2/meshes/HN12_N101_1______1_3.stl",
+    "package://assembly_2/collision_meshes/HN12_N101_1______1_3.stl",
+    "package://assembly_2/meshes/HN12_N101_1______1_4.stl",
+    "package://assembly_2/collision_meshes/HN12_N101_1______1_4.stl",
+    "package://assembly_2/meshes/HN12_N101_1______1_5.stl",
+    "package://assembly_2/collision_meshes/HN12_N101_1______1_5.stl",
+    "package://assembly_2/meshes/HN12_N101_1______1_6.stl",
+    "package://assembly_2/collision_meshes/HN12_N101_1______1_6.stl",
+    "package://assembly_2/meshes/HN12_N101_1______1_7.stl",
+    "package://assembly_2/collision_meshes/HN12_N101_1______1_7.stl",
+    "package://assembly_2/meshes/HN12_N101_1______1_8.stl",
+    "package://assembly_2/collision_meshes/HN12_N101_1______1_8.stl",
+    "package://assembly_2/meshes/HN12_N101_1______1_9.stl",
+    "package://assembly_2/collision_meshes/HN12_N101_1______1_9.stl",
+    "package://assembly_2/meshes/HN13_C101_1______1.stl",
+    "package://assembly_2/collision_meshes/HN13_C101_1______1.stl",
+    "package://assembly_2/meshes/HN13_C101_1______1_1.stl",
+    "package://assembly_2/collision_meshes/HN13_C101_1______1_1.stl",
+    "package://assembly_2/meshes/HN13_C101_1______1_2.stl",
+    "package://assembly_2/collision_meshes/HN13_C101_1______1_2.stl",
+    "package://assembly_2/meshes/HN13_I101_1______1.stl",
+    "package://assembly_2/collision_meshes/HN13_I101_1______1.stl",
+    "package://assembly_2/meshes/HN13_I101_1______1_1.stl",
+    "package://assembly_2/collision_meshes/HN13_I101_1______1_1.stl",
+    "package://assembly_2/meshes/HN13_N101_1______1.stl",
+    "package://assembly_2/collision_meshes/HN13_N101_1______1.stl",
+    "package://assembly_2/meshes/HN13_N101_1______1_1.stl",
+    "package://assembly_2/collision_meshes/HN13_N101_1______1_1.stl",
+    "package://assembly_2/meshes/igus_JFM_1113_05_1__1.stl",
+    "package://assembly_2/collision_meshes/igus_JFM_1113_05_1__1.stl",
+    "package://assembly_2/meshes/igus_JFM_1113_05_1__1_1.stl",
+    "package://assembly_2/collision_meshes/igus_JFM_1113_05_1__1_1.stl",
+    "package://assembly_2/meshes/igus_JFM_1113_05_1__1_2.stl",
+    "package://assembly_2/collision_meshes/igus_JFM_1113_05_1__1_2.stl",
+    "package://assembly_2/meshes/igus_JFM_1113_05_1__1_3.stl",
+    "package://assembly_2/collision_meshes/igus_JFM_1113_05_1__1_3.stl",
+    "package://assembly_2/meshes/Intel_RealSense_Depth_Camera_D435_1______1_1.stl",
+    "package://assembly_2/collision_meshes/Intel_RealSense_Depth_Camera_D435_1______1_1.stl",
+    "package://assembly_2/meshes/rakuda29_joint_upper_arm_r1_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda29_joint_upper_arm_r1_1______1.stl",
+    "package://assembly_2/meshes/rakuda29_joint_upper_arm_r1_1______1_1.stl",
+    "package://assembly_2/collision_meshes/rakuda29_joint_upper_arm_r1_1______1_1.stl",
+    "package://assembly_2/meshes/rakuda2_r3_waist_base_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda2_r3_waist_base_1______1.stl",
+    "package://assembly_2/meshes/rakuda34_r2__spacer_AXK1160_waist_ring_r1_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda34_r2__spacer_AXK1160_waist_ring_r1_1______1.stl",
+    "package://assembly_2/meshes/rakuda34_r2__spacer_AXK1160_waist_ring_r1_1______1_1.stl",
+    "package://assembly_2/collision_meshes/rakuda34_r2__spacer_AXK1160_waist_ring_r1_1______1_1.stl",
+    "package://assembly_2/meshes/rakuda_r3__arm_cover_elbow_r1_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__arm_cover_elbow_r1_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__arm_cover_upperarm_side_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__arm_cover_upperarm_side_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__arm_cover_upperarm_side_1______1_1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__arm_cover_upperarm_side_1______1_1.stl",
+    "package://assembly_2/meshes/rakuda_r3__arm_joint_upper_arm_back_1______2.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__arm_joint_upper_arm_back_1______2.stl",
+    "package://assembly_2/meshes/rakuda_r3__arm_joint_upper_arm_back_1______2_1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__arm_joint_upper_arm_back_1______2_1.stl",
+    "package://assembly_2/meshes/rakuda_r3__base_cable_guide_d435usb_r1_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__base_cable_guide_d435usb_r1_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__chest_cover_r1_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__chest_cover_r1_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__head_cable_guide_d435usb_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__head_cable_guide_d435usb_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__head_cover_front_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__head_cover_front_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__head_mount_d435_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__head_mount_d435_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__neck_cable_guide2head_base_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__neck_cable_guide2head_base_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__neck_cover_r4_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__neck_cover_r4_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__plate_waist_x540_r8_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__plate_waist_x540_r8_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__shoulder_base_hinge_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__shoulder_base_hinge_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__shoulder_base_hinge_1______1_1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__shoulder_base_hinge_1______1_1.stl",
+    "package://assembly_2/meshes/rakuda_r3__shoulder_hinge_cover_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__shoulder_hinge_cover_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__shoulder_hinge_cover_1______1_2.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__shoulder_hinge_cover_1______1_2.stl",
+    "package://assembly_2/meshes/rakuda_r3__spacer_AXK1160_waist_r2_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__spacer_AXK1160_waist_r2_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__upper_arm_cover_inside_L_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__upper_arm_cover_inside_L_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__upper_arm_cover_inside_L_r1_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__upper_arm_cover_inside_L_r1_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__upper_arm_cover_inside_R_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__upper_arm_cover_inside_R_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__upper_arm_cover_inside_R_1______1_1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__upper_arm_cover_inside_R_1______1_1.stl",
+    "package://assembly_2/meshes/rakuda_r3__waist_cover_hip_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__waist_cover_hip_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__x540_thrust_AXK1160_1______1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__x540_thrust_AXK1160_1______1.stl",
+    "package://assembly_2/meshes/rakuda_r3__x540_thrust_AXK1160_1______1_1.stl",
+    "package://assembly_2/collision_meshes/rakuda_r3__x540_thrust_AXK1160_1______1_1.stl",
+    "package://assembly_2/meshes/x430_thrust_washer_1__Part_1.stl",
+    "package://assembly_2/collision_meshes/x430_thrust_washer_1__Part_1.stl",
+    "package://assembly_2/meshes/x430_thrust_washer_1__Part_1_1.stl",
+    "package://assembly_2/collision_meshes/x430_thrust_washer_1__Part_1_1.stl",
+    "package://assembly_2/meshes/x430_thrust_washer_1__Part_1_2.stl",
+    "package://assembly_2/collision_meshes/x430_thrust_washer_1__Part_1_2.stl",
+    "package://assembly_2/meshes/x430_thrust_washer_1__Part_1_3.stl",
+    "package://assembly_2/collision_meshes/x430_thrust_washer_1__Part_1_3.stl",
+    "package://assembly_2/meshes/x430_thrust_washer_1__Part_1_4.stl",
+    "package://assembly_2/collision_meshes/x430_thrust_washer_1__Part_1_4.stl",
+    "package://assembly_2/meshes/XM430_W350_1______2_11.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______2_11.stl",
+    "package://assembly_2/meshes/XM430_W350_1______2_2.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______2_2.stl",
+    "package://assembly_2/meshes/XM430_W350_1______2_3.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______2_3.stl",
+    "package://assembly_2/meshes/XM430_W350_1______2_4.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______2_4.stl",
+    "package://assembly_2/meshes/XM430_W350_1______2_5.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______2_5.stl",
+    "package://assembly_2/meshes/XM430_W350_1______2_6.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______2_6.stl",
+    "package://assembly_2/meshes/XM430_W350_1______2_7.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______2_7.stl",
+    "package://assembly_2/meshes/XM430_W350_1______2_9.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______2_9.stl",
+    "package://assembly_2/meshes/XM430_W350_1______3.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______3.stl",
+    "package://assembly_2/meshes/XM430_W350_1______3_1.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______3_1.stl",
+    "package://assembly_2/meshes/XM430_W350_1______3_10.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______3_10.stl",
+    "package://assembly_2/meshes/XM430_W350_1______3_11.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______3_11.stl",
+    "package://assembly_2/meshes/XM430_W350_1______3_2.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______3_2.stl",
+    "package://assembly_2/meshes/XM430_W350_1______3_3.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______3_3.stl",
+    "package://assembly_2/meshes/XM430_W350_1______3_4.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______3_4.stl",
+    "package://assembly_2/meshes/XM430_W350_1______3_5.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______3_5.stl",
+    "package://assembly_2/meshes/XM430_W350_1______3_6.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______3_6.stl",
+    "package://assembly_2/meshes/XM430_W350_1______3_7.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______3_7.stl",
+    "package://assembly_2/meshes/XM430_W350_1______3_8.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______3_8.stl",
+    "package://assembly_2/meshes/XM430_W350_1______3_9.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______3_9.stl",
+    "package://assembly_2/meshes/XM430_W350_1______4.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______4.stl",
+    "package://assembly_2/meshes/XM430_W350_1______4_1.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______4_1.stl",
+    "package://assembly_2/meshes/XM430_W350_1______4_10.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______4_10.stl",
+    "package://assembly_2/meshes/XM430_W350_1______4_11.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______4_11.stl",
+    "package://assembly_2/meshes/XM430_W350_1______4_2.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______4_2.stl",
+    "package://assembly_2/meshes/XM430_W350_1______4_3.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______4_3.stl",
+    "package://assembly_2/meshes/XM430_W350_1______4_4.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______4_4.stl",
+    "package://assembly_2/meshes/XM430_W350_1______4_5.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______4_5.stl",
+    "package://assembly_2/meshes/XM430_W350_1______4_6.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______4_6.stl",
+    "package://assembly_2/meshes/XM430_W350_1______4_7.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______4_7.stl",
+    "package://assembly_2/meshes/XM430_W350_1______4_8.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______4_8.stl",
+    "package://assembly_2/meshes/XM430_W350_1______4_9.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______4_9.stl",
+    "package://assembly_2/meshes/XM430_W350_1______5.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______5.stl",
+    "package://assembly_2/meshes/XM430_W350_1______5_1.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______5_1.stl",
+    "package://assembly_2/meshes/XM430_W350_1______5_10.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______5_10.stl",
+    "package://assembly_2/meshes/XM430_W350_1______5_11.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______5_11.stl",
+    "package://assembly_2/meshes/XM430_W350_1______5_2.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______5_2.stl",
+    "package://assembly_2/meshes/XM430_W350_1______5_3.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______5_3.stl",
+    "package://assembly_2/meshes/XM430_W350_1______5_4.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______5_4.stl",
+    "package://assembly_2/meshes/XM430_W350_1______5_5.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______5_5.stl",
+    "package://assembly_2/meshes/XM430_W350_1______5_6.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______5_6.stl",
+    "package://assembly_2/meshes/XM430_W350_1______5_7.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______5_7.stl",
+    "package://assembly_2/meshes/XM430_W350_1______5_8.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______5_8.stl",
+    "package://assembly_2/meshes/XM430_W350_1______5_9.stl",
+    "package://assembly_2/collision_meshes/XM430_W350_1______5_9.stl",
+    "package://assembly_2/meshes/XM540_W270_1______2_2.stl",
+    "package://assembly_2/collision_meshes/XM540_W270_1______2_2.stl",
+    "package://assembly_2/meshes/XM540_W270_1______2_3.stl",
+    "package://assembly_2/collision_meshes/XM540_W270_1______2_3.stl",
+    "package://assembly_2/meshes/XM540_W270_1______2_4.stl",
+    "package://assembly_2/collision_meshes/XM540_W270_1______2_4.stl",
+    "package://assembly_2/meshes/XM540_W270_1______4_1.stl",
+    "package://assembly_2/collision_meshes/XM540_W270_1______4_1.stl",
+    "package://assembly_2/meshes/XM540_W270_1______4_1_2.stl",
+    "package://assembly_2/collision_meshes/XM540_W270_1______4_1_2.stl",
+    "package://assembly_2/meshes/XM540_W270_1______4_1_4.stl",
+    "package://assembly_2/collision_meshes/XM540_W270_1______4_1_4.stl",
+    "package://assembly_2/meshes/XM540_W270_1______4_2.stl",
+    "package://assembly_2/collision_meshes/XM540_W270_1______4_2.stl",
+    "package://assembly_2/meshes/XM540_W270_1______4_3.stl",
+    "package://assembly_2/collision_meshes/XM540_W270_1______4_3.stl",
+    "package://assembly_2/meshes/XM540_W270_1______4_4.stl",
+    "package://assembly_2/collision_meshes/XM540_W270_1______4_4.stl",
+    "package://assembly_2/meshes/XM540_W270_1______5_2.stl",
+    "package://assembly_2/collision_meshes/XM540_W270_1______5_2.stl",
+    "package://assembly_2/meshes/XM540_W270_1______5_3.stl",
+    "package://assembly_2/collision_meshes/XM540_W270_1______5_3.stl",
+    "package://assembly_2/meshes/XM540_W270_1______5_4.stl",
+    "package://assembly_2/collision_meshes/XM540_W270_1______5_4.stl"
+  ],
+  "unresolved_meshes": [],
+  "total_mass_kg": 0.0020692989589999986,
+  "links_without_inertial": [
+    "root"
+  ],
+  "has_collision_geometry": true,
+  "ambiguous_names": [
+    "gripper_left_dof",
+    "gripper_right_dof",
+    "head_camera_link"
+  ],
+  "warnings": [
+    "Total mass is 0.002069299 kg. This model is usable for geometry only; do not use it as a dynamic model and do not edit the masses to make it look valid.",
+    "Joint(s) ['elbow_pitch_left_dof', 'elbow_pitch_right_dof', 'elbow_yaw_left_dof', 'elbow_yaw_right_dof', 'head_pitch_dof', 'head_yaw_dof', 'shoulder_roll_left_dof', 'shoulder_roll_right_dof', 'wrist_pitch_left_dof', 'wrist_pitch_right_dof', 'wrist_yaw_left_dof', 'wrist_yaw_right_dof'] declare effort=1, velocity=1. These look like CAD exporter placeholders, not machine specifications; do not adopt them as limits.",
+    "Continuous joint(s) ['shoulder_pitch_left_dof', 'shoulder_pitch_right_dof', 'torso_yaw_dof'] have no URDF range. They need an explicit soft limit from the real machine (cable routing), otherwise shortest-angle motion will ignore a real constraint.",
+    "Name(s) ['gripper_left_dof', 'gripper_right_dof', 'head_camera_link'] are used by both a joint and a link. Frame lookups by name are then ambiguous (Pinocchio holds a FIXED_JOINT and a BODY frame of that name), so attach a uniquely named operational frame instead of addressing these directly.",
+    "Joint(s) ['gripper_left_dof', 'gripper_right_dof'] are named '*_dof' but are fixed. A name is not a degree of freedom; do not treat them as movable."
+  ],
+  "n_links": 153,
+  "n_joints": 152,
+  "n_movable": 15,
+  "usable_for_dynamics": false
+}

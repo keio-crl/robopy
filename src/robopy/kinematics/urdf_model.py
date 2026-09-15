@@ -190,7 +190,7 @@ class WholeBodyModel:
         if build_collision:
             if dirs:
                 collision_model = pin.buildGeomFromUrdf(
-                    model, str(path), pin.GeometryType.COLLISION, dirs
+                    model, str(path), pin.GeometryType.COLLISION, package_dirs=dirs
                 )
             else:
                 collision_model = pin.buildGeomFromUrdf(
@@ -255,6 +255,63 @@ class WholeBodyModel:
     def has_frame(self, frame: str) -> bool:
         """Whether a frame of this name exists."""
         return bool(self._model.existFrame(frame))
+
+    def frame_ids(self, frame: str) -> List[int]:
+        """Every frame index carrying this name, in model order.
+
+        A URDF may give a joint and its child link the same name -- the Rakuda
+        export does exactly that for ``gripper_left_dof``, ``gripper_right_dof``
+        and ``head_camera_link``.  Pinocchio then holds two frames of that name,
+        a ``FIXED_JOINT`` and a ``BODY``, and a plain ``getFrameId`` is
+        ambiguous.
+        """
+        return [i for i, f in enumerate(self._model.frames) if str(f.name) == frame]
+
+    def frame_id(self, frame: str) -> int:
+        """Resolve a frame name to a single index, deterministically.
+
+        When several frames share the name, their placements are compared: in
+        URDF a fixed joint's frame and its child link's frame coincide by
+        construction, so the choice is numerically immaterial and the ``BODY``
+        frame -- the link -- is used.  If the placements do *not* agree, the
+        name is genuinely ambiguous and this raises rather than silently
+        picking one.
+
+        Args:
+            frame: Frame name.
+
+        Returns:
+            The frame index.
+
+        Raises:
+            KeyError: If no frame carries this name.
+            ValueError: If several frames share the name and do not coincide.
+        """
+        pin = self._pin
+        candidates = self.frame_ids(frame)
+        if not candidates:
+            raise KeyError(f"Unknown frame '{frame}' in {self._source or 'this model'}.")
+        if len(candidates) == 1:
+            return candidates[0]
+
+        frames = self._model.frames
+        reference = frames[candidates[0]]
+        for index in candidates[1:]:
+            other = frames[index]
+            if int(other.parentJoint) != int(reference.parentJoint) or not np.allclose(
+                other.placement.homogeneous, reference.placement.homogeneous, atol=1e-12
+            ):
+                kinds = ", ".join(str(frames[i].type) for i in candidates)
+                raise ValueError(
+                    f"Frame name '{frame}' is ambiguous in {self._source}: it is carried by "
+                    f"frames of different types ({kinds}) that do not coincide. Rename one of "
+                    "them in the URDF, or attach an unambiguous operational frame with "
+                    "add_fixed_frame()."
+                )
+        for index in candidates:
+            if frames[index].type == pin.FrameType.BODY:
+                return index
+        return candidates[0]
 
     def has_joint(self, joint: str) -> bool:
         """Whether a *movable* joint of this name exists.
@@ -489,7 +546,7 @@ class WholeBodyModel:
         if T.shape != (4, 4):
             raise ValueError("transform must be a 4x4 homogeneous matrix.")
 
-        parent_id = self._model.getFrameId(parent_frame)
+        parent_id = self.frame_id(parent_frame)
         parent = self._model.frames[parent_id]
         placement = parent.placement * pin.SE3(T[:3, :3], T[:3, 3])
         frame = pin.Frame(
@@ -512,8 +569,9 @@ class WholeBodyModel:
         """``(4, 4)`` pose of ``frame`` in the fixed base frame at configuration ``q``."""
         if not self.has_frame(frame):
             raise KeyError(f"Unknown frame '{frame}'.")
+        frame_index = self.frame_id(frame)
         self.forward_kinematics(q)
-        placement = self._data.oMf[self._model.getFrameId(frame)]
+        placement = self._data.oMf[frame_index]
         T = np.eye(4)
         T[:3, :3] = np.asarray(placement.rotation)
         T[:3, 3] = np.asarray(placement.translation)
@@ -541,15 +599,14 @@ class WholeBodyModel:
             angular, in Pinocchio's ordering.
         """
         pin = self._pin
-        if not self.has_frame(frame):
-            raise KeyError(f"Unknown frame '{frame}'.")
+        frame_index = self.frame_id(frame)
         self._check_q(q)
         q = np.asarray(q, dtype=np.float64)
         pin.computeJointJacobians(self._model, self._data, q)
         pin.updateFramePlacements(self._model, self._data)
         reference = pin.ReferenceFrame.LOCAL if local else pin.ReferenceFrame.LOCAL_WORLD_ALIGNED
         return np.asarray(
-            pin.getFrameJacobian(self._model, self._data, self._model.getFrameId(frame), reference),
+            pin.getFrameJacobian(self._model, self._data, frame_index, reference),
             dtype=np.float64,
         )
 
@@ -581,6 +638,106 @@ class WholeBodyModel:
                 if tuple(sorted((names[i], names[j]))) in skip:
                     continue
                 self._collision_model.addCollisionPair(self._pin.CollisionPair(i, j))
+                count += 1
+        self._collision_data = self._collision_model.createData()
+        return count
+
+    def geometry_names(self, joints: Sequence[str] | None = None) -> List[str]:
+        """Collision-geometry names, optionally restricted to the bodies of ``joints``.
+
+        A CAD export names one geometry per solid part, so a single link can
+        carry dozens.  Selecting by the joint that carries them is how a
+        meaningful group -- "everything on the left arm" -- is expressed.
+
+        Args:
+            joints: Movable joint names.  ``None`` returns every geometry.
+
+        Returns:
+            Geometry names, in model order.
+
+        Raises:
+            RuntimeError: If the model has no collision geometry.
+            KeyError: On an unknown joint name.
+        """
+        if self._collision_model is None:
+            raise RuntimeError("This model was loaded without collision geometry.")
+        if joints is None:
+            return [str(go.name) for go in self._collision_model.geometryObjects]
+        wanted = {self._require_joint(name) for name in joints}
+        return [
+            str(go.name)
+            for go in self._collision_model.geometryObjects
+            if int(go.parentJoint) in wanted
+        ]
+
+    def add_collision_pairs_between(
+        self,
+        group_a: Sequence[str],
+        group_b: Sequence[str],
+        *,
+        excluded: Iterable[Tuple[str, str]] = (),
+        skip_adjacent: bool = True,
+        append: bool = False,
+    ) -> int:
+        """Register only the pairs that cross from ``group_a`` to ``group_b``.
+
+        All-pairs checking does not scale to a CAD assembly: the Rakuda export
+        has 274 collision solids, which is upwards of 7000 pairs and seconds per
+        evaluation -- far beyond any control-loop budget.  Checking a curated
+        set of group-to-group interactions (each arm against the other, the
+        hands against the torso) keeps the distances that actually matter and
+        drops the ones that cannot occur.
+
+        Args:
+            group_a: Geometry names on one side.
+            group_b: Geometry names on the other side.
+            excluded: Geometry-name pairs to skip, in either order.
+            skip_adjacent: Drop pairs whose parent joints are the same body or
+                are directly connected.  A servo body and the horn bolted to its
+                output shaft are always touching; that is assembly, not
+                collision. This is a structural test, so it costs no distance
+                evaluation.
+            append: Keep the pairs already registered and add to them.
+
+        Returns:
+            The number of pairs registered by this call.
+
+        Raises:
+            RuntimeError: If the model has no collision geometry.
+            KeyError: On an unknown geometry name.
+        """
+        if self._collision_model is None:
+            raise RuntimeError("This model was loaded without collision geometry.")
+        names = [str(go.name) for go in self._collision_model.geometryObjects]
+        index = {name: i for i, name in enumerate(names)}
+        unknown = sorted({n for n in (*group_a, *group_b) if n not in index})
+        if unknown:
+            raise KeyError(f"Unknown collision geometry name(s): {unknown[:5]}")
+
+        skip = {tuple(sorted(pair)) for pair in excluded}
+        parent_joint = {
+            str(go.name): int(go.parentJoint) for go in self._collision_model.geometryObjects
+        }
+        if not append:
+            self._collision_model.removeAllCollisionPairs()
+        existing = {
+            tuple(sorted((names[int(p.first)], names[int(p.second)])))
+            for p in self._collision_model.collisionPairs
+        }
+        count = 0
+        for a in group_a:
+            for b in group_b:
+                if a == b:
+                    continue
+                key = tuple(sorted((a, b)))
+                if key in skip or key in existing:
+                    continue
+                if skip_adjacent:
+                    ja, jb = parent_joint[a], parent_joint[b]
+                    if ja == jb or self._is_parent_child(ja, jb):
+                        continue
+                self._collision_model.addCollisionPair(self._pin.CollisionPair(index[a], index[b]))
+                existing.add(key)
                 count += 1
         self._collision_data = self._collision_model.createData()
         return count
@@ -709,6 +866,29 @@ class WholeBodyModel:
             joint_a=tuple(joint_a),
             joint_b=tuple(joint_b),
         )
+
+    def pairs_closer_than(
+        self,
+        q: NDArray[np.float64],
+        threshold_m: float,
+    ) -> List[Tuple[str, str, float]]:
+        """Registered pairs within ``threshold_m`` at configuration ``q``.
+
+        Use it at a known-good resting pose to find the pairs that sit
+        permanently inside the safety distance.  Those are exclusions to record
+        -- with a reason -- not obstacles for the solver to push apart, and
+        leaving them in makes every step infeasible at once.
+
+        Returns:
+            ``(geometry_a, geometry_b, distance_m)`` triples, closest first.
+        """
+        report = self.collision_report(q)
+        close = np.flatnonzero(report.distances < threshold_m)
+        order = close[np.argsort(report.distances[close])]
+        return [
+            (report.pair_names[k][0], report.pair_names[k][1], float(report.distances[k]))
+            for k in order
+        ]
 
     def distance_jacobian_row(
         self,

@@ -214,7 +214,7 @@ class TestCollision:
         # The genuine self-collision candidates are the large group, and they
         # survive classification rather than being excluded with the rest.
         assert len(groups["other"]) > len(groups["parent_child"])
-        assert ("left_hand_link_0", "left_gripper_link_0") in groups["same_body"]
+        assert ("left_hand_link_0", "gripper_left_dof_0") in groups["same_body"]
 
     def test_the_resting_pose_is_collision_free_after_the_recorded_exclusions(
         self, whole_body_model
@@ -272,3 +272,158 @@ class TestCollision:
         model = WholeBodyModel.from_urdf(synthetic_urdf, build_collision=False)
         with pytest.raises(RuntimeError, match="without collision geometry"):
             model.collision_report(model.neutral_q())
+
+
+class TestAmbiguousFrameNames:
+    """The real export names a fixed joint and its child link identically.
+
+    Pinocchio then holds a ``FIXED_JOINT`` and a ``BODY`` frame with the same
+    name and a plain ``getFrameId`` raises. The fixture reproduces the naming
+    by default, so every FK test above already runs through the resolver; these
+    tests pin the behaviour down explicitly.
+    """
+
+    def test_the_fixture_reproduces_the_duplicate_frame_names(self, whole_body_model) -> None:
+        for name in ("gripper_left_dof", "gripper_right_dof", "head_camera_link"):
+            assert len(whole_body_model.frame_ids(name)) == 2
+
+    def test_a_duplicate_name_resolves_to_the_body_frame(self, whole_body_model) -> None:
+        import pinocchio as pin
+
+        index = whole_body_model.frame_id("gripper_left_dof")
+        assert whole_body_model.model.frames[index].type == pin.FrameType.BODY
+
+    def test_both_frames_of_a_duplicate_name_coincide(self, whole_body_model) -> None:
+        # In URDF a fixed joint's frame and its child link's frame are the same
+        # place, so the choice between them is numerically immaterial.
+        a, b = whole_body_model.frame_ids("gripper_left_dof")
+        frames = whole_body_model.model.frames
+        np.testing.assert_allclose(
+            frames[a].placement.homogeneous, frames[b].placement.homogeneous, atol=1e-12
+        )
+
+    def test_fk_and_jacobian_accept_a_duplicate_name(self, whole_body_model) -> None:
+        q = whole_body_model.neutral_q()
+        pose = whole_body_model.frame_pose(q, "gripper_left_dof")
+        np.testing.assert_allclose(
+            pose[:3, 3], SYNTHETIC_SPEC.tcp_position_at_zero("left"), atol=1e-12
+        )
+        assert whole_body_model.frame_jacobian(q, "gripper_left_dof").shape == (6, 15)
+
+    def test_a_unique_name_resolves_directly(self, whole_body_model) -> None:
+        assert len(whole_body_model.frame_ids("left_tcp")) == 1
+        assert whole_body_model.frame_id("left_tcp") == whole_body_model.frame_ids("left_tcp")[0]
+
+    def test_an_unknown_name_raises_key_error(self, whole_body_model) -> None:
+        with pytest.raises(KeyError, match="Unknown frame"):
+            whole_body_model.frame_id("no_such_frame")
+
+    def test_genuinely_different_frames_of_one_name_are_refused(
+        self, whole_body_model
+    ) -> None:
+        import pinocchio as pin
+
+        # Manufacture a real ambiguity: two frames of one name at different
+        # places. Pinocchio's addFrame silently returns the existing index when
+        # the name *and type* already exist, so the two must differ in type.
+        model = whole_body_model.model
+        parent = model.frames[model.getFrameId("root")]
+        model.addFrame(
+            pin.Frame(
+                "genuinely_ambiguous",
+                parent.parentJoint,
+                model.getFrameId("root"),
+                pin.SE3(np.eye(3), np.array([0.1, 0.0, 0.0])),
+                pin.FrameType.OP_FRAME,
+            )
+        )
+        model.addFrame(
+            pin.Frame(
+                "genuinely_ambiguous",
+                parent.parentJoint,
+                model.getFrameId("root"),
+                pin.SE3(np.eye(3), np.array([0.2, 0.0, 0.0])),
+                pin.FrameType.SENSOR,
+            )
+        )
+        assert len(whole_body_model.frame_ids("genuinely_ambiguous")) == 2
+        with pytest.raises(ValueError, match="do not coincide"):
+            whole_body_model.frame_id("genuinely_ambiguous")
+
+    def test_unique_link_names_can_still_be_generated(self, tmp_path) -> None:
+        from robopy.kinematics.synthetic_dual_arm import write_synthetic_dual_arm_urdf
+
+        path = write_synthetic_dual_arm_urdf(tmp_path / "u.urdf", joint_named_child_links=False)
+        model = WholeBodyModel.from_urdf(path)
+        assert len(model.frame_ids("gripper_left_dof")) == 1
+
+
+class TestCuratedCollisionPairs:
+    """Group-to-group registration, for CAD assemblies where all-pairs is unusable."""
+
+    def test_geometry_names_can_be_selected_by_joint(self, whole_body_model) -> None:
+        left = whole_body_model.geometry_names(SYNTHETIC_ARM_JOINTS["left"])
+        assert left and all("left" in name for name in left)
+        assert len(whole_body_model.geometry_names()) > len(left)
+
+    def test_cross_group_pairs_only(self, whole_body_model) -> None:
+        left = whole_body_model.geometry_names(SYNTHETIC_ARM_JOINTS["left"])
+        right = whole_body_model.geometry_names(SYNTHETIC_ARM_JOINTS["right"])
+        count = whole_body_model.add_collision_pairs_between(left, right)
+        assert count == len(left) * len(right)
+        report = whole_body_model.collision_report(whole_body_model.neutral_q())
+        for a, b in report.pair_names:
+            assert (a in left) != (a in right)
+            assert (a in left and b in right) or (a in right and b in left)
+
+    def test_adjacent_bodies_are_skipped_structurally(self, whole_body_model) -> None:
+        # Hand and gripper hang off the same joint; the wrist-yaw body is the
+        # hand's direct parent. Neither is a collision candidate and neither
+        # needs a distance evaluation to know that.
+        hand = whole_body_model.geometry_names(["wrist_pitch_left_dof"])
+        wrist = whole_body_model.geometry_names(["wrist_yaw_left_dof"])
+        assert whole_body_model.add_collision_pairs_between(hand, wrist) == 0
+        assert whole_body_model.add_collision_pairs_between(
+            hand, wrist, skip_adjacent=False
+        ) == len(hand) * len(wrist)
+        # Two joints apart (forearm vs hand) is not adjacent and is kept.
+        forearm = whole_body_model.geometry_names(["elbow_pitch_left_dof"])
+        assert whole_body_model.add_collision_pairs_between(hand, forearm) == len(hand) * len(
+            forearm
+        )
+
+    def test_append_keeps_earlier_registrations(self, whole_body_model) -> None:
+        left = whole_body_model.geometry_names(SYNTHETIC_ARM_JOINTS["left"])
+        right = whole_body_model.geometry_names(SYNTHETIC_ARM_JOINTS["right"])
+        torso = whole_body_model.geometry_names([SYNTHETIC_TORSO_JOINT])
+        first = whole_body_model.add_collision_pairs_between(left, right)
+        second = whole_body_model.add_collision_pairs_between(left, torso, append=True)
+        assert second > 0
+        report = whole_body_model.collision_report(whole_body_model.neutral_q())
+        assert len(report.pair_names) == first + second
+
+    def test_recorded_exclusions_are_honoured(self, whole_body_model) -> None:
+        left = whole_body_model.geometry_names(SYNTHETIC_ARM_JOINTS["left"])
+        right = whole_body_model.geometry_names(SYNTHETIC_ARM_JOINTS["right"])
+        all_pairs = whole_body_model.add_collision_pairs_between(left, right)
+        fewer = whole_body_model.add_collision_pairs_between(
+            left, right, excluded=[(right[0], left[0])]
+        )
+        assert fewer == all_pairs - 1
+
+    def test_close_pairs_are_reported_closest_first(self, whole_body_model) -> None:
+        left = whole_body_model.geometry_names(SYNTHETIC_ARM_JOINTS["left"])
+        torso = whole_body_model.geometry_names([SYNTHETIC_TORSO_JOINT])
+        whole_body_model.add_collision_pairs_between(left, torso)
+        positions = {name: 0.0 for name in whole_body_model.movable_joint_names}
+        positions["shoulder_roll_left_dof"] = -0.3  # swings the arm into the torso
+        q = whole_body_model.q_from_positions(positions)
+        close = whole_body_model.pairs_closer_than(q, 0.05)
+        assert close
+        distances = [d for _, _, d in close]
+        assert distances == sorted(distances)
+        assert all(d < 0.05 for d in distances)
+
+    def test_an_unknown_geometry_name_is_refused(self, whole_body_model) -> None:
+        with pytest.raises(KeyError, match="Unknown collision geometry"):
+            whole_body_model.add_collision_pairs_between(["nope_0"], ["torso_link_0"])

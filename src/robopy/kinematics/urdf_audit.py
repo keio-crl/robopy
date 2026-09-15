@@ -89,6 +89,8 @@ class UrdfAudit:
         total_mass_kg: Sum of every ``<mass>`` value.
         links_without_inertial: Links that declare no ``<inertial>`` block.
         has_collision_geometry: Whether any link declares a ``<collision>``.
+        ambiguous_names: Names used by both a joint and a link, which makes a
+            frame lookup by that name ambiguous.
         warnings: Human-readable warnings about the model.
     """
 
@@ -104,6 +106,7 @@ class UrdfAudit:
     total_mass_kg: float = 0.0
     links_without_inertial: List[str] = field(default_factory=list)
     has_collision_geometry: bool = False
+    ambiguous_names: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
 
     @property
@@ -333,6 +336,14 @@ def audit_urdf(
             f"Continuous joint(s) {continuous} have no URDF range. They need an explicit soft "
             "limit from the real machine (cable routing), otherwise shortest-angle motion will "
             "ignore a real constraint."
+        )
+    audit.ambiguous_names = sorted({j.name for j in audit.joints} & set(audit.link_names))
+    shared_names = audit.ambiguous_names
+    if shared_names:
+        audit.warnings.append(
+            f"Name(s) {shared_names} are used by both a joint and a link. Frame lookups by name "
+            "are then ambiguous (Pinocchio holds a FIXED_JOINT and a BODY frame of that name), "
+            "so attach a uniquely named operational frame instead of addressing these directly."
         )
     fixed_dof_named = [j.name for j in audit.joints if not j.is_movable and j.name.endswith("_dof")]
     if fixed_dof_named:

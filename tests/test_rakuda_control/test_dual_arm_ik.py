@@ -524,3 +524,86 @@ class TestFailureModes:
                 + SYNTHETIC_ARM_JOINTS["right"][1:],
                 config=DualArmIKConfig(require_soft_limits=False),
             )
+
+
+class TestBoundsInteraction:
+    """Found on the real model: ``elbow_pitch_right_dof`` has its upper limit at
+    exactly 0.0, so the CAD zero pose sits on the limit. Approaching that limit
+    with the acceleration bound active used to empty the feasible set -- the
+    solver said "infeasible" when the right answer was "decelerate".
+    """
+
+    def test_a_joint_approaching_its_limit_can_always_decelerate(
+        self, dual_arm_ik, whole_body_model
+    ) -> None:
+        # Put a soft limit right above the current angle and drive toward it.
+        whole_body_model.set_soft_limits({"elbow_yaw_left_dof": (-2.8, 0.03)})
+        target = np.eye(4)
+        target[:3, 3] = [0.5, 0.6, 0.4]  # pulls the left arm around, through the limit
+
+        current = _zero(whole_body_model)
+        for _ in range(40):
+            result = dual_arm_ik.solve_step(
+                _state(whole_body_model, current),
+                DualArmTarget(left_target=target, right_enabled=False),
+                DT,
+            )
+            assert result.is_commandable, (result.status, result.message)
+            current.update(result.joint_targets_rad)
+            margin = dual_arm_ik.config.position_limit_margin_rad
+            assert current["elbow_yaw_left_dof"] <= 0.03 - margin + 1e-9
+
+    def test_the_acceleration_bound_still_shapes_a_free_step(
+        self, dual_arm_ik, whole_body_model
+    ) -> None:
+        far = np.eye(4)
+        far[:3, 3] = [1.0, 0.6, 0.4]
+        target = DualArmTarget(left_target=far, right_target=far.copy())
+        current = _zero(whole_body_model)
+        steps = []
+        for _ in range(3):
+            result = dual_arm_ik.solve_step(_state(whole_body_model, current), target, DT)
+            assert result.is_commandable
+            steps.append(dict(result.joint_velocities_rad_s))
+            current.update(result.joint_targets_rad)
+        a_max = dual_arm_ik.config.max_joint_acceleration_rad_s2
+        for name in steps[0]:
+            delta_v = abs(steps[1][name] - steps[0][name])
+            assert delta_v <= a_max * DT + 1e-6, name
+
+    def test_a_configuration_on_the_limit_itself_reports_infeasible_once(
+        self, dual_arm_ik, whole_body_model
+    ) -> None:
+        # Exactly the real-model situation: the current angle equals the
+        # upper limit, so with a margin it is already outside.
+        whole_body_model.set_soft_limits({"elbow_yaw_left_dof": (-2.8, 0.0)})
+        start = _zero(whole_body_model)
+        result = dual_arm_ik.solve_step(
+            _state(whole_body_model, start),
+            DualArmTarget(left_target=np.eye(4), right_target=np.eye(4)),
+            DT,
+        )
+        # Sitting on the limit is inside [lower, upper] but outside the
+        # margin; the solver may only move *away* from it, never refuse.
+        assert result.is_commandable, result.message
+        assert result.joint_targets_rad["elbow_yaw_left_dof"] <= 0.0
+
+
+class TestCollisionDiagnostics:
+    def test_an_infeasible_collision_step_names_the_offending_pairs(
+        self, whole_body_model, dual_arm_ik
+    ) -> None:
+        # Safety distance far larger than the resting clearances: every pair is
+        # "too close" at once, which is unsatisfiable, and the message must say
+        # which pairs rather than only that the QP failed.
+        dual_arm_ik.config.collision_safety_distance_m = 0.5
+        dual_arm_ik.config.collision_activation_distance_m = 0.6
+        result = dual_arm_ik.solve_step(
+            _state(whole_body_model, _zero(whole_body_model)),
+            DualArmTarget(left_target=np.eye(4), right_target=np.eye(4)),
+            DT,
+        )
+        assert result.status is DualArmIKStatus.INFEASIBLE
+        assert "inside the 500 mm safety distance" in result.message
+        assert "<->" in result.message
+        assert "exclusion to record" in result.message

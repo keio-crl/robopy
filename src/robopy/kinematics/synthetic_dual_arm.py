@@ -169,10 +169,11 @@ def _joint(
     return "".join(parts)
 
 
-def _arm(side: str, spec: SyntheticLinkSpec) -> str:
+def _arm(side: str, spec: SyntheticLinkSpec, *, joint_named_child_links: bool) -> str:
     sign = 1.0 if side == "left" else -1.0
     joints = SYNTHETIC_ARM_JOINTS[side]
     out: list[str] = []
+    gripper_link = SYNTHETIC_TCP_FRAMES[side] if joint_named_child_links else f"{side}_gripper_link"
 
     # shoulder pitch -- continuous, like the real model
     out.append(
@@ -258,32 +259,44 @@ def _arm(side: str, spec: SyntheticLinkSpec) -> str:
     out.append(_link(f"{side}_hand_link", mass=0.2, radius=0.025, length=spec.wrist_to_tcp))
 
     # Fixed gripper frame, named '*_dof' exactly like the real model's, to keep
-    # the "a name is not a degree of freedom" case covered by the fixture.
+    # the "a name is not a degree of freedom" case covered by the fixture. The
+    # real export also gives the child *link* the same name as the joint, which
+    # makes Pinocchio hold two frames of that name; the fixture reproduces that
+    # by default so the ambiguity handling is exercised.
     out.append(
         _joint(
             SYNTHETIC_TCP_FRAMES[side],
             joint_type="fixed",
             parent=f"{side}_hand_link",
-            child=f"{side}_gripper_link",
+            child=gripper_link,
             xyz=(0.0, 0.0, -spec.wrist_to_tcp),
             axis=None,
         )
     )
-    out.append(_link(f"{side}_gripper_link", mass=0.05, radius=0.02, length=0.01))
+    out.append(_link(gripper_link, mass=0.05, radius=0.02, length=0.01))
     return "".join(out)
 
 
-def synthetic_dual_arm_urdf(spec: SyntheticLinkSpec | None = None) -> str:
+def synthetic_dual_arm_urdf(
+    spec: SyntheticLinkSpec | None = None,
+    *,
+    joint_named_child_links: bool = True,
+) -> str:
     """Build the synthetic dual-arm URDF as a string.
 
     Args:
         spec: Optional geometry override.
+        joint_named_child_links: Give the gripper and camera child links the
+            same names as their fixed joints, as the real Rakuda export does.
+            That produces two Pinocchio frames per name and is the case the
+            frame resolver has to handle; set ``False`` for unique link names.
 
     Returns:
         A complete URDF document.  It references no external meshes, so it needs
         no ``package://`` resolution and can be written to any directory.
     """
     s = spec or SYNTHETIC_SPEC
+    camera_link = "head_camera_link" if joint_named_child_links else "head_camera_body"
     parts: list[str] = [
         '<?xml version="1.0"?>\n',
         '<robot name="synthetic_dual_arm">\n',
@@ -299,8 +312,8 @@ def synthetic_dual_arm_urdf(spec: SyntheticLinkSpec | None = None) -> str:
             axis=_AXES["yaw"],
         ),
         _link("torso_link", mass=2.0, radius=0.08, length=0.05),
-        _arm("left", s),
-        _arm("right", s),
+        _arm("left", s, joint_named_child_links=joint_named_child_links),
+        _arm("right", s, joint_named_child_links=joint_named_child_links),
         # Head: modelled, but never an IK decision variable.
         _joint(
             SYNTHETIC_HEAD_JOINTS[0],
@@ -325,14 +338,14 @@ def synthetic_dual_arm_urdf(spec: SyntheticLinkSpec | None = None) -> str:
         ),
         _link("head_link", mass=0.5, radius=0.06, length=0.08),
         _joint(
-            "head_camera_joint",
+            "head_camera_link",
             joint_type="fixed",
             parent="head_link",
-            child="head_camera_link",
+            child=camera_link,
             xyz=(0.06, 0.0, 0.0),
             axis=None,
         ),
-        _link("head_camera_link", mass=0.05, radius=0.01, length=0.01),
+        _link(camera_link, mass=0.05, radius=0.01, length=0.01),
         "</robot>\n",
     ]
     return "".join(parts)
@@ -341,9 +354,14 @@ def synthetic_dual_arm_urdf(spec: SyntheticLinkSpec | None = None) -> str:
 def write_synthetic_dual_arm_urdf(
     path: Path | str,
     spec: SyntheticLinkSpec | None = None,
+    *,
+    joint_named_child_links: bool = True,
 ) -> Path:
     """Write the synthetic URDF to ``path`` and return the path."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(synthetic_dual_arm_urdf(spec), encoding="utf-8")
+    target.write_text(
+        synthetic_dual_arm_urdf(spec, joint_named_child_links=joint_named_child_links),
+        encoding="utf-8",
+    )
     return target

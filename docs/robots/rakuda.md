@@ -301,6 +301,50 @@ multi-turn位置は `[-pi, pi]` へ折り返しません。`zero_count` は
 `control.allow_hardware_current_output` は既定で `false` です。上記が測定され
 `validated: true` になるまで、バイラテラルモードは `configure()` で拒否されます。
 
+### 実モデル（`Rakuda-2_simulation_ready.zip`）の監査結果
+
+`assembly_2/urdf/assembly_2_convex_collision.urdf` を `python -m robopy.kinematics.urdf_audit` で
+監査した結果です（生データ: `docs/robots/assets/rakuda_urdf_audit.json`）。
+
+| 項目 | 結果 |
+| --- | --- |
+| ルートリンク | `root` |
+| リンク／関節 | 153 / 152（fixed=137, revolute=12, continuous=3） |
+| 可動自由度 | 15 = 胴体1 + 左腕6 + 右腕6 + 頭部2 |
+| メッシュ | 274参照、`--package-dir <展開先>` で全て解決 |
+| 総質量 | **0.0020693 kg → 幾何専用。動力学モデルとして採用不可** |
+| `effort` / `velocity` | revolute 12関節すべて `1 / 1` のプレースホルダ |
+| continuous関節 | `torso_yaw_dof`, `shoulder_pitch_left_dof`, `shoulder_pitch_right_dof`（範囲なし） |
+| 同名の関節とリンク | `gripper_left_dof`, `gripper_right_dof`, `head_camera_link` |
+| ゼロ姿勢が可動限界上 | `elbow_pitch_right_dof` の範囲は `(-2.7925, 0.0000)`。**全関節0はこの関節の上限そのもの** |
+
+構造の確認（Jacobianから）: `torso_yaw_dof` は両手に効き、各腕の6関節は自分の手だけに効き、
+頭部2関節はどちらの手にも効きません。双腕IKの前提と一致します。
+
+実モデルで確認できたこと（合成モデルではなく本体）:
+
+- 双腕IKが FK生成の到達可能目標へ収束: **位置 0.80 / 0.85 mm、姿勢 < 0.01 rad、1回 0.7〜0.9 ms**、
+  `fixed` / `manual` / `optimize` の3方針すべて。頭部への指令なし。
+- `examples/robot/rakuda_cartesian_teleop.py --urdf <実URDF>` がそのまま動作（0.06 / 0.10 mm）。
+
+実モデルで見つかり修正した不具合:
+
+- 上記の同名フレーム: Pinocchio が `FIXED_JOINT` と `BODY` の2フレームを同名で持ち、名前解決が例外を出す。
+  `WholeBodyModel.frame_id()` が両者の一致を確認して解決するようにし、TCPは必ず一意名の追加フレームで
+  定義する（監査でも警告）。
+- 可動限界上のゼロ姿勢: 限界に向かう関節で**加速度制限と位置制限が矛盾し「減速して止まる」解が消える**
+  不具合。加速度窓を位置窓へクリップする形に修正（安全側の制限が常に優先）。
+
+**衝突判定の計算コスト（実測）**: 凸包274個の全ペア（7472組）で距離計算に **約2.3秒**。
+腕同士＋腕と胴体に絞った1494組でも **約0.4秒**、経路検証を含むIK 1回で **約1.2秒**。
+このCAD出力の粒度（部品ごとの凸包）は制御周期には乗りません。選択肢は
+(a) リンクごとに数個のプリミティブへ縮約した衝突モデルを別途用意する（モデリング作業）、
+(b) 衝突判定を低周期の事後検証に限定する、のどちらかで、ソフトウェア側で誤魔化せる量ではありません。
+中立姿勢で20 mm以内のペアは、ベアリング・ワッシャ・カバー等の恒久的な機構的近接（全ペアで36組）です。
+`WholeBodyModel.pairs_closer_than()` で列挙し、理由つきで除外に記録してください。
+
+設定の雛形: `examples/config/rakuda_control.example.yaml`（未測定値はすべて `null`）。
+
 ### モデルの監査
 
 URDFは使う前に監査します（kinematics extra は不要）。

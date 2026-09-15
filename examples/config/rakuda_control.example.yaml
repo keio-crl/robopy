@@ -1,0 +1,143 @@
+# Rakuda dual-arm control -- configuration template for the REAL machine.
+#
+# Copy the `control:` block into `.robopy/rakuda/config.yaml`.
+#
+# Everything below that describes the real robot and has not been measured is
+# left as null on purpose. A null makes the affected feature refuse to run.
+# Do not replace a null with a plausible-looking number: measure it, then set
+# `validated: true` next to it. `allow_hardware_current_output` stays false
+# until every coupled joint's calibration is measured and validated.
+#
+# The model referenced here is the CAD export `Rakuda-2_simulation_ready.zip`.
+# Extract it so that `<models>/assembly_2/urdf/...` exists, then point
+# `urdf_path` at the convex-collision variant and `package_dirs` at `<models>`.
+#
+#   python -m robopy.kinematics.urdf_audit <models>/assembly_2/urdf/assembly_2_convex_collision.urdf \
+#       --package-dir <models>
+#
+# What the audit of that file says (docs/robots/assets/rakuda_urdf_audit.json):
+#   - 153 links, 152 joints: fixed=137, revolute=12, continuous=3, 15 movable DOF
+#   - total mass 0.0020693 kg  -> geometry only; NOT a dynamic model
+#   - effort=1 velocity=1 on the 12 revolute joints -> exporter placeholders
+#   - torso_yaw_dof, shoulder_pitch_left/right_dof are continuous -> no range;
+#     the real cable-limited travel must be supplied as soft_limits_rad
+#   - gripper_left_dof, gripper_right_dof, head_camera_link name BOTH a fixed
+#     joint and a link; they are handled, but a TCP must be an added frame
+#   - elbow_pitch_right_dof has range (-2.7925, 0.0000): the CAD zero pose sits
+#     ON its upper limit. "All zeros" is therefore not a free starting pose.
+
+leader:
+  torque_enabled: null            # null -> default (grippers only)
+
+follower:
+  torque_enabled: null            # null -> default (all joints)
+
+control:
+  mode: position_teleop           # position_teleop | cartesian_teleop | bilateral_joint
+  control_period_s: 0.005
+  ik_period_s: 0.02
+  read_timeout_s: 0.02
+  write_timeout_s: 0.02
+  max_state_age_s: 0.05
+  max_command_age_s: 0.05
+  max_target_age_s: 0.2
+  max_cross_bus_skew_s: 0.01
+  diagnostics_period_s: 1.0
+  stop_policy: zero_current       # hold_position | zero_current | torque_off  -- CHOOSE per mechanism
+  bus_watchdog_counts: null       # 20 ms per count; null leaves the register alone
+  allow_hardware_current_output: false
+
+  model:
+    urdf_path: null               # <models>/assembly_2/urdf/assembly_2_convex_collision.urdf
+    package_dirs: []              # [<models>]
+    torso_joint: torso_yaw_dof
+    left_arm_joints:              # shoulder -> wrist, as in the URDF
+      - shoulder_pitch_left_dof
+      - shoulder_roll_left_dof
+      - elbow_yaw_left_dof
+      - elbow_pitch_left_dof
+      - wrist_yaw_left_dof
+      - wrist_pitch_left_dof
+    right_arm_joints:
+      - shoulder_pitch_right_dof
+      - shoulder_roll_right_dof
+      - elbow_yaw_right_dof
+      - elbow_pitch_right_dof
+      - wrist_yaw_right_dof
+      - wrist_pitch_right_dof
+    head_joints:                  # modelled for collision; never driven by the arm IK
+      - head_yaw_dof
+      - head_pitch_dof
+    geometry_only: true           # the export's masses are placeholders
+    build_collision: false        # see the note on collision cost in docs/robots/rakuda.md
+    collision_exclusions: []      # [geometry_a, geometry_b, reason] -- recorded decisions only
+
+    # TCP = the grasp centre, as a fixed offset from the gripper frame.
+    # The offset is a MEASUREMENT. Zero is a placeholder, not a fact.
+    left_tcp:
+      parent_frame: gripper_left_dof
+      translation_m: [0.0, 0.0, 0.0]        # MEASURE
+      quaternion_xyzw: [0.0, 0.0, 0.0, 1.0] # MEASURE
+      validated: false
+    right_tcp:
+      parent_frame: gripper_right_dof
+      translation_m: [0.0, 0.0, 0.0]        # MEASURE
+      quaternion_xyzw: [0.0, 0.0, 0.0, 1.0] # MEASURE
+      validated: false
+
+    # Continuous joints carry no URDF range. Without these the solver refuses
+    # to build, because a shortest-angle path through a cable stop is worse
+    # than no path. The values below are NOT measured; they exist to show the
+    # shape of the entry.
+    soft_limits_rad: {}
+    #  torso_yaw_dof: [-1.57, 1.57]              # MEASURE
+    #  shoulder_pitch_left_dof: [-3.14, 3.14]    # MEASURE
+    #  shoulder_pitch_right_dof: [-3.14, 3.14]   # MEASURE
+
+  # Motor -> URDF joint. The correspondence is established ON THE MACHINE by
+  # moving one motor and watching which URDF joint moves; the names below are
+  # the motor names robopy already uses and the URDF names from the audit.
+  # r_arm_sh_pitch2 / r_arm_el_yaw / r_arm_wr_roll do not map by any naming
+  # rule, so nothing is pre-filled for the arms.
+  follower_joint_calibration:
+    torso_yaw:
+      urdf_joint: torso_yaw_dof
+      direction: 1                # +1 or -1: VERIFY
+      zero_count: null            # MEASURE (PRESENT_POSITION at q = 0, after Drive Mode / Homing Offset)
+      drive_mode: null            # record the register the zero was defined against
+      homing_offset: null
+      lower_limit_rad: null       # MEASURE
+      upper_limit_rad: null       # MEASURE
+      max_velocity_rad_s: null
+      max_acceleration_rad_s2: null
+      torque_constant_nm_per_a: null   # MEASURE -- not a datasheet stall ratio
+      current_limit_a: null
+      max_current_rate_a_s: null
+      validated: false
+    head_yaw:   { urdf_joint: head_yaw_dof,   zero_count: null, validated: false }
+    head_pitch: { urdf_joint: head_pitch_dof, zero_count: null, validated: false }
+    # r_arm_sh_pitch1: { urdf_joint: ???, ... }   <- establish on the machine
+    # r_arm_sh_roll:   { urdf_joint: ???, ... }
+    # r_arm_sh_pitch2: { urdf_joint: ???, ... }
+    # r_arm_el_yaw:    { urdf_joint: ???, ... }
+    # r_arm_wr_roll:   { urdf_joint: ???, ... }
+    # r_arm_wr_yaw:    { urdf_joint: ???, ... }
+    # (and the l_arm_* motors likewise)
+    # Grippers have NO urdf_joint: gripper_*_dof are fixed frames, not joints.
+
+  leader_joint_calibration: {}    # the leader is a different machine; calibrate it separately
+
+  bilateral:
+    coupled_motors: []            # at most the 13 arm + torso joints; never head or grippers
+    stiffness_nm_per_rad: 1.0
+    damping_nm_s_per_rad: 0.05
+    scale: 1.0                    # leader -> follower angle ratio, per joint if needed
+    offset_rad: 0.0               # calibrated offset b; re-baseline only with feedback released
+    max_torque_nm: 0.3
+    max_torque_rate_nm_s: 10.0
+    leader_current_limit_a: {}    # per motor, amperes -- MEASURE
+    follower_current_limit_a: {}  # per motor, amperes -- MEASURE
+    velocity_filter_hz: 20.0
+    ramp_time_s: 1.0
+    max_alignment_error_rad: 0.1
+    allow_uncompensated: false    # true only for a simulated plant or a supported joint

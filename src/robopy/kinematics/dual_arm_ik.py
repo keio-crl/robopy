@@ -282,6 +282,17 @@ class DualArmIK:
                     f"TCP frame '{frame}' does not exist in {model.source}. Define it with "
                     "WholeBodyModel.add_fixed_frame() from a verified fixed transform."
                 )
+            # Pink resolves frames by name through Pinocchio's getFrameId, which
+            # raises when a URDF gives a joint and its child link the same name.
+            # The Rakuda export does that for gripper_left_dof, gripper_right_dof
+            # and head_camera_link, so such a name cannot be used as a task frame.
+            if len(model.frame_ids(frame)) != 1:
+                raise ValueError(
+                    f"TCP frame name '{frame}' is carried by more than one frame in "
+                    f"{model.source}, so the solver cannot address it by name. Attach a "
+                    "uniquely named operational frame with WholeBodyModel.add_fixed_frame() "
+                    "and use that instead."
+                )
         self._left_frame = left_frame
         self._right_frame = right_frame
 
@@ -481,6 +492,7 @@ class DualArmIK:
         G: NDArray[np.float64] | None = None
         h: NDArray[np.float64] | None = None
         collision_before: float | None = None
+        collision_detail = ""
         if self._has_collision:
             report = self._model.collision_report(q)
             collision_before = report.min_distance
@@ -495,6 +507,7 @@ class DualArmIK:
                     min_distance=collision_before,
                 )
             G, h = self._collision_constraints(q, report, S, known_step, dt)
+            collision_detail = self._collision_diagnosis(report)
 
         if time.perf_counter() - started > self._config.compute_budget_s:
             return self._failure(
@@ -521,7 +534,7 @@ class DualArmIK:
             return self._failure(
                 DualArmIKStatus.INFEASIBLE,
                 "The QP has no solution under the current velocity, acceleration, position and "
-                "collision constraints.",
+                "collision constraints." + collision_detail,
                 started,
                 state,
                 min_distance=collision_before,
@@ -696,21 +709,33 @@ class DualArmIK:
             name="max_joint_acceleration_rad_s2",
         )
 
-        lb = -v_max * dt
-        ub = v_max * dt
-        lb = np.maximum(lb, -cfg.max_joint_step_rad)
-        ub = np.minimum(ub, cfg.max_joint_step_rad)
-
-        if self._previous_step is not None:
-            previous = np.asarray([self._previous_step[slot] for slot in free_slots])
-            lb = np.maximum(lb, previous - a_max * dt * dt)
-            ub = np.minimum(ub, previous + a_max * dt * dt)
+        # Hard bounds: velocity, the per-cycle step ceiling, and position
+        # limits. None of these is ever relaxed.
+        lb_hard = np.maximum(-v_max * dt, -cfg.max_joint_step_rad)
+        ub_hard = np.minimum(v_max * dt, cfg.max_joint_step_rad)
 
         positions = self._model.positions_from_q(q)
         lower, upper = self._model.position_limits(names)
         current = np.asarray([positions[name] for name in names])
-        lb = np.maximum(lb, lower + cfg.position_limit_margin_rad - current)
-        ub = np.minimum(ub, upper - cfg.position_limit_margin_rad - current)
+        lb_hard = np.maximum(lb_hard, lower + cfg.position_limit_margin_rad - current)
+        ub_hard = np.minimum(ub_hard, upper - cfg.position_limit_margin_rad - current)
+
+        if self._previous_step is None:
+            lb, ub = lb_hard, ub_hard
+        else:
+            # The acceleration bound is a smoothness constraint, not a safety
+            # one. Intersecting it with the hard bounds can empty the feasible
+            # set exactly when a joint approaching its position limit needs to
+            # decelerate -- "you may not slow down" is never the right answer.
+            # So the acceleration window is *clipped into* the hard window
+            # instead: when it lies entirely outside, the joint brakes as hard
+            # as the hard bounds allow, and the set stays non-empty unless the
+            # configuration genuinely violates a position limit.
+            previous = np.asarray([self._previous_step[slot] for slot in free_slots])
+            lb_acceleration = previous - a_max * dt * dt
+            ub_acceleration = previous + a_max * dt * dt
+            lb = np.maximum(lb_hard, np.minimum(lb_acceleration, ub_hard))
+            ub = np.minimum(ub_hard, np.maximum(ub_acceleration, lb_hard))
 
         # A MANUAL torso step is a known quantity, but it still has to respect
         # the torso's own limits; reject it rather than silently exceeding them.
@@ -772,6 +797,31 @@ class DualArmIK:
         return (
             np.asarray(rows, dtype=np.float64),
             np.asarray(bounds, dtype=np.float64),
+        )
+
+    def _collision_diagnosis(self, report: Any) -> str:
+        """Name the pairs that are already inside the safety distance.
+
+        When a collision constraint is what makes the step infeasible, the
+        useful answer is *which* pairs, because a pair that sits permanently
+        inside the safety distance -- a bearing beside its own washer -- is an
+        exclusion to record, not an obstacle to avoid.
+        """
+        cfg = self._config
+        inside = np.flatnonzero(report.distances < cfg.collision_safety_distance_m)
+        if inside.size == 0:
+            return ""
+        order = inside[np.argsort(report.distances[inside])][:5]
+        worst = "; ".join(
+            f"{report.pair_names[k][0]} <-> {report.pair_names[k][1]} at "
+            f"{report.distances[k] * 1e3:.1f} mm"
+            for k in order
+        )
+        return (
+            f" {inside.size} pair(s) are already inside the "
+            f"{cfg.collision_safety_distance_m * 1e3:.0f} mm safety distance, so the constraints "
+            f"demand they all separate at once. Closest: {worst}. A pair that is permanently this "
+            "close is an exclusion to record, or the safety distance is too large for this model."
         )
 
     def _verify_path(

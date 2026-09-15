@@ -185,3 +185,19 @@ class TestCli:
         urdf = write_synthetic_dual_arm_urdf(tmp_path / "syn.urdf")
         main([str(urdf), "--json"])
         assert '"robot_name": "synthetic_dual_arm"' in capsys.readouterr().out
+
+
+class TestAmbiguousNames:
+    def test_joint_and_link_sharing_a_name_is_flagged(self, synthetic_urdf: Path) -> None:
+        audit = audit_urdf(synthetic_urdf)
+        assert audit.ambiguous_names == [
+            "gripper_left_dof",
+            "gripper_right_dof",
+            "head_camera_link",
+        ]
+        assert any("both a joint and a link" in w for w in audit.warnings)
+
+    def test_unique_names_produce_no_flag(self, tmp_path: Path) -> None:
+        path = write_synthetic_dual_arm_urdf(tmp_path / "u.urdf", joint_named_child_links=False)
+        audit = audit_urdf(path)
+        assert audit.ambiguous_names == []
