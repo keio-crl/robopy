@@ -113,16 +113,18 @@ class TestCommittedUrdf:
         assert audit.joint_type_counts == recorded["joint_type_counts"]
         assert audit.movable_joint_names == recorded["movable_joint_names"]
         assert audit.total_mass_kg == pytest.approx(recorded["total_mass_kg"])
-        # The recorded audit was taken with the visual meshes on disk. In a
-        # checkout without them (no `git lfs pull`, or not yet added) only the
-        # 137 `meshes/` references may be unresolved; the convex hulls always resolve.
-        if rakuda.visual_meshes_available:
-            assert audit.unresolved_meshes == recorded["unresolved_meshes"] == []
-        else:
+        # The recorded audit was taken with the visual meshes on disk. The audit
+        # only asks whether a reference resolves to a file, so LFS pointer files
+        # (a clone before `git lfs pull`) count as resolved; only a checkout
+        # with no `meshes/*.stl` at all leaves the 137 visual references
+        # unresolved. The convex hulls always resolve.
+        if rakuda.visual_mesh_status == "ABSENT":
             assert len(audit.unresolved_meshes) == 137
             assert all(
                 u.startswith("package://assembly_2/meshes/") for u in audit.unresolved_meshes
             )
+        else:
+            assert audit.unresolved_meshes == recorded["unresolved_meshes"] == []
         assert not any("collision_meshes" in u for u in audit.unresolved_meshes)
         assert audit.ambiguous_names == [
             "gripper_left_dof",

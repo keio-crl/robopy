@@ -26,7 +26,10 @@ const state = {
   fkDirty: false,
   ikInFlight: false,
   lastFkMs: null,
+  lastPoses: null,             // the most recent /api/fk (or IK) reply, re-applied to late meshes
 };
+// Exposed read-only for debugging and the browser regression test.
+window.__robopy_state = state;
 
 // ------------------------------------------------------------------ three.js scene
 const viewport = $('#viewport');
@@ -124,12 +127,20 @@ async function requestFK() {
   }
 }
 
+function placeObject(obj, pose) {
+  obj.position.set(pose.p[0], pose.p[1], pose.p[2]);
+  obj.quaternion.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]);
+}
+
 function applyPoses(poses, sent) {
+  // Meshes are downloaded asynchronously and may arrive AFTER this reply; the
+  // reply is kept so loadMeshes() can place them when they show up. Without
+  // that, every late mesh sat at the identity pose (its link frame at the world
+  // origin) and the robot appeared to fall apart on slow connections.
+  state.lastPoses = poses;
   poses.geometries.forEach((pose, i) => {
     const obj = state.meshes[i];
-    if (!obj) return;
-    obj.position.set(pose.p[0], pose.p[1], pose.p[2]);
-    obj.quaternion.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]);
+    if (obj) placeObject(obj, pose);
   });
   for (const [side, pose] of Object.entries(poses.tcp || {})) {
     state.ee[side].current = pose;
@@ -191,12 +202,19 @@ async function loadMeshes(model) {
   let failed = 0, done = 0;
   const total = model.geometries.filter((g) => g.shape.type === 'mesh').length;
   const overlay = $('#overlay');
+  // Register an object for geometry i and put it where the latest FK reply
+  // says, if one has arrived already (see applyPoses).
+  const attach = (i, obj) => {
+    state.meshes[i] = obj;
+    const pose = state.lastPoses && state.lastPoses.geometries[i];
+    if (pose) placeObject(obj, pose);
+    scene.add(obj);
+  };
   const jobs = model.geometries.map((g, i) => new Promise((resolve) => {
     if (g.shape.type !== 'mesh') {
       const obj = primitiveObject(g);
       obj.name = g.id;
-      state.meshes[i] = obj;
-      scene.add(obj);
+      attach(i, obj);
       resolve();
       return;
     }
@@ -205,13 +223,15 @@ async function loadMeshes(model) {
       const mesh = new THREE.Mesh(geometry, materialFor(g.rgba));
       mesh.scale.set(...g.scale);
       mesh.name = g.id;
-      state.meshes[i] = mesh;
-      scene.add(mesh);
+      attach(i, mesh);
       done += 1; overlay.textContent = `loading meshes… ${done}/${total}`;
       resolve();
-    }, undefined, (err) => { failed += 1; console.warn('mesh failed', g.url, err); state.meshes[i] = new THREE.Group(); resolve(); });
+    }, undefined, (err) => { failed += 1; console.warn('mesh failed', g.url, err); attach(i, new THREE.Group()); resolve(); });
   }));
   await Promise.all(jobs);
+  // Belt and braces: whatever order the downloads and the FK reply finished in,
+  // every object now carries the latest configuration.
+  if (state.lastPoses) applyPoses(state.lastPoses, null);
   overlay.hidden = true;
   if (failed) setStats(`${failed} mesh(es) failed to load`);
 }
