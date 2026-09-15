@@ -72,6 +72,9 @@ realsense = ["pyrealsense2>=2.54.2"] # RealSense用（現状 Linux で主に利�
 audio = ["pyaudio>=0.2.14"]
 
 
+[project.scripts]
+robopy-viewer = "robopy.viewer.__main__:main"
+
 [build-system]
 requires = ["uv_build>=0.8.12,<0.9.0"]
 build-backend = "uv_build"

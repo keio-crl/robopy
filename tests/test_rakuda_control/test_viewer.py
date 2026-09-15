@@ -1,0 +1,275 @@
+"""The browser viewer's server: model description, FK/IK endpoints, and safety.
+
+Skipped when the optional ``kinematics`` extra is absent.  No browser is
+involved here; the page itself is exercised manually with Playwright.
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any, Dict, Tuple
+
+import numpy as np
+import pytest
+
+pytest.importorskip("pink", reason="needs the 'kinematics' optional extra")
+
+from robopy.viewer.model_bundle import ModelBundle, matrix_to_pose  # noqa: E402
+from robopy.viewer.server import IKSetup, ViewerServer  # noqa: E402
+
+SOFT_LIMITS = {
+    "torso_yaw_dof": (-1.5, 1.5),
+    "shoulder_pitch_left_dof": (-2.0, 2.0),
+    "shoulder_pitch_right_dof": (-2.0, 2.0),
+}
+
+
+@pytest.fixture(scope="module")
+def bundle(tmp_path_factory: pytest.TempPathFactory) -> ModelBundle:
+    from robopy.kinematics.synthetic_dual_arm import write_synthetic_dual_arm_urdf
+
+    urdf = write_synthetic_dual_arm_urdf(tmp_path_factory.mktemp("viewer") / "syn.urdf")
+    return ModelBundle.load(urdf, soft_limits=SOFT_LIMITS)
+
+
+@pytest.fixture(scope="module")
+def server(bundle: ModelBundle):  # type: ignore[no-untyped-def]
+    srv = ViewerServer(bundle, host="127.0.0.1", port=0, ik=IKSetup(bundle))
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    yield srv
+    srv.shutdown()
+    srv.server_close()
+
+
+def _call(server: ViewerServer, path: str, body: Any = None) -> Tuple[int, Any]:
+    url = server.url.rstrip("/") + path
+    data = None if body is None else json.dumps(body).encode()
+    req = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json"} if data else {}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as res:
+            raw = res.read()
+            ctype = res.headers.get("Content-Type", "")
+            return res.status, (json.loads(raw) if "json" in ctype else raw)
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read() or b"{}")
+
+
+class TestModelBundle:
+    def test_primitives_are_parsed_from_the_fixture(self, bundle: ModelBundle) -> None:
+        # The synthetic fixture uses cylinders; a mesh-only parser would render
+        # nothing for the default no-argument viewer.
+        assert bundle.geometries
+        assert {g.shape["type"] for g in bundle.geometries} == {"cylinder"}
+        assert bundle.meshes == []
+
+    def test_tcp_frames_are_attached_with_a_reported_placeholder_offset(
+        self, bundle: ModelBundle
+    ) -> None:
+        assert bundle.tcp_frames == {"left": "left_tcp", "right": "right_tcp"}
+        assert any("ZERO offset" in w for w in bundle.warnings)
+
+    def test_description_flags_display_only_limits(self, tmp_path: Path) -> None:
+        from robopy.kinematics.synthetic_dual_arm import write_synthetic_dual_arm_urdf
+
+        unbounded = ModelBundle.load(write_synthetic_dual_arm_urdf(tmp_path / "u.urdf"))
+        joints = {j["name"]: j for j in unbounded.describe()["joints"]}
+        assert joints["torso_yaw_dof"]["limit_is_display_only"] is True
+        assert joints["elbow_yaw_left_dof"]["limit_is_display_only"] is False
+        assert any("display range only" in w for w in unbounded.warnings)
+
+    def test_poses_place_every_geometry_and_both_tcps(self, bundle: ModelBundle) -> None:
+        poses = bundle.poses({"torso_yaw_dof": 0.3})
+        assert len(poses["geometries"]) == len(bundle.geometries)
+        assert set(poses["tcp"]) == {"left", "right"}
+        assert poses["joints"]["torso_yaw_dof"] == pytest.approx(0.3)
+
+    def test_unknown_joint_is_rejected(self, bundle: ModelBundle) -> None:
+        with pytest.raises(KeyError, match="Unknown joint"):
+            bundle.poses({"nope": 0.1})
+
+    def test_matrix_to_pose_round_trips_a_rotation(self) -> None:
+        from robopy.control.types import se3_from_quat_xyzw
+
+        q = np.array([0.1, -0.2, 0.3, 0.9])
+        q /= np.linalg.norm(q)
+        T = se3_from_quat_xyzw([0.1, 0.2, 0.3], q)
+        pose = matrix_to_pose(T)
+        np.testing.assert_allclose(pose["p"], [0.1, 0.2, 0.3])
+        recovered = np.asarray(pose["q"])
+        if np.dot(recovered, q) < 0:
+            recovered = -recovered
+        np.testing.assert_allclose(recovered, q, atol=1e-9)
+
+
+class TestEndpoints:
+    def test_health_and_model(self, server: ViewerServer) -> None:
+        status, health = _call(server, "/api/health")
+        assert status == 200 and health == {"ok": True, "ik": True}
+        status, model = _call(server, "/api/model")
+        assert status == 200
+        assert len(model["joints"]) == 15
+        assert model["simulation_only"] is True
+        assert model["ik"]["groups"]["torso"] == "torso_yaw_dof"
+        assert len(model["ik"]["groups"]["left"]) == 6
+
+    def test_fk_returns_poses(self, server: ViewerServer) -> None:
+        status, poses = _call(server, "/api/fk", {"joints": {"torso_yaw_dof": 0.5}})
+        assert status == 200
+        assert poses["joints"]["torso_yaw_dof"] == pytest.approx(0.5)
+        assert "timing_ms" in poses
+
+    @pytest.mark.parametrize(
+        "body",
+        [{"joints": {"nope": 1.0}}, {"joints": {"torso_yaw_dof": float("nan")}}, {"joints": 3}],
+    )
+    def test_fk_rejects_bad_input(self, server: ViewerServer, body: Dict[str, Any]) -> None:
+        status, err = _call(server, "/api/fk", body)
+        assert status == 400 and "error" in err
+
+    def test_ik_converges_and_returns_poses(
+        self, server: ViewerServer, bundle: ModelBundle
+    ) -> None:
+        goal = {name: 0.0 for name in bundle.joint_order}
+        goal["shoulder_roll_left_dof"] = 0.3
+        goal["elbow_pitch_left_dof"] = -0.4
+        left = matrix_to_pose(bundle.model.frame_pose(bundle.positions_to_q(goal), "left_tcp"))
+        status, result = _call(
+            server,
+            "/api/ik",
+            {"joints": {}, "targets": {"left": left}, "torso_policy": "fixed"},
+        )
+        assert status == 200
+        assert result["status"] == "converged"
+        assert result["commandable"] is True
+        assert result["errors"]["left_position_m"] < 1e-3
+        assert result["errors"]["right_hold_m"] is not None  # right hand was held
+        assert len(result["poses"]["geometries"]) == len(bundle.geometries)
+        assert result["joints"]["head_yaw_dof"] == 0.0
+
+    def test_ik_failure_keeps_the_starting_joints(self, server: ViewerServer) -> None:
+        far = {"p": [5.0, 0.0, 0.0], "q": [0.0, 0.0, 0.0, 1.0]}
+        start = {"torso_yaw_dof": 0.2}
+        status, result = _call(
+            server, "/api/ik", {"joints": start, "targets": {"left": far}, "iterations": 5}
+        )
+        assert status == 200
+        # Unreachable: it tracks but does not converge; that is still commandable.
+        assert result["status"] in ("tracking", "converged")
+
+    def test_ik_with_no_targets_is_a_bad_request(self, server: ViewerServer) -> None:
+        status, _ = _call(server, "/api/ik", {"joints": {}, "targets": {}})
+        assert status == 400
+
+    def test_static_traversal_is_refused(self, server: ViewerServer) -> None:
+        status, _ = _call(server, "/static/../../__init__.py")
+        assert status == 404
+        status, _ = _call(server, "/static/%2e%2e/%2e%2e/server.py")
+        assert status == 404
+
+    def test_static_assets_and_page_are_served(self, server: ViewerServer) -> None:
+        status, page = _call(server, "/")
+        assert status == 200 and b"robopy" in page
+        status, js = _call(server, "/static/app.js")
+        assert status == 200 and b"import * as THREE" in js
+        status, vendor = _call(server, "/static/vendor/three.module.min.js")
+        assert status == 200 and len(vendor) > 100_000
+
+    def test_a_mesh_index_out_of_range_is_404(self, server: ViewerServer) -> None:
+        status, _ = _call(server, "/mesh/0")  # the fixture has primitives only
+        assert status == 404
+        status, _ = _call(server, "/mesh/not-a-number")
+        assert status == 404
+
+    def test_unknown_routes_are_404(self, server: ViewerServer) -> None:
+        assert _call(server, "/api/nope")[0] == 404
+        assert _call(server, "/api/nope", {"x": 1})[0] == 404
+
+
+class TestIKSetup:
+    def test_groups_are_inferred_and_reported(self, bundle: ModelBundle) -> None:
+        setup = IKSetup(bundle)
+        assert setup.groups["torso"] == "torso_yaw_dof"
+        assert setup.groups["head"] == ["head_yaw_dof", "head_pitch_dof"]
+        assert setup.groups["left"][0] == "shoulder_pitch_left_dof"  # shoulder first
+        assert setup.geometric_study_only is False
+
+    def test_missing_soft_limits_make_it_a_geometric_study(self, tmp_path: Path) -> None:
+        from robopy.kinematics.synthetic_dual_arm import write_synthetic_dual_arm_urdf
+
+        unbounded = ModelBundle.load(write_synthetic_dual_arm_urdf(tmp_path / "u.urdf"))
+        setup = IKSetup(unbounded)
+        assert setup.geometric_study_only is True
+        assert "torso_yaw_dof" in setup.groups["unbounded_continuous"]
+
+
+class TestOrientationWeightAndStall:
+    """A two-axis wrist cannot always translate while keeping its orientation."""
+
+    def _jog(self, server: ViewerServer, bundle: ModelBundle, **extra: Any) -> Dict[str, Any]:
+        start = {"torso_yaw_dof": 0.6}
+        _, cur = _call(server, "/api/fk", {"joints": start})
+        left = dict(cur["tcp"]["left"])
+        left["p"] = [left["p"][0] + 0.03, left["p"][1], left["p"][2]]
+        body = {
+            "joints": start,
+            "targets": {"left": left, "right": cur["tcp"]["right"]},
+            "torso_policy": "fixed",
+            "iterations": 300,
+            **extra,
+        }
+        status, result = _call(server, "/api/ik", body)
+        assert status == 200
+        return result
+
+    def test_an_unreachable_target_is_reported_as_stalled(
+        self, server: ViewerServer, bundle: ModelBundle
+    ) -> None:
+        # A target a metre away cannot be reached. The API must say the solve
+        # stalled -- the residual stopped improving -- rather than exhaust its
+        # iteration budget silently, and it must echo the weight it used.
+        status, result = _call(
+            server,
+            "/api/ik",
+            {
+                "joints": {},
+                "targets": {"left": {"p": [1.0, 0.5, 0.3], "q": [0.0, 0.0, 0.0, 1.0]}},
+                "torso_policy": "fixed",
+                "iterations": 600,
+                "orientation_weight": 0.15,
+            },
+        )
+        assert status == 200
+        assert result["status"] == "tracking"
+        assert result["commandable"] is True
+        # Either the residual stopped improving (stalled) or the budget ran out
+        # with the arm still swinging at its speed bound; both are "not reached".
+        assert result["stalled"] or result["iterations"] == 600
+        assert result["errors"]["left_position_m"] > 0.1
+        assert result["orientation_weight"] == pytest.approx(0.15)
+        assert "stalled" in result and "active_limits" in result
+
+    def test_a_position_only_jog_converges(self, server: ViewerServer, bundle: ModelBundle) -> None:
+        result = self._jog(server, bundle, orientation_weight=0.0)
+        assert result["status"] == "converged", result
+        assert result["stalled"] is False
+        assert result["errors"]["left_position_m"] < 1e-3
+        assert result["orientation_weight"] == 0.0
+
+    def test_orientation_weight_is_range_checked(self, server: ViewerServer) -> None:
+        status, _ = _call(
+            server,
+            "/api/ik",
+            {
+                "joints": {},
+                "targets": {"left": {"p": [0, 0.2, 0], "q": [0, 0, 0, 1]}},
+                "orientation_weight": -1,
+            },
+        )
+        assert status == 400

@@ -257,6 +257,63 @@ pair.stop_control()                # 停止方針を適用してバスを返す
 （1ポート1書き手）。観測API (`get_observation()`) は配列の形・順序・単位（degree）を
 変えずに、サーボのキャッシュを読みます。SI単位の詳細状態は `pair.detailed_state()` で取れます。
 
+## :material-cube-scan: 3Dビューア／シミュレータ（実機不要）
+
+![robopy viewer: 実モデル、End effector タブ](assets/rakuda_viewer.png)
+
+UFactory Studio の「モデルだけを動かして確認する」に相当するブラウザUIです。
+関節角度（スライダ／数値／±ジョグ）またはエンドエフェクタ姿勢（xyz・roll/pitch/yaw の ±ジョグ）で
+モデルを動かし、3D表示で確認できます。**ページ上の何もモータへは送られません。**
+
+```bash
+uv sync --extra kinematics
+
+# 引数なし: 合成モデル（Rakudaのトポロジ、幾何は架空）で即起動
+uv run robopy-viewer
+
+# 実モデル（Rakuda-2_simulation_ready.zip を展開した <models> を指定）
+uv run robopy-viewer --urdf <models>/assembly_2/urdf/assembly_2.urdf --package-dir <models> \
+    --soft-limit torso_yaw_dof=-1.57,1.57 \
+    --soft-limit shoulder_pitch_left_dof=-3.14,3.14 --soft-limit shoulder_pitch_right_dof=-3.14,3.14
+
+# .robopy/rakuda/config.yaml の control.model（URDF・ソフト制限・TCP・関節グループ）を使う
+uv run robopy-viewer --config
+```
+
+`http://127.0.0.1:8765` を開きます（`--port`, `--host`, `--no-browser`, `--no-ik` あり）。
+
+| タブ | 内容 |
+| --- | --- |
+| Joints | 胴体／左腕／右腕／頭部ごとのスライダ・数値入力・±ジョグ（deg/rad切替、ステップ幅）。`zero all`、`copy JSON`（rad） |
+| End effector | 左右TCPの現在姿勢（mm / deg）と目標。各成分の±ジョグ、`capture`、片手の有効/無効（無効側は保持目標）、胴体方針 fixed/manual/optimize、姿勢モード soft/keep/free、`solve`／ジョグごとに自動solve |
+| Info | URDFパス、nq/nv、IKの関節グループ（名前から推定した場合もここに明示）、モデル監査の警告 |
+
+設計上のポイント:
+
+- **運動学は全てサーバ側**（`WholeBodyModel` / `DualArmIK`）。ページはFK/IKの結果を描くだけなので、
+  表示と制御スタックの解が食い違いません。Pinocchio/Pinkが必要（`kinematics` extra）。
+- 3D描画は three.js を**同梱**（`src/robopy/viewer/static/vendor/`、MIT）。オフラインの実験室でも動きます。
+- 実モデルの視覚メッシュ（`assembly_2.urdf`、53 MB / 137個）はサーバから配信。初回ロードに数秒かかります。
+- TCPは `gripper_*_dof` からのオフセット**ゼロ**で置かれ、Infoタブにその旨の警告が出ます（実測が必要）。
+- continuous関節にソフト制限を与えない場合、スライダ範囲は表示用の ±π、IKは「幾何学的検討のみ」と表示。
+- **姿勢モード（orientation）**: Rakudaの手首は2軸（yaw・pitch）で球面手首ではないため、
+  「姿勢を完全に保ったまま平行移動」は6自由度あっても一般に到達不能です（実モデルで確認:
+  垂れた腕から +30 mm の平行移動は大域探索でも最良 7.4 mm 残る）。この場合ソルバは重み付きの妥協点で
+  止まり、APIは `stalled: true` を返し、ページは「これ以上変わらない」と明示します。
+  `free`（姿勢重み0）にすると位置だけを追うので、xArmのCartesianジョグに相当する使い方ができます。
+  `soft`（0.15、既定）は位置優先、`keep`（1.0）は両方同等です。
+- **初期姿勢の注意**: 全関節0の姿勢では腕が伸びきって垂れており、手先は最大到達距離の約96%（実モデルで計測）
+  にあります。高さを保った平行移動の多くは作業空間の外なので、Joints タブで肘を曲げてから
+  Cartesian ジョグしてください（UFactory Studio の home 姿勢に相当）。肘は片方向にしか曲がりません —
+  この URDF では `elbow_pitch_left_dof` は正（0〜+2.31 rad）、`elbow_pitch_right_dof` は負（−2.79〜0 rad）。
+  例えば左 +0.8 / 右 −0.8 rad に曲げた姿勢からは、実モデルで ±x/±y/±z の 30 mm ジョグが
+  soft/free とも 9〜34 反復・1 mm 未満で収束します（計測済み）。到達できない場合、ページは
+  「限界に座っている関節」か「作業空間の外」かを区別して説明します。
+- `/api/fk`, `/api/ik`, `/api/model` はJSONのSI単位APIです。DORA等の外部ノードから叩くこともできます。
+
+実機の状態をこのページに**ミラー表示**する機能は未実装です（サーボループのスナップショットを
+`/api/fk` 相当の入力にすれば実現できますが、初回では対象外）。
+
 ## :material-ruler: 単位と校正
 
 ### 電流定数の表記

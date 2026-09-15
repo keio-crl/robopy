@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>robopy viewer</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%231c2027' stroke='%234cc2ff' stroke-width='2'/%3E%3Cpath d='M9 22V10h5a4 4 0 0 1 0 8h-5m5 0 5 4' fill='none' stroke='%234cc2ff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<script type="importmap">
+{
+  "imports": {
+    "three": "/static/vendor/three.module.min.js",
+    "three/addons/": "/static/vendor/addons/"
+  }
+}
+</script>
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">robopy <span class="dim">viewer</span></div>
+  <div id="robot-name" class="robot-name">loading…</div>
+  <div class="badge sim" title="Nothing on this page talks to a motor.">SIMULATION · no hardware</div>
+  <div class="spacer"></div>
+  <div id="stats" class="stats">fk — ms</div>
+</header>
+
+<main>
+  <div id="viewport">
+    <div id="overlay" class="overlay">loading model…</div>
+    <div class="view-tools">
+      <button id="view-fit" title="Fit the camera to the robot">fit</button>
+      <button id="view-front" title="Look from +X">front</button>
+      <button id="view-side" title="Look from +Y">side</button>
+      <button id="view-top" title="Look from +Z">top</button>
+      <label><input type="checkbox" id="show-frames" checked> frames</label>
+    </div>
+  </div>
+
+  <aside id="panel">
+    <nav class="tabs">
+      <button class="tab active" data-tab="joints">Joints</button>
+      <button class="tab" data-tab="ee">End effector</button>
+      <button class="tab" data-tab="info">Info</button>
+    </nav>
+
+    <section id="tab-joints" class="tab-body active">
+      <div class="toolbar">
+        <label class="seg">
+          <input type="radio" name="unit" value="deg" checked> deg
+          <input type="radio" name="unit" value="rad"> rad
+        </label>
+        <label>step <input id="joint-step" type="number" value="5" step="1" min="0.01" class="num short"> <span id="joint-step-unit">deg</span></label>
+        <button id="joints-zero">zero all</button>
+        <button id="joints-copy" title="Copy the current joint angles as JSON (radians)">copy JSON</button>
+      </div>
+      <div id="joint-groups"></div>
+    </section>
+
+    <section id="tab-ee" class="tab-body">
+      <div id="ik-unavailable" class="notice" hidden></div>
+      <div id="ik-study" class="notice warn" hidden></div>
+      <div class="toolbar">
+        <label>torso
+          <select id="torso-policy">
+            <option value="fixed">fixed</option>
+            <option value="manual">manual</option>
+            <option value="optimize">optimize</option>
+          </select>
+        </label>
+        <label id="torso-velocity-wrap" hidden>ω <input id="torso-velocity" type="number" value="0.1" step="0.05" class="num short"> rad/s</label>
+        <label title="Rakuda's wrist has two axes, so keeping the full orientation while translating is often unreachable. 'free' jogs position only.">orientation
+          <select id="ori-mode">
+            <option value="0.15">soft</option>
+            <option value="1">keep</option>
+            <option value="0">free</option>
+          </select>
+        </label>
+        <label>Δpos <input id="ee-step-mm" type="number" value="10" step="1" class="num short"> mm</label>
+        <label>Δrot <input id="ee-step-deg" type="number" value="5" step="1" class="num short"> deg</label>
+      </div>
+      <div class="toolbar">
+        <button id="ik-solve" class="primary">solve</button>
+        <label><input type="checkbox" id="ik-live" checked> solve on every jog</label>
+        <button id="ee-capture-all" title="Set both targets to the current poses">capture both</button>
+      </div>
+      <div id="ee-sides"></div>
+      <div id="ik-status" class="status">—</div>
+    </section>
+
+    <section id="tab-info" class="tab-body">
+      <dl id="info-list" class="info"></dl>
+      <h3>Warnings from the model audit</h3>
+      <ul id="info-warnings" class="warnings"></ul>
+      <h3>How to read this page</h3>
+      <ul class="help">
+        <li>Joint angles and end-effector poses are computed by the same model and solver the controller uses; nothing is sent to a motor.</li>
+        <li>Positions are shown in millimetres and rotations in degrees (roll, pitch, yaw = URDF rpy, extrinsic X-Y-Z). The API speaks SI.</li>
+        <li>A greyed limit means the joint is continuous with no measured soft limit; the slider range is for display only.</li>
+        <li>A disabled hand keeps a <em>hold</em> target captured when it was disabled; its residual is reported, it is not a lock.</li>
+        <li><b>orientation</b>: Rakuda's wrist has two axes (yaw, pitch), so a translation that keeps the hand's exact orientation is often not reachable; the solver then stops at a weighted compromise and reports <em>stalled</em>. <em>soft</em> favours position, <em>keep</em> weights both equally, <em>free</em> jogs position only.</li>
+        <li><b>start pose</b>: at all-zero joint angles the arms hang fully extended, so the hands sit on the edge of the workspace and most Cartesian jogs that keep the height cannot be reached. Bend an elbow on the Joints tab first, as you would move a real arm to a home pose. Elbows bend one way only: in the Rakuda export <code>elbow_pitch_left_dof</code> bends positive and <code>elbow_pitch_right_dof</code> negative (the sliders show each range).</li>
+      </ul>
+    </section>
+  </aside>
+</main>
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>

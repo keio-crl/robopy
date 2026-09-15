@@ -577,6 +577,29 @@ class WholeBodyModel:
         T[:3, 3] = np.asarray(placement.translation)
         return T
 
+    def frame_poses(
+        self,
+        q: NDArray[np.float64],
+        frames: Sequence[str],
+    ) -> Dict[str, NDArray[np.float64]]:
+        """``(4, 4)`` poses of many frames from a single forward-kinematics pass.
+
+        One FK evaluation serves every requested frame, which is what a viewer
+        redrawing a hundred-odd links per update needs.  Names are resolved
+        through :meth:`frame_id`, so the export's duplicated joint/link names
+        are handled.
+        """
+        indices = {name: self.frame_id(name) for name in frames}
+        self.forward_kinematics(q)
+        out: Dict[str, NDArray[np.float64]] = {}
+        for name, index in indices.items():
+            placement = self._data.oMf[index]
+            T = np.eye(4)
+            T[:3, :3] = np.asarray(placement.rotation)
+            T[:3, 3] = np.asarray(placement.translation)
+            out[name] = T
+        return out
+
     def frame_jacobian(
         self,
         q: NDArray[np.float64],

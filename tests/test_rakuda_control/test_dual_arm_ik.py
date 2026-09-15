@@ -607,3 +607,39 @@ class TestCollisionDiagnostics:
         assert "inside the 500 mm safety distance" in result.message
         assert "<->" in result.message
         assert "exclusion to record" in result.message
+
+
+class TestTaskReweighting:
+    def test_zero_orientation_cost_drops_orientation_from_convergence(
+        self, dual_arm_ik, whole_body_model
+    ) -> None:
+        # A pure translation of the left hand with the right held. With the
+        # orientation weighted, the two-axis wrist has to trade position
+        # against orientation; with the orientation free, position converges
+        # and the orientation residual is no longer a reason to withhold
+        # "converged".
+        start = _zero(whole_body_model)
+        start["elbow_pitch_left_dof"] = -0.5  # off the fully extended pose
+        q0 = whole_body_model.q_from_positions(start)
+        left = whole_body_model.frame_pose(q0, "left_tcp").copy()
+        left[0, 3] += 0.03
+        target = DualArmTarget(left_target=left, right_enabled=False)
+
+        _, weighted = _run(dual_arm_ik, whole_body_model, target, steps=300, start=start)
+        assert weighted.is_commandable, weighted.message
+
+        dual_arm_ik.reset()
+        dual_arm_ik.set_task_costs(orientation_cost=0.0)
+        assert dual_arm_ik.orientation_cost == 0.0
+        final, free = _run(dual_arm_ik, whole_body_model, target, steps=300, start=start)
+        assert free.status is DualArmIKStatus.CONVERGED
+        assert free.left_position_error_m < 1e-3
+        # Converged despite a large orientation residual: orientation was not a goal.
+        assert free.left_orientation_error_rad is not None
+        reached = whole_body_model.frame_pose(whole_body_model.q_from_positions(final), "left_tcp")
+        np.testing.assert_allclose(reached[:3, 3], left[:3, 3], atol=1e-3)
+
+    def test_costs_can_be_restored(self, dual_arm_ik) -> None:
+        dual_arm_ik.set_task_costs(orientation_cost=0.0)
+        dual_arm_ik.set_task_costs(orientation_cost=0.15, position_cost=1.0)
+        assert dual_arm_ik.orientation_cost == pytest.approx(0.15)

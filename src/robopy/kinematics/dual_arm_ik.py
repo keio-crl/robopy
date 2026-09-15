@@ -360,6 +360,7 @@ class DualArmIK:
         self._previous_step: NDArray[np.float64] | None = None
         self._posture_q: NDArray[np.float64] | None = None
         self._has_collision = model.collision_model is not None
+        self._orientation_cost = self._config.orientation_cost
 
     # -- properties ---------------------------------------------------------
 
@@ -394,6 +395,44 @@ class DualArmIK:
     def set_posture_reference(self, positions_rad: Mapping[str, float]) -> None:
         """Set the configuration the posture task pulls towards."""
         self._posture_q = self._model.q_from_positions(positions_rad, require_all=False)
+
+    def set_task_costs(
+        self,
+        *,
+        position_cost: float | None = None,
+        orientation_cost: float | None = None,
+    ) -> None:
+        """Re-weight the hand tasks without rebuilding the solver.
+
+        Rakuda's arms have a two-axis wrist (yaw and pitch), so a pose that
+        keeps the hand's full orientation while translating it is often not
+        reachable at all; the solver then settles on a weighted compromise.
+        Lowering ``orientation_cost`` -- to zero for a position-only jog -- makes
+        the translation exact and lets the orientation float, which is the
+        useful behaviour for jogging this kind of arm.  An orientation cost of
+        zero also removes orientation from the convergence test.
+
+        Args:
+            position_cost: New position weight, applied with each side's
+                priority multiplier.  ``None`` leaves it unchanged.
+            orientation_cost: New orientation weight, likewise.
+        """
+        cfg = self._config
+        for task, priority in (
+            (self._left_task, cfg.left_priority),
+            (self._right_task, cfg.right_priority),
+        ):
+            if position_cost is not None:
+                task.set_position_cost(position_cost * priority)
+            if orientation_cost is not None:
+                task.set_orientation_cost(orientation_cost * priority)
+        if orientation_cost is not None:
+            self._orientation_cost = orientation_cost
+
+    @property
+    def orientation_cost(self) -> float:
+        """The orientation weight currently applied to the hand tasks."""
+        return self._orientation_cost
 
     # -- solving ------------------------------------------------------------
 
@@ -475,7 +514,7 @@ class DualArmIK:
 
         # --- bounds and constraints ------------------------------------------
         try:
-            lb, ub, bound_names = self._step_bounds(q, free_slots, known_step, dt)
+            lb, ub, bound_names, bound_parts = self._step_bounds(q, free_slots, known_step, dt)
         except ValueError as exc:
             return self._failure(DualArmIKStatus.INFEASIBLE, str(exc), started, state)
 
@@ -568,7 +607,7 @@ class DualArmIK:
                     min_distance=min_distance,
                 )
 
-        active_limits = self._active_bound_names(solution, lb, ub, bound_names, free_slots)
+        active_limits = self._active_bound_names(solution, lb, ub, bound_names, bound_parts)
         elapsed = time.perf_counter() - started
         if elapsed > self._config.compute_budget_s:
             return self._failure(
@@ -682,7 +721,7 @@ class DualArmIK:
         free_slots: Sequence[int],
         known_step: NDArray[np.float64],
         dt: float,
-    ) -> Tuple[NDArray[np.float64], NDArray[np.float64], List[str]]:
+    ) -> Tuple[NDArray[np.float64], NDArray[np.float64], List[str], Dict[str, Any]]:
         cfg = self._config
         names = [self._active_joints[slot] for slot in free_slots]
 
@@ -711,14 +750,23 @@ class DualArmIK:
 
         # Hard bounds: velocity, the per-cycle step ceiling, and position
         # limits. None of these is ever relaxed.
-        lb_hard = np.maximum(-v_max * dt, -cfg.max_joint_step_rad)
-        ub_hard = np.minimum(v_max * dt, cfg.max_joint_step_rad)
+        lb_speed = np.maximum(-v_max * dt, -cfg.max_joint_step_rad)
+        ub_speed = np.minimum(v_max * dt, cfg.max_joint_step_rad)
 
         positions = self._model.positions_from_q(q)
         lower, upper = self._model.position_limits(names)
         current = np.asarray([positions[name] for name in names])
-        lb_hard = np.maximum(lb_hard, lower + cfg.position_limit_margin_rad - current)
-        ub_hard = np.minimum(ub_hard, upper - cfg.position_limit_margin_rad - current)
+        lb_position = lower + cfg.position_limit_margin_rad - current
+        ub_position = upper - cfg.position_limit_margin_rad - current
+        lb_hard = np.maximum(lb_speed, lb_position)
+        ub_hard = np.minimum(ub_speed, ub_position)
+
+        components: Dict[str, Any] = {
+            "lb_speed": lb_speed,
+            "ub_speed": ub_speed,
+            "lb_position": lb_position,
+            "ub_position": ub_position,
+        }
 
         if self._previous_step is None:
             lb, ub = lb_hard, ub_hard
@@ -736,6 +784,8 @@ class DualArmIK:
             ub_acceleration = previous + a_max * dt * dt
             lb = np.maximum(lb_hard, np.minimum(lb_acceleration, ub_hard))
             ub = np.minimum(ub_hard, np.maximum(ub_acceleration, lb_hard))
+            components["lb_acceleration"] = lb_acceleration
+            components["ub_acceleration"] = ub_acceleration
 
         # A MANUAL torso step is a known quantity, but it still has to respect
         # the torso's own limits; reject it rather than silently exceeding them.
@@ -748,7 +798,7 @@ class DualArmIK:
                     f"The commanded manual torso step would take '{torso}' to "
                     f"{candidate:.4f} rad, outside [{t_lower[0]:.4f}, {t_upper[0]:.4f}]."
                 )
-        return lb, ub, names
+        return lb, ub, names, components
 
     def _collision_constraints(
         self,
@@ -879,7 +929,12 @@ class DualArmIK:
                 continue
             if errors.get(f"{side}_position", np.inf) > cfg.position_tolerance_m:
                 return False
-            if errors.get(f"{side}_orientation", np.inf) > cfg.orientation_tolerance_rad:
+            # With the orientation weight at zero the orientation is not a goal,
+            # so it cannot be a reason to withhold "converged".
+            if (
+                self._orientation_cost > 0.0
+                and errors.get(f"{side}_orientation", np.inf) > cfg.orientation_tolerance_rad
+            ):
                 return False
         return True
 
@@ -889,16 +944,43 @@ class DualArmIK:
         lb: NDArray[np.float64],
         ub: NDArray[np.float64],
         names: Sequence[str],
-        free_slots: Sequence[int],
+        parts: Mapping[str, Any],
     ) -> List[str]:
-        del free_slots
+        """Name each binding bound *and which constraint it came from*.
+
+        ``joint:lower`` / ``joint:upper`` is a position limit clipping this step,
+        ``joint:at_lower`` / ``joint:at_upper`` a joint already parked on its
+        limit (zero step), ``joint:speed`` the velocity or per-cycle step
+        ceiling, ``joint:accel`` the acceleration window. Reporting all of them
+        as "lower"/"upper" would make a joint pinned by its speed limit look
+        like one sitting on a hard stop.
+        """
         tolerance = 1e-9
         active: List[str] = []
         for i, name in enumerate(names):
+            side = None
             if solution[i] <= lb[i] + tolerance:
-                active.append(f"{name}:lower")
+                side = "lb"
             elif solution[i] >= ub[i] - tolerance:
-                active.append(f"{name}:upper")
+                side = "ub"
+            if side is None:
+                # A joint parked on a hard stop takes a zero step, which no bound
+                # "clips" -- yet the stop is exactly why the hand is not moving.
+                # Report it so a stall can be told apart from a workspace edge.
+                if abs(parts["lb_position"][i]) <= 1e-6:
+                    active.append(f"{name}:at_lower")
+                elif abs(parts["ub_position"][i]) <= 1e-6:
+                    active.append(f"{name}:at_upper")
+                continue
+            bound = lb[i] if side == "lb" else ub[i]
+            if abs(parts[f"{side}_position"][i] - bound) <= tolerance:
+                active.append(f"{name}:{'lower' if side == 'lb' else 'upper'}")
+            elif abs(parts[f"{side}_speed"][i] - bound) <= tolerance:
+                active.append(f"{name}:speed")
+            elif f"{side}_acceleration" in parts:
+                active.append(f"{name}:accel")
+            else:
+                active.append(f"{name}:{'lower' if side == 'lb' else 'upper'}")
         return active
 
     def _failure(
