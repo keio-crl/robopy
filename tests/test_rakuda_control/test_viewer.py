@@ -84,6 +84,13 @@ class TestModelBundle:
         assert joints["elbow_yaw_left_dof"]["limit_is_display_only"] is False
         assert any("display range only" in w for w in unbounded.warnings)
 
+    def test_the_base_geometry_is_flagged_static(self, bundle: ModelBundle) -> None:
+        # The page stands its ground plane on the geometry no joint moves. The
+        # fixture's base is its pedestal; everything above the torso yaw moves.
+        described = bundle.describe()["geometries"]
+        assert [g["id"] for g in described if g["static"]] == ["root#0"]
+        assert not [g for g in described if g["link"] == "torso_link" and g["static"]]
+
     def test_poses_place_every_geometry_and_both_tcps(self, bundle: ModelBundle) -> None:
         poses = bundle.poses({"torso_yaw_dof": 0.3})
         assert len(poses["geometries"]) == len(bundle.geometries)
@@ -118,6 +125,7 @@ class TestEndpoints:
         assert model["simulation_only"] is True
         assert model["ik"]["groups"]["torso"] == "torso_yaw_dof"
         assert len(model["ik"]["groups"]["left"]) == 6
+        assert model["ik"]["workspace"]["right"]["radius"] == pytest.approx(0.55)
 
     def test_fk_returns_poses(self, server: ViewerServer) -> None:
         status, poses = _call(server, "/api/fk", {"joints": {"torso_yaw_dof": 0.5}})
@@ -199,6 +207,16 @@ class TestIKSetup:
         assert setup.groups["head"] == ["head_yaw_dof", "head_pitch_dof"]
         assert setup.groups["left"][0] == "shoulder_pitch_left_dof"  # shoulder first
         assert setup.geometric_study_only is False
+
+    def test_the_reach_bound_is_the_arm_unfolded_from_its_shoulder(
+        self, bundle: ModelBundle
+    ) -> None:
+        # The page sizes its target sliders with this. It is the sum of the
+        # fixture's arm segments (0.25 + 0.20 + 0.10 m) measured from the
+        # shoulder frame -- an outer bound, not a reachability claim.
+        left = IKSetup(bundle).workspace["left"]
+        assert left["radius"] == pytest.approx(0.55)
+        np.testing.assert_allclose(left["center"], [0.0, 0.2, 0.6], atol=1e-9)
 
     def test_missing_soft_limits_make_it_a_geometric_study(self, tmp_path: Path) -> None:
         from robopy.kinematics.synthetic_dual_arm import write_synthetic_dual_arm_urdf

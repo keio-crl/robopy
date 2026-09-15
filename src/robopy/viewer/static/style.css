@@ -60,6 +60,8 @@ label { color: var(--dim); display: inline-flex; align-items: center; gap: 4px; 
 .pose .cur { color: var(--dim); }
 .pose .tgt { display: flex; gap: 3px; align-items: center; }
 .pose .tgt input { width: 78px; }
+.pose input[type=range] { grid-column: 1 / -1; width: 100%; margin: 0 0 3px; accent-color: var(--accent); }
+.pose input[type=range]:disabled { opacity: .35; }
 .status { margin-top: 8px; padding: 8px; border-radius: 6px; background: var(--panel-2); font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; }
 .status.ok { border-left: 3px solid var(--ok); } .status.bad { border-left: 3px solid var(--bad); } .status.warn { border-left: 3px solid var(--warn); }
 .notice { padding: 8px; border-radius: 6px; background: var(--panel-2); margin-bottom: 10px; }

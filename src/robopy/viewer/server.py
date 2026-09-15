@@ -51,6 +51,30 @@ _STATIC_DIR = Path(__file__).parent / "static"
 _MAX_BODY_BYTES = 1 << 20
 
 
+def _reach_bound(
+    bundle: ModelBundle,
+    arm_joints: Sequence[str],
+    tcp_frame: str,
+) -> Dict[str, Any] | None:
+    """Where a hand can possibly be: its shoulder, and the arm unfolded.
+
+    The radius is the sum of the arm's segment lengths at ``q = 0``, which is
+    an upper bound on how far the TCP can get from the first arm joint -- not
+    a reachability claim, just a finite range for the page's target sliders.
+    ``None`` when the frames cannot be resolved; the page then falls back to a
+    fixed range.
+    """
+    try:
+        chain = [*arm_joints, tcp_frame]
+        frames = bundle.model.frame_poses(bundle.model.neutral_q(), chain)
+    except (KeyError, ValueError):  # a name that is not a frame, or ambiguous
+        logger.warning("No reach bound for %s: its joint frames did not resolve.", tcp_frame)
+        return None
+    points = [np.asarray(frames[name][:3, 3], dtype=float) for name in chain]
+    radius = float(sum(float(np.linalg.norm(b - a)) for a, b in zip(points, points[1:])))
+    return {"center": [float(v) for v in points[0]], "radius": radius}
+
+
 class IKSetup:
     """The dual-arm solver bound to a bundle, plus how its joints were grouped."""
 
@@ -121,6 +145,10 @@ class IKSetup:
             "right": right,
             "head": head,
             "unbounded_continuous": unbounded,
+        }
+        self.workspace: Dict[str, Any] = {
+            side: _reach_bound(bundle, self.groups[side], bundle.tcp_frames[side])
+            for side in ("left", "right")
         }
         self._bundle = bundle
 
@@ -412,6 +440,7 @@ class ViewerServer(ThreadingHTTPServer):
             else {
                 "available": True,
                 "groups": self.ik.groups,
+                "workspace": self.ik.workspace,
                 "geometric_study_only": self.ik.geometric_study_only,
             }
         )

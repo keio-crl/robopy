@@ -124,6 +124,27 @@ def _inertial(mass: float) -> str:
     )
 
 
+def _pedestal_visual(height: float, radius: float = 0.06) -> str:
+    """A visual-only column from the floor up to the root link's frame.
+
+    The fixture stands on something, as the real machine does.  Without it the
+    ``root`` link draws nothing at all and the viewer -- which puts its ground
+    plane at the bottom of the base -- showed the robot hovering over the grid.
+
+    No ``<collision>`` is emitted on purpose: this column exists to be looked
+    at, and a collision shape here would change every collision-pair count
+    measured against this fixture.
+    """
+    return (
+        "    <visual>\n"
+        "      <geometry>\n"
+        f'        <cylinder radius="{radius}" length="{height:.6f}"/>\n'
+        "      </geometry>\n"
+        f'      <origin xyz="0 0 {height / 2:.6f}" rpy="0 0 0"/>\n'
+        "    </visual>\n"
+    )
+
+
 def _link(name: str, *, mass: float, radius: float, length: float) -> str:
     geometry = (
         "      <geometry>\n"
@@ -302,6 +323,9 @@ def synthetic_dual_arm_urdf(
         '<robot name="synthetic_dual_arm">\n',
         '  <link name="root">\n',
         _inertial(1.0),
+        # The root frame is the mounting point, so the column is drawn from
+        # z = 0 (the floor) up to it; it carries no joint and no collision.
+        _pedestal_visual(s.torso_height),
         "  </link>\n",
         _joint(
             SYNTHETIC_TORSO_JOINT,

@@ -262,7 +262,7 @@ pair.stop_control()                # 停止方針を適用してバスを返す
 ![robopy viewer: 実モデル、End effector タブ](assets/rakuda_viewer.png)
 
 UFactory Studio の「モデルだけを動かして確認する」に相当するブラウザUIです。
-関節角度（スライダ／数値／±ジョグ）またはエンドエフェクタ姿勢（xyz・roll/pitch/yaw の ±ジョグ）で
+関節角度（スライダ／数値／±ジョグ）またはエンドエフェクタ姿勢（xyz・roll/pitch/yaw のスライダ／数値／±ジョグ）で
 モデルを動かし、3D表示で確認できます。**ページ上の何もモータへは送られません。**
 
 ```bash
@@ -292,7 +292,7 @@ uv run robopy-viewer --config
 | タブ | 内容 |
 | --- | --- |
 | Joints | 胴体／左腕／右腕／頭部ごとのスライダ・数値入力・±ジョグ（deg/rad切替、ステップ幅）。`zero all`、`copy JSON`（rad） |
-| End effector | 左右TCPの現在姿勢（mm / deg）と目標。各成分の±ジョグ、`capture`、片手の有効/無効（無効側は保持目標）、胴体方針 fixed/manual/optimize、姿勢モード soft/keep/free、`solve`／ジョグごとに自動solve |
+| End effector | 左右TCPの現在姿勢（mm / deg）と目標。各成分のスライダ（ドラッグ中も逐次IK）・数値入力・±ジョグ、`capture`、片手の有効/無効（無効側は保持目標）、胴体方針 fixed/manual/optimize、姿勢モード soft/keep/free、`solve`／ジョグごとに自動solve |
 | Info | URDFパス、nq/nv、IKの関節グループ（名前から推定した場合もここに明示）、モデル監査の警告 |
 
 設計上のポイント:
@@ -300,6 +300,12 @@ uv run robopy-viewer --config
 - **運動学は全てサーバ側**（`WholeBodyModel` / `DualArmIK`）。ページはFK/IKの結果を描くだけなので、
   表示と制御スタックの解が食い違いません。Pinocchio/Pinkが必要（`kinematics` extra）。
 - 3D描画は three.js を**同梱**（`src/robopy/viewer/static/vendor/`、MIT）。オフラインの実験室でも動きます。
+- **接地面**: グリッドは床です。関節で動かないジオメトリ（＝土台）の最下面に置きます。モデル原点ではありません —
+  Rakudaのエクスポートでは原点は土台の底から約 26 cm 上にあり、原点に描いていたグリッドは胴体を突き抜けていました。
+  土台を描かないモデルでは従来どおり root フレーム（z = 0）に置きます。
+- **目標値のスライダ**: xyz の範囲は「肩から腕を伸ばしきった長さ」（サーバが `ik.workspace` として返す上界）で、
+  到達可能性の主張ではありません。ドラッグ中は反復150回・トゥイーンなしで解き、離した時点でフル反復でもう一度解きます。
+  リクエストはFKと同じく合流（coalesce）するので、速くドラッグしても古い解が溜まりません。
 - 実モデルの視覚メッシュ（53 MB / 137個）があればサーバから配信し、初回ロードに数秒かかります。なければ凸包（2.9 MB）を描画します。
 - メッシュは非同期にダウンロードされ、FK の応答より後に届いたものにも最新の姿勢が適用されます（以前は遅く届いたパーツが原点に置かれたままになり、回線が遅いとロボットがバラバラに見えました）。ブラウザ実機の回帰テストは
   `uv run --extra kinematics --with playwright pytest tests/test_rakuda_control/test_viewer_browser.py`（Playwright は任意依存）。

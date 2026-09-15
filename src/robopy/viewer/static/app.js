@@ -25,6 +25,8 @@ const state = {
   fkInFlight: false,
   fkDirty: false,
   ikInFlight: false,
+  ikPending: null,             // options of a solve asked for while one was in flight
+  groundZ: 0,                  // where the grid sits: the bottom of the robot's base
   lastFkMs: null,
   lastPoses: null,             // the most recent /api/fk (or IK) reply, re-applied to late meshes
 };
@@ -52,7 +54,7 @@ const fill = new THREE.DirectionalLight(0xffffff, 0.4); fill.position.set(-2, 2,
 
 const grid = new THREE.GridHelper(2, 20, 0x3a4250, 0x262c36);
 grid.rotation.x = Math.PI / 2;                // GridHelper is XZ; we want XY
-scene.add(grid);
+scene.add(grid);                              // z is set by placeGround() once the base is drawn
 const worldAxes = new THREE.AxesHelper(0.15);
 scene.add(worldAxes);
 const frameGroup = new THREE.Group();          // TCP + target triads (toggleable)
@@ -73,6 +75,24 @@ function animate() {
   renderer.render(scene, camera);
 }
 animate();
+
+// The grid is the floor the robot stands on, so it belongs at the bottom of
+// the base -- the geometry no joint moves -- and not at the model origin: in
+// the Rakuda export that origin sits about 26 cm above the floor, which put
+// the grid through the middle of the torso. A model whose base draws nothing
+// (or whose meshes failed) keeps the grid on the root frame, z = 0.
+function placeGround() {
+  const box = new THREE.Box3();
+  let found = false;
+  (state.model?.geometries || []).forEach((g, i) => {
+    const obj = state.meshes[i];
+    if (!g.static || !obj) return;
+    box.expandByObject(obj);
+    found = true;
+  });
+  state.groundZ = found && isFinite(box.min.z) ? box.min.z : 0;
+  grid.position.z = state.groundZ;
+}
 
 function fitCamera() {
   const box = new THREE.Box3();
@@ -160,8 +180,11 @@ function applyPoses(poses, sent) {
     }
     refreshJointInputs();
   }
-  state.lastFkMs = poses.timing_ms;
-  setStats(`fk ${poses.timing_ms.toFixed(2)} ms`);
+  // An /api/ik reply carries poses but no FK timing; keep the last reading.
+  if (typeof poses.timing_ms === 'number') {
+    state.lastFkMs = poses.timing_ms;
+    setStats(`fk ${poses.timing_ms.toFixed(2)} ms`);
+  }
   renderEEPanel();
 }
 function setStats(text) { $('#stats').textContent = text; }
@@ -341,6 +364,18 @@ function rpyToQuat(r, p, y) {
   return [q.x, q.y, q.z, q.w];
 }
 
+// Range of one target slider, in the units the page shows (mm, deg). Position
+// spans the reach bound the server reports -- the arm unfolded from its
+// shoulder -- so the whole of what the hand could possibly reach is one drag
+// wide. Without a solver there is no bound; +/-1 m keeps the slider usable.
+function targetRange(side, key) {
+  if (key !== 'x' && key !== 'y' && key !== 'z') return { min: -180, max: 180, step: 0.5 };
+  const reach = state.model.ik && state.model.ik.workspace && state.model.ik.workspace[side];
+  const centre = reach ? reach.center[{ x: 0, y: 1, z: 2 }[key]] * 1000 : 0;
+  const radius = reach ? reach.radius * 1000 : 1000;
+  return { min: Math.round(centre - radius), max: Math.round(centre + radius), step: 1 };
+}
+
 function buildEEPanel(model) {
   const root = $('#ee-sides');
   root.innerHTML = '';
@@ -355,13 +390,17 @@ function buildEEPanel(model) {
         <button class="ee-capture" title="Set the target to the current pose">capture</button></header>
       <div class="pose">
         <span class="h"></span><span class="h">current</span><span class="h">target</span>
-        ${['x', 'y', 'z', 'roll', 'pitch', 'yaw'].map((k) => `
+        ${['x', 'y', 'z', 'roll', 'pitch', 'yaw'].map((k) => {
+          const r = targetRange(side, k);
+          return `
           <span class="h">${k}</span><span class="cur" data-cur="${k}">—</span>
-          <span class="tgt"><input type="text" class="num" data-tgt="${k}"><button class="jog" data-jog="${k}" data-dir="-1">−</button><button class="jog" data-jog="${k}" data-dir="1">+</button></span>`).join('')}
+          <span class="tgt"><input type="text" class="num" data-tgt="${k}"><button class="jog" data-jog="${k}" data-dir="-1">−</button><button class="jog" data-jog="${k}" data-dir="1">+</button></span>
+          <input type="range" class="bar" data-bar="${k}" min="${r.min}" max="${r.max}" step="${r.step}" value="0" title="${k} target: ${r.min} … ${r.max} ${k.length === 1 ? 'mm' : 'deg'}">`;
+        }).join('')}
       </div>`;
     box.querySelector('.ee-enable').addEventListener('change', (e) => {
       state.ee[side].enabled = e.target.checked;
-      box.querySelectorAll('.tgt input, .tgt button').forEach((el) => { el.disabled = !e.target.checked; });
+      box.querySelectorAll('.tgt input, .tgt button, input.bar').forEach((el) => { el.disabled = !e.target.checked; });
       if (state.targetFrames[side]) state.targetFrames[side].visible = e.target.checked;
       maybeLiveSolve();
     });
@@ -370,6 +409,14 @@ function buildEEPanel(model) {
     box.querySelectorAll('button.jog').forEach((b) => b.addEventListener('click', () => {
       jogTarget(side, b.dataset.jog, parseInt(b.dataset.dir, 10));
     }));
+    // Dragging a bar is a stream of small moves: solve each one straight into
+    // the scene (no tween, a shorter iteration budget), then once more on
+    // release with the full budget so the pose that stays is the solved one.
+    box.querySelectorAll('input.bar').forEach((bar) => {
+      const set = () => setTargetComponent(side, bar.dataset.bar, parseFloat(bar.value));
+      bar.addEventListener('input', () => { set(); maybeLiveSolve({ animate: false, iterations: 150 }); });
+      bar.addEventListener('change', () => { set(); maybeLiveSolve({ animate: false }); });
+    });
     root.appendChild(box);
   }
 }
@@ -391,7 +438,26 @@ function writeTargetInputs(side) {
   for (const [k, v] of Object.entries(vals)) {
     const inp = box.querySelector(`input[data-tgt=${k}]`);
     if (document.activeElement !== inp) inp.value = v.toFixed(k.length === 1 ? 1 : 2);
+    const bar = box.querySelector(`input[data-bar=${k}]`);
+    if (bar && document.activeElement !== bar) bar.value = v;   // the bar clamps a target outside its range
   }
+}
+
+// One component of a target, given in the units the page shows (mm, deg).
+function setTargetComponent(side, key, value) {
+  if (!isFinite(value)) return;
+  ensureTarget(side);
+  const t = state.ee[side].target;
+  const idx = { x: 0, y: 1, z: 2 }[key];
+  if (idx !== undefined) {
+    t.p[idx] = value / 1000;
+  } else {
+    const rpy = quatToRpy(t.q);
+    rpy[{ roll: 0, pitch: 1, yaw: 2 }[key]] = value / DEG;
+    t.q = rpyToQuat(...rpy);
+  }
+  writeTargetInputs(side);
+  updateTargetFrame(side);
 }
 function readTargetInputs(side) {
   ensureTarget(side);
@@ -447,7 +513,7 @@ $('#torso-policy').addEventListener('change', (e) => {
 });
 $('#ee-capture-all').onclick = () => { captureTarget('left'); captureTarget('right'); setIKStatus('targets set to the current poses', 'ok'); };
 $('#ik-solve').onclick = () => solveIK();
-function maybeLiveSolve() { if ($('#ik-live').checked) solveIK(); }
+function maybeLiveSolve(opts) { if ($('#ik-live').checked) solveIK(opts); }
 
 function setIKStatus(text, kind) {
   const el = $('#ik-status');
@@ -455,8 +521,15 @@ function setIKStatus(text, kind) {
   el.className = `status ${kind || ''}`;
 }
 
-async function solveIK() {
-  if (!state.model?.ik || state.ikInFlight) return;
+// opts.animate: tween to the solved pose (a jog) or show it at once (a drag).
+// opts.iterations: solver budget for this request.
+// Coalescing, like requestFK: one request in flight, and a solve asked for
+// meanwhile runs exactly once more afterwards -- from whatever the targets are
+// by then, so a fast drag never queues a backlog of stale poses.
+async function solveIK(opts = {}) {
+  if (!state.model?.ik) return;
+  if (state.ikInFlight) { state.ikPending = opts; return; }
+  const { animate = true, iterations = 300 } = opts;
   const targets = {};
   for (const side of ['left', 'right']) {
     if (state.ee[side].enabled && state.ee[side].target) targets[side] = state.ee[side].target;
@@ -470,7 +543,7 @@ async function solveIK() {
       torso_policy: $('#torso-policy').value,
       torso_velocity_rad_s: parseFloat($('#torso-velocity').value) || 0,
       orientation_weight: parseFloat($('#ori-mode').value),
-      iterations: 300, dt: 0.02,
+      iterations, dt: 0.02,
     };
     const res = await api('/api/ik', body);
     const e = res.errors;
@@ -491,7 +564,15 @@ async function solveIK() {
     ];
     if (res.commandable) {
       setIKStatus(lines.join('\n'), res.status === 'converged' ? 'ok' : 'warn');
-      await animateTo(res.joints, 350);
+      if (animate) {
+        await animateTo(res.joints, 350);
+      } else {
+        // The reply already carries the poses for the solved configuration, so
+        // a drag costs one request per step and no extra FK round trip.
+        Object.assign(state.joints, res.joints);
+        refreshJointInputs();
+        applyPoses(res.poses, null);
+      }
     } else {
       setIKStatus(lines.join('\n'), 'bad');
     }
@@ -499,6 +580,9 @@ async function solveIK() {
     setIKStatus(`error: ${err.message}`, 'bad');
   } finally {
     state.ikInFlight = false;
+    const pending = state.ikPending;
+    state.ikPending = null;
+    if (pending) solveIK(pending);
   }
 }
 
@@ -558,6 +642,7 @@ document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () 
     if (!model.ik) { $('#ik-unavailable').hidden = false; $('#ik-unavailable').textContent = 'The solver is not available for this model (see Info). Joint-space control still works.'; }
     else if (model.ik.geometric_study_only) { $('#ik-study').hidden = false; $('#ik-study').textContent = `Continuous joint(s) ${model.ik.groups.unbounded_continuous.join(', ')} have no soft limit: the solver runs as a geometric study only.`; }
     await Promise.all([loadMeshes(model), requestFK()]);
+    placeGround();
     fitCamera();
   } catch (err) {
     $('#overlay').textContent = `failed to load: ${err.message}`;

@@ -411,10 +411,24 @@ class ModelBundle:
         """Only the STL visuals, in the order ``/mesh/<index>`` refers to."""
         return [g for g in self.geometries if g.is_mesh]
 
+    @property
+    def static_links(self) -> set[str]:
+        """Links rigidly attached to the world: no joint moves them.
+
+        In Pinocchio those frames hang off the universe joint (index 0).  This
+        is the robot's base -- in the Rakuda export the frame rail and the
+        rubber feet -- and it is what the page stands the ground plane on,
+        since the model origin is not on the floor (it sits about 26 cm above
+        it in that export).
+        """
+        frames = self.model.model.frames
+        return {str(f.name) for f in frames if int(f.parentJoint) == 0}
+
     # -- JSON views ---------------------------------------------------------
 
     def describe(self, *, default_continuous_limit_rad: float = math.pi) -> Dict[str, Any]:
         """The static description the page fetches once."""
+        static = self.static_links
         lower, upper = self.model.position_limits(self.joint_order)
         joints = []
         for i, name in enumerate(self.joint_order):
@@ -443,6 +457,7 @@ class ModelBundle:
                 {
                     "id": g.id,
                     "link": g.link,
+                    "static": g.link in static,
                     "shape": g.shape,
                     "url": g.mesh_url,
                     "scale": list(g.scale),

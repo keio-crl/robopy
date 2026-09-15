@@ -33,6 +33,29 @@ SOFT_LIMITS = {
     "shoulder_pitch_right_dof": (-3.14, 3.14),
 }
 OVERLAY_HIDDEN = "() => { const o = document.querySelector('#overlay'); return !!o && o.hidden; }"
+# Lowest point of the geometry no joint moves -- the robot's base -- recomputed
+# from the drawn meshes rather than from placeGround(), so the assertion does
+# not simply echo the code it checks. THREE is not in the page's scope, so the
+# Vector3 class is taken from an object that already holds one.
+STATIC_MIN_Z = """() => {
+  const s = window.__robopy_state;
+  let min = Infinity;
+  s.model.geometries.forEach((g, i) => {
+    const obj = s.meshes[i];
+    if (!g.static || !obj || !obj.geometry) return;
+    obj.geometry.computeBoundingBox();
+    const bb = obj.geometry.boundingBox;
+    const Vector3 = obj.position.constructor;
+    for (const x of [bb.min.x, bb.max.x]) {
+      for (const y of [bb.min.y, bb.max.y]) {
+        for (const z of [bb.min.z, bb.max.z]) {
+          min = Math.min(min, new Vector3(x, y, z).applyMatrix4(obj.matrixWorld).z);
+        }
+      }
+    }
+  });
+  return min;
+}"""
 MESHES_AT_IDENTITY = """() => {
   const s = window.__robopy_state;
   if (!s || !s.model) return -1;
@@ -135,5 +158,63 @@ class TestMeshPlacement:
             )
             assert errors == []
             assert page.evaluate(MESHES_AT_IDENTITY) == 0
+        finally:
+            page.close()
+
+
+class TestGroundPlane:
+    """The grid is the floor: it belongs under the base, not on the origin."""
+
+    def test_the_grid_sits_on_the_bottom_of_the_base(
+        self, server: ViewerServer, browser
+    ) -> None:
+        # This export's origin is not on the floor -- the base plate's
+        # underside is about 26 cm below it -- so a grid drawn at z = 0 cut
+        # through the middle of the torso.
+        page, errors = _open(browser, server.url, mesh_delay_s=0.0)
+        try:
+            ground = page.evaluate("() => window.__robopy_state.groundZ")
+            assert ground == pytest.approx(page.evaluate(STATIC_MIN_Z), abs=1e-6)
+            assert ground < -0.2
+            assert errors == []
+        finally:
+            page.close()
+
+
+class TestTargetBars:
+    """Each end-effector target component has a bar that drives the solver."""
+
+    def test_dragging_a_bar_moves_the_hand_towards_the_target(
+        self, server: ViewerServer, browser
+    ) -> None:
+        page, errors = _open(browser, server.url, mesh_delay_s=0.0)
+        try:
+            # Bend the elbows first: at q = 0 the arms hang fully extended, on
+            # the edge of the workspace, where a Cartesian jog has nowhere to
+            # go (the page's own help says so).
+            for joint, deg in (("elbow_pitch_left_dof", 45), ("elbow_pitch_right_dof", -45)):
+                field = page.locator(f".joint[data-joint={joint}] input.num")
+                field.fill(str(deg))
+                field.press("Enter")
+            page.locator(".tab[data-tab=ee]").click()
+            page.locator("#ee-capture-all").click()
+
+            bar = page.locator(".side[data-side=left] input[data-bar=x]")
+            start = float(bar.input_value())
+            before = page.evaluate("() => window.__robopy_state.ee.left.current.p")
+            for step in range(1, 7):  # a drag is a stream of input events
+                bar.fill(str(int(start + step * 10)))
+                page.wait_for_timeout(120)
+            # 60 mm asked for; the wrist has two axes, so the solver settles
+            # for the closest pose it can reach -- most of the way there.
+            page.wait_for_function(
+                "(b) => window.__robopy_state.ee.left.current.p[0] - b[0] > 0.04",
+                arg=before,
+                timeout=15_000,
+            )
+            assert page.evaluate("() => window.__robopy_state.ee.left.target.p[0]") == pytest.approx(
+                (start + 60) / 1000, abs=1e-6
+            )
+            assert errors == []
         finally:
             page.close()
