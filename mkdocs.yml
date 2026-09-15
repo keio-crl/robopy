@@ -130,6 +130,7 @@ nav:
     - Quickstart: getting-started/quickstart.md
   - Robot:
     - Rakuda: robots/rakuda.md
+    - Rakuda in RoboVerse: robots/rakuda_roboverse.md
     - Koch: robots/koch.md
     - xArm: robots/xarm.md
     - SO-101: robots/so101.md

@@ -1,0 +1,1076 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Rakuda-2. GENERATED FROM THE CAD EXPORT, DO NOT EDIT BY HAND.
+
+  source:      assembly_2_convex_collision.urdf
+  regenerate:  python -m robopy.sim.mjcf_export
+
+  The CAD export carries no dynamics. Every mass here is a CAD part volume
+  multiplied by 2700 kg/m^3: the relative distribution is the
+  CAD's, the absolute scale is an assumption. Joint armature and damping are
+  numerical-stability figures, not measurements. Servo force limits are the
+  published DYNAMIXEL stall torques. The ranges on torso_yaw and both
+  shoulder_pitch joints are the motor travel, not a measurement of where
+  this machine actually stops.
+-->
+<mujoco model="rakuda">
+  <default>
+    <default class="rakuda_visual">
+      <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" />
+    </default>
+    <default class="rakuda_collision">
+      <geom type="mesh" contype="1" conaffinity="1" group="3" density="0" />
+    </default>
+  </default>
+  <compiler angle="radian" />
+  <asset>
+    <mesh name="vis__5____2__NFS5_2040_297_1___NFS5_2040_910" file="../meshes/_5____2__NFS5_2040_297_1___NFS5_2040_910.stl" />
+    <mesh name="col__5____2__NFS5_2040_297_1___NFS5_2040_910" file="../collision_meshes/_5____2__NFS5_2040_297_1___NFS5_2040_910.stl" />
+    <mesh name="vis______24x10_C_30_RK_24_black_1__NONE_1" file="../meshes/_____24x10_C_30_RK_24_black_1__NONE_1.stl" />
+    <mesh name="col______24x10_C_30_RK_24_black_1__NONE_1" file="../collision_meshes/_____24x10_C_30_RK_24_black_1__NONE_1.stl" />
+    <mesh name="vis_AXK1106_1___AXK1106" file="../meshes/AXK1106_1___AXK1106.stl" />
+    <mesh name="col_AXK1106_1___AXK1106" file="../collision_meshes/AXK1106_1___AXK1106.stl" />
+    <mesh name="vis_AXK1106_1___AXK1106_1" file="../meshes/AXK1106_1___AXK1106_1.stl" />
+    <mesh name="col_AXK1106_1___AXK1106_1" file="../collision_meshes/AXK1106_1___AXK1106_1.stl" />
+    <mesh name="vis_AXK1106_1___AXK1106_2" file="../meshes/AXK1106_1___AXK1106_2.stl" />
+    <mesh name="col_AXK1106_1___AXK1106_2" file="../collision_meshes/AXK1106_1___AXK1106_2.stl" />
+    <mesh name="vis_Base_Plate_03JK_rakuda_1______1" file="../meshes/Base_Plate_03JK_rakuda_1______1.stl" />
+    <mesh name="col_Base_Plate_03JK_rakuda_1______1" file="../collision_meshes/Base_Plate_03JK_rakuda_1______1.stl" />
+    <mesh name="vis_cable_guide_fr12_hinge_head_r4_1______1" file="../meshes/cable_guide_fr12_hinge_head_r4_1______1.stl" />
+    <mesh name="col_cable_guide_fr12_hinge_head_r4_1______1" file="../collision_meshes/cable_guide_fr12_hinge_head_r4_1______1.stl" />
+    <mesh name="vis_elbow_cover_right" file="../meshes/elbow_cover_right.stl" />
+    <mesh name="col_elbow_cover_right" file="../collision_meshes/elbow_cover_right.stl" />
+    <mesh name="vis_fr12_h104_1______1" file="../meshes/fr12_h104_1______1.stl" />
+    <mesh name="col_fr12_h104_1______1" file="../collision_meshes/fr12_h104_1______1.stl" />
+    <mesh name="vis_fr12_h104_1______1_1" file="../meshes/fr12_h104_1______1_1.stl" />
+    <mesh name="col_fr12_h104_1______1_1" file="../collision_meshes/fr12_h104_1______1_1.stl" />
+    <mesh name="vis_fr12_h104_1______1_2" file="../meshes/fr12_h104_1______1_2.stl" />
+    <mesh name="col_fr12_h104_1______1_2" file="../collision_meshes/fr12_h104_1______1_2.stl" />
+    <mesh name="vis_fr12_h104_1______1_3" file="../meshes/fr12_h104_1______1_3.stl" />
+    <mesh name="col_fr12_h104_1______1_3" file="../collision_meshes/fr12_h104_1______1_3.stl" />
+    <mesh name="vis_fr12_h104_1______1_4" file="../meshes/fr12_h104_1______1_4.stl" />
+    <mesh name="col_fr12_h104_1______1_4" file="../collision_meshes/fr12_h104_1______1_4.stl" />
+    <mesh name="vis_fr12_s101_1______1" file="../meshes/fr12_s101_1______1.stl" />
+    <mesh name="col_fr12_s101_1______1" file="../collision_meshes/fr12_s101_1______1.stl" />
+    <mesh name="vis_fr12_s101_1______1_1" file="../meshes/fr12_s101_1______1_1.stl" />
+    <mesh name="col_fr12_s101_1______1_1" file="../collision_meshes/fr12_s101_1______1_1.stl" />
+    <mesh name="vis_fr12_s102_1______1" file="../meshes/fr12_s102_1______1.stl" />
+    <mesh name="col_fr12_s102_1______1" file="../collision_meshes/fr12_s102_1______1.stl" />
+    <mesh name="vis_fr12_s102_1______1_1" file="../meshes/fr12_s102_1______1_1.stl" />
+    <mesh name="col_fr12_s102_1______1_1" file="../collision_meshes/fr12_s102_1______1_1.stl" />
+    <mesh name="vis_fr13_h101_1______1" file="../meshes/fr13_h101_1______1.stl" />
+    <mesh name="col_fr13_h101_1______1" file="../collision_meshes/fr13_h101_1______1.stl" />
+    <mesh name="vis_fr13_h101_1______1_1" file="../meshes/fr13_h101_1______1_1.stl" />
+    <mesh name="col_fr13_h101_1______1_1" file="../collision_meshes/fr13_h101_1______1_1.stl" />
+    <mesh name="vis_HN12_I101_1______1" file="../meshes/HN12_I101_1______1.stl" />
+    <mesh name="col_HN12_I101_1______1" file="../collision_meshes/HN12_I101_1______1.stl" />
+    <mesh name="vis_HN12_I101_1______1_1" file="../meshes/HN12_I101_1______1_1.stl" />
+    <mesh name="col_HN12_I101_1______1_1" file="../collision_meshes/HN12_I101_1______1_1.stl" />
+    <mesh name="vis_HN12_I101_1______1_2" file="../meshes/HN12_I101_1______1_2.stl" />
+    <mesh name="col_HN12_I101_1______1_2" file="../collision_meshes/HN12_I101_1______1_2.stl" />
+    <mesh name="vis_HN12_I101_1______1_3" file="../meshes/HN12_I101_1______1_3.stl" />
+    <mesh name="col_HN12_I101_1______1_3" file="../collision_meshes/HN12_I101_1______1_3.stl" />
+    <mesh name="vis_HN12_I101_1______1_4" file="../meshes/HN12_I101_1______1_4.stl" />
+    <mesh name="col_HN12_I101_1______1_4" file="../collision_meshes/HN12_I101_1______1_4.stl" />
+    <mesh name="vis_HN12_N101_1______1" file="../meshes/HN12_N101_1______1.stl" />
+    <mesh name="col_HN12_N101_1______1" file="../collision_meshes/HN12_N101_1______1.stl" />
+    <mesh name="vis_HN12_N101_1______1_1" file="../meshes/HN12_N101_1______1_1.stl" />
+    <mesh name="col_HN12_N101_1______1_1" file="../collision_meshes/HN12_N101_1______1_1.stl" />
+    <mesh name="vis_HN12_N101_1______1_2" file="../meshes/HN12_N101_1______1_2.stl" />
+    <mesh name="col_HN12_N101_1______1_2" file="../collision_meshes/HN12_N101_1______1_2.stl" />
+    <mesh name="vis_HN12_N101_1______1_3" file="../meshes/HN12_N101_1______1_3.stl" />
+    <mesh name="col_HN12_N101_1______1_3" file="../collision_meshes/HN12_N101_1______1_3.stl" />
+    <mesh name="vis_HN12_N101_1______1_4" file="../meshes/HN12_N101_1______1_4.stl" />
+    <mesh name="col_HN12_N101_1______1_4" file="../collision_meshes/HN12_N101_1______1_4.stl" />
+    <mesh name="vis_HN12_N101_1______1_5" file="../meshes/HN12_N101_1______1_5.stl" />
+    <mesh name="col_HN12_N101_1______1_5" file="../collision_meshes/HN12_N101_1______1_5.stl" />
+    <mesh name="vis_HN12_N101_1______1_6" file="../meshes/HN12_N101_1______1_6.stl" />
+    <mesh name="col_HN12_N101_1______1_6" file="../collision_meshes/HN12_N101_1______1_6.stl" />
+    <mesh name="vis_HN12_N101_1______1_7" file="../meshes/HN12_N101_1______1_7.stl" />
+    <mesh name="col_HN12_N101_1______1_7" file="../collision_meshes/HN12_N101_1______1_7.stl" />
+    <mesh name="vis_HN12_N101_1______1_8" file="../meshes/HN12_N101_1______1_8.stl" />
+    <mesh name="col_HN12_N101_1______1_8" file="../collision_meshes/HN12_N101_1______1_8.stl" />
+    <mesh name="vis_HN12_N101_1______1_9" file="../meshes/HN12_N101_1______1_9.stl" />
+    <mesh name="col_HN12_N101_1______1_9" file="../collision_meshes/HN12_N101_1______1_9.stl" />
+    <mesh name="vis_HN13_C101_1______1" file="../meshes/HN13_C101_1______1.stl" />
+    <mesh name="col_HN13_C101_1______1" file="../collision_meshes/HN13_C101_1______1.stl" />
+    <mesh name="vis_HN13_C101_1______1_1" file="../meshes/HN13_C101_1______1_1.stl" />
+    <mesh name="col_HN13_C101_1______1_1" file="../collision_meshes/HN13_C101_1______1_1.stl" />
+    <mesh name="vis_HN13_C101_1______1_2" file="../meshes/HN13_C101_1______1_2.stl" />
+    <mesh name="col_HN13_C101_1______1_2" file="../collision_meshes/HN13_C101_1______1_2.stl" />
+    <mesh name="vis_HN13_I101_1______1" file="../meshes/HN13_I101_1______1.stl" />
+    <mesh name="col_HN13_I101_1______1" file="../collision_meshes/HN13_I101_1______1.stl" />
+    <mesh name="vis_HN13_I101_1______1_1" file="../meshes/HN13_I101_1______1_1.stl" />
+    <mesh name="col_HN13_I101_1______1_1" file="../collision_meshes/HN13_I101_1______1_1.stl" />
+    <mesh name="vis_HN13_N101_1______1" file="../meshes/HN13_N101_1______1.stl" />
+    <mesh name="col_HN13_N101_1______1" file="../collision_meshes/HN13_N101_1______1.stl" />
+    <mesh name="vis_HN13_N101_1______1_1" file="../meshes/HN13_N101_1______1_1.stl" />
+    <mesh name="col_HN13_N101_1______1_1" file="../collision_meshes/HN13_N101_1______1_1.stl" />
+    <mesh name="vis_igus_JFM_1113_05_1__1" file="../meshes/igus_JFM_1113_05_1__1.stl" />
+    <mesh name="col_igus_JFM_1113_05_1__1" file="../collision_meshes/igus_JFM_1113_05_1__1.stl" />
+    <mesh name="vis_igus_JFM_1113_05_1__1_1" file="../meshes/igus_JFM_1113_05_1__1_1.stl" />
+    <mesh name="col_igus_JFM_1113_05_1__1_1" file="../collision_meshes/igus_JFM_1113_05_1__1_1.stl" />
+    <mesh name="vis_igus_JFM_1113_05_1__1_2" file="../meshes/igus_JFM_1113_05_1__1_2.stl" />
+    <mesh name="col_igus_JFM_1113_05_1__1_2" file="../collision_meshes/igus_JFM_1113_05_1__1_2.stl" />
+    <mesh name="vis_igus_JFM_1113_05_1__1_3" file="../meshes/igus_JFM_1113_05_1__1_3.stl" />
+    <mesh name="col_igus_JFM_1113_05_1__1_3" file="../collision_meshes/igus_JFM_1113_05_1__1_3.stl" />
+    <mesh name="vis_Intel_RealSense_Depth_Camera_D435_1______1_1" file="../collision_meshes/Intel_RealSense_Depth_Camera_D435_1______1_1.stl" />
+    <mesh name="col_Intel_RealSense_Depth_Camera_D435_1______1_1" file="../collision_meshes/Intel_RealSense_Depth_Camera_D435_1______1_1.stl" />
+    <mesh name="vis_rakuda29_joint_upper_arm_r1_1______1" file="../meshes/rakuda29_joint_upper_arm_r1_1______1.stl" />
+    <mesh name="col_rakuda29_joint_upper_arm_r1_1______1" file="../collision_meshes/rakuda29_joint_upper_arm_r1_1______1.stl" />
+    <mesh name="vis_rakuda29_joint_upper_arm_r1_1______1_1" file="../meshes/rakuda29_joint_upper_arm_r1_1______1_1.stl" />
+    <mesh name="col_rakuda29_joint_upper_arm_r1_1______1_1" file="../collision_meshes/rakuda29_joint_upper_arm_r1_1______1_1.stl" />
+    <mesh name="vis_rakuda2_r3_waist_base_1______1" file="../meshes/rakuda2_r3_waist_base_1______1.stl" />
+    <mesh name="col_rakuda2_r3_waist_base_1______1" file="../collision_meshes/rakuda2_r3_waist_base_1______1.stl" />
+    <mesh name="vis_rakuda34_r2__spacer_AXK1160_waist_ring_r1_1______1" file="../meshes/rakuda34_r2__spacer_AXK1160_waist_ring_r1_1______1.stl" />
+    <mesh name="col_rakuda34_r2__spacer_AXK1160_waist_ring_r1_1______1" file="../collision_meshes/rakuda34_r2__spacer_AXK1160_waist_ring_r1_1______1.stl" />
+    <mesh name="vis_rakuda34_r2__spacer_AXK1160_waist_ring_r1_1______1_1" file="../meshes/rakuda34_r2__spacer_AXK1160_waist_ring_r1_1______1_1.stl" />
+    <mesh name="col_rakuda34_r2__spacer_AXK1160_waist_ring_r1_1______1_1" file="../collision_meshes/rakuda34_r2__spacer_AXK1160_waist_ring_r1_1______1_1.stl" />
+    <mesh name="vis_rakuda_r3__arm_cover_elbow_r1_1______1" file="../meshes/rakuda_r3__arm_cover_elbow_r1_1______1.stl" />
+    <mesh name="col_rakuda_r3__arm_cover_elbow_r1_1______1" file="../collision_meshes/rakuda_r3__arm_cover_elbow_r1_1______1.stl" />
+    <mesh name="vis_rakuda_r3__arm_cover_upperarm_side_1______1" file="../meshes/rakuda_r3__arm_cover_upperarm_side_1______1.stl" />
+    <mesh name="col_rakuda_r3__arm_cover_upperarm_side_1______1" file="../collision_meshes/rakuda_r3__arm_cover_upperarm_side_1______1.stl" />
+    <mesh name="vis_rakuda_r3__arm_cover_upperarm_side_1______1_1" file="../meshes/rakuda_r3__arm_cover_upperarm_side_1______1_1.stl" />
+    <mesh name="col_rakuda_r3__arm_cover_upperarm_side_1______1_1" file="../collision_meshes/rakuda_r3__arm_cover_upperarm_side_1______1_1.stl" />
+    <mesh name="vis_rakuda_r3__arm_joint_upper_arm_back_1______2" file="../meshes/rakuda_r3__arm_joint_upper_arm_back_1______2.stl" />
+    <mesh name="col_rakuda_r3__arm_joint_upper_arm_back_1______2" file="../collision_meshes/rakuda_r3__arm_joint_upper_arm_back_1______2.stl" />
+    <mesh name="vis_rakuda_r3__arm_joint_upper_arm_back_1______2_1" file="../meshes/rakuda_r3__arm_joint_upper_arm_back_1______2_1.stl" />
+    <mesh name="col_rakuda_r3__arm_joint_upper_arm_back_1______2_1" file="../collision_meshes/rakuda_r3__arm_joint_upper_arm_back_1______2_1.stl" />
+    <mesh name="vis_rakuda_r3__base_cable_guide_d435usb_r1_1______1" file="../meshes/rakuda_r3__base_cable_guide_d435usb_r1_1______1.stl" />
+    <mesh name="col_rakuda_r3__base_cable_guide_d435usb_r1_1______1" file="../collision_meshes/rakuda_r3__base_cable_guide_d435usb_r1_1______1.stl" />
+    <mesh name="vis_rakuda_r3__chest_cover_r1_1______1" file="../meshes/rakuda_r3__chest_cover_r1_1______1.stl" />
+    <mesh name="col_rakuda_r3__chest_cover_r1_1______1" file="../collision_meshes/rakuda_r3__chest_cover_r1_1______1.stl" />
+    <mesh name="vis_rakuda_r3__head_cable_guide_d435usb_1______1" file="../meshes/rakuda_r3__head_cable_guide_d435usb_1______1.stl" />
+    <mesh name="col_rakuda_r3__head_cable_guide_d435usb_1______1" file="../collision_meshes/rakuda_r3__head_cable_guide_d435usb_1______1.stl" />
+    <mesh name="vis_rakuda_r3__head_cover_front_1______1" file="../meshes/rakuda_r3__head_cover_front_1______1.stl" />
+    <mesh name="col_rakuda_r3__head_cover_front_1______1" file="../collision_meshes/rakuda_r3__head_cover_front_1______1.stl" />
+    <mesh name="vis_rakuda_r3__head_mount_d435_1______1" file="../meshes/rakuda_r3__head_mount_d435_1______1.stl" />
+    <mesh name="col_rakuda_r3__head_mount_d435_1______1" file="../collision_meshes/rakuda_r3__head_mount_d435_1______1.stl" />
+    <mesh name="vis_rakuda_r3__neck_cable_guide2head_base_1______1" file="../meshes/rakuda_r3__neck_cable_guide2head_base_1______1.stl" />
+    <mesh name="col_rakuda_r3__neck_cable_guide2head_base_1______1" file="../collision_meshes/rakuda_r3__neck_cable_guide2head_base_1______1.stl" />
+    <mesh name="vis_rakuda_r3__neck_cover_r4_1______1" file="../meshes/rakuda_r3__neck_cover_r4_1______1.stl" />
+    <mesh name="col_rakuda_r3__neck_cover_r4_1______1" file="../collision_meshes/rakuda_r3__neck_cover_r4_1______1.stl" />
+    <mesh name="vis_rakuda_r3__plate_waist_x540_r8_1______1" file="../meshes/rakuda_r3__plate_waist_x540_r8_1______1.stl" />
+    <mesh name="col_rakuda_r3__plate_waist_x540_r8_1______1" file="../collision_meshes/rakuda_r3__plate_waist_x540_r8_1______1.stl" />
+    <mesh name="vis_rakuda_r3__shoulder_base_hinge_1______1" file="../meshes/rakuda_r3__shoulder_base_hinge_1______1.stl" />
+    <mesh name="col_rakuda_r3__shoulder_base_hinge_1______1" file="../collision_meshes/rakuda_r3__shoulder_base_hinge_1______1.stl" />
+    <mesh name="vis_rakuda_r3__shoulder_base_hinge_1______1_1" file="../meshes/rakuda_r3__shoulder_base_hinge_1______1_1.stl" />
+    <mesh name="col_rakuda_r3__shoulder_base_hinge_1______1_1" file="../collision_meshes/rakuda_r3__shoulder_base_hinge_1______1_1.stl" />
+    <mesh name="vis_rakuda_r3__shoulder_hinge_cover_1______1" file="../meshes/rakuda_r3__shoulder_hinge_cover_1______1.stl" />
+    <mesh name="col_rakuda_r3__shoulder_hinge_cover_1______1" file="../collision_meshes/rakuda_r3__shoulder_hinge_cover_1______1.stl" />
+    <mesh name="vis_rakuda_r3__shoulder_hinge_cover_1______1_2" file="../meshes/rakuda_r3__shoulder_hinge_cover_1______1_2.stl" />
+    <mesh name="col_rakuda_r3__shoulder_hinge_cover_1______1_2" file="../collision_meshes/rakuda_r3__shoulder_hinge_cover_1______1_2.stl" />
+    <mesh name="vis_rakuda_r3__spacer_AXK1160_waist_r2_1______1" file="../meshes/rakuda_r3__spacer_AXK1160_waist_r2_1______1.stl" />
+    <mesh name="col_rakuda_r3__spacer_AXK1160_waist_r2_1______1" file="../collision_meshes/rakuda_r3__spacer_AXK1160_waist_r2_1______1.stl" />
+    <mesh name="vis_rakuda_r3__upper_arm_cover_inside_L_1______1" file="../meshes/rakuda_r3__upper_arm_cover_inside_L_1______1.stl" />
+    <mesh name="col_rakuda_r3__upper_arm_cover_inside_L_1______1" file="../collision_meshes/rakuda_r3__upper_arm_cover_inside_L_1______1.stl" />
+    <mesh name="vis_rakuda_r3__upper_arm_cover_inside_L_r1_1______1" file="../meshes/rakuda_r3__upper_arm_cover_inside_L_r1_1______1.stl" />
+    <mesh name="col_rakuda_r3__upper_arm_cover_inside_L_r1_1______1" file="../collision_meshes/rakuda_r3__upper_arm_cover_inside_L_r1_1______1.stl" />
+    <mesh name="vis_rakuda_r3__upper_arm_cover_inside_R_1______1" file="../meshes/rakuda_r3__upper_arm_cover_inside_R_1______1.stl" />
+    <mesh name="col_rakuda_r3__upper_arm_cover_inside_R_1______1" file="../collision_meshes/rakuda_r3__upper_arm_cover_inside_R_1______1.stl" />
+    <mesh name="vis_rakuda_r3__upper_arm_cover_inside_R_1______1_1" file="../meshes/rakuda_r3__upper_arm_cover_inside_R_1______1_1.stl" />
+    <mesh name="col_rakuda_r3__upper_arm_cover_inside_R_1______1_1" file="../collision_meshes/rakuda_r3__upper_arm_cover_inside_R_1______1_1.stl" />
+    <mesh name="vis_rakuda_r3__waist_cover_hip_1______1" file="../meshes/rakuda_r3__waist_cover_hip_1______1.stl" />
+    <mesh name="col_rakuda_r3__waist_cover_hip_1______1" file="../collision_meshes/rakuda_r3__waist_cover_hip_1______1.stl" />
+    <mesh name="vis_rakuda_r3__x540_thrust_AXK1160_1______1" file="../meshes/rakuda_r3__x540_thrust_AXK1160_1______1.stl" />
+    <mesh name="col_rakuda_r3__x540_thrust_AXK1160_1______1" file="../collision_meshes/rakuda_r3__x540_thrust_AXK1160_1______1.stl" />
+    <mesh name="vis_rakuda_r3__x540_thrust_AXK1160_1______1_1" file="../meshes/rakuda_r3__x540_thrust_AXK1160_1______1_1.stl" />
+    <mesh name="col_rakuda_r3__x540_thrust_AXK1160_1______1_1" file="../collision_meshes/rakuda_r3__x540_thrust_AXK1160_1______1_1.stl" />
+    <mesh name="vis_x430_thrust_washer_1__Part_1" file="../meshes/x430_thrust_washer_1__Part_1.stl" />
+    <mesh name="col_x430_thrust_washer_1__Part_1" file="../collision_meshes/x430_thrust_washer_1__Part_1.stl" />
+    <mesh name="vis_x430_thrust_washer_1__Part_1_1" file="../meshes/x430_thrust_washer_1__Part_1_1.stl" />
+    <mesh name="col_x430_thrust_washer_1__Part_1_1" file="../collision_meshes/x430_thrust_washer_1__Part_1_1.stl" />
+    <mesh name="vis_x430_thrust_washer_1__Part_1_2" file="../meshes/x430_thrust_washer_1__Part_1_2.stl" />
+    <mesh name="col_x430_thrust_washer_1__Part_1_2" file="../collision_meshes/x430_thrust_washer_1__Part_1_2.stl" />
+    <mesh name="vis_x430_thrust_washer_1__Part_1_3" file="../meshes/x430_thrust_washer_1__Part_1_3.stl" />
+    <mesh name="col_x430_thrust_washer_1__Part_1_3" file="../collision_meshes/x430_thrust_washer_1__Part_1_3.stl" />
+    <mesh name="vis_x430_thrust_washer_1__Part_1_4" file="../meshes/x430_thrust_washer_1__Part_1_4.stl" />
+    <mesh name="col_x430_thrust_washer_1__Part_1_4" file="../collision_meshes/x430_thrust_washer_1__Part_1_4.stl" />
+    <mesh name="vis_XM430_W350_1______2_11" file="../meshes/XM430_W350_1______2_11.stl" />
+    <mesh name="col_XM430_W350_1______2_11" file="../collision_meshes/XM430_W350_1______2_11.stl" />
+    <mesh name="vis_XM430_W350_1______2_2" file="../meshes/XM430_W350_1______2_2.stl" />
+    <mesh name="col_XM430_W350_1______2_2" file="../collision_meshes/XM430_W350_1______2_2.stl" />
+    <mesh name="vis_XM430_W350_1______2_3" file="../meshes/XM430_W350_1______2_3.stl" />
+    <mesh name="col_XM430_W350_1______2_3" file="../collision_meshes/XM430_W350_1______2_3.stl" />
+    <mesh name="vis_XM430_W350_1______2_4" file="../meshes/XM430_W350_1______2_4.stl" />
+    <mesh name="col_XM430_W350_1______2_4" file="../collision_meshes/XM430_W350_1______2_4.stl" />
+    <mesh name="vis_XM430_W350_1______2_5" file="../meshes/XM430_W350_1______2_5.stl" />
+    <mesh name="col_XM430_W350_1______2_5" file="../collision_meshes/XM430_W350_1______2_5.stl" />
+    <mesh name="vis_XM430_W350_1______2_6" file="../meshes/XM430_W350_1______2_6.stl" />
+    <mesh name="col_XM430_W350_1______2_6" file="../collision_meshes/XM430_W350_1______2_6.stl" />
+    <mesh name="vis_XM430_W350_1______2_7" file="../meshes/XM430_W350_1______2_7.stl" />
+    <mesh name="col_XM430_W350_1______2_7" file="../collision_meshes/XM430_W350_1______2_7.stl" />
+    <mesh name="vis_XM430_W350_1______2_9" file="../meshes/XM430_W350_1______2_9.stl" />
+    <mesh name="col_XM430_W350_1______2_9" file="../collision_meshes/XM430_W350_1______2_9.stl" />
+    <mesh name="vis_XM430_W350_1______3" file="../meshes/XM430_W350_1______3.stl" />
+    <mesh name="col_XM430_W350_1______3" file="../collision_meshes/XM430_W350_1______3.stl" />
+    <mesh name="vis_XM430_W350_1______3_1" file="../meshes/XM430_W350_1______3_1.stl" />
+    <mesh name="col_XM430_W350_1______3_1" file="../collision_meshes/XM430_W350_1______3_1.stl" />
+    <mesh name="vis_XM430_W350_1______3_10" file="../meshes/XM430_W350_1______3_10.stl" />
+    <mesh name="col_XM430_W350_1______3_10" file="../collision_meshes/XM430_W350_1______3_10.stl" />
+    <mesh name="vis_XM430_W350_1______3_11" file="../meshes/XM430_W350_1______3_11.stl" />
+    <mesh name="col_XM430_W350_1______3_11" file="../collision_meshes/XM430_W350_1______3_11.stl" />
+    <mesh name="vis_XM430_W350_1______3_2" file="../meshes/XM430_W350_1______3_2.stl" />
+    <mesh name="col_XM430_W350_1______3_2" file="../collision_meshes/XM430_W350_1______3_2.stl" />
+    <mesh name="vis_XM430_W350_1______3_3" file="../meshes/XM430_W350_1______3_3.stl" />
+    <mesh name="col_XM430_W350_1______3_3" file="../collision_meshes/XM430_W350_1______3_3.stl" />
+    <mesh name="vis_XM430_W350_1______3_4" file="../meshes/XM430_W350_1______3_4.stl" />
+    <mesh name="col_XM430_W350_1______3_4" file="../collision_meshes/XM430_W350_1______3_4.stl" />
+    <mesh name="vis_XM430_W350_1______3_5" file="../meshes/XM430_W350_1______3_5.stl" />
+    <mesh name="col_XM430_W350_1______3_5" file="../collision_meshes/XM430_W350_1______3_5.stl" />
+    <mesh name="vis_XM430_W350_1______3_6" file="../meshes/XM430_W350_1______3_6.stl" />
+    <mesh name="col_XM430_W350_1______3_6" file="../collision_meshes/XM430_W350_1______3_6.stl" />
+    <mesh name="vis_XM430_W350_1______3_7" file="../meshes/XM430_W350_1______3_7.stl" />
+    <mesh name="col_XM430_W350_1______3_7" file="../collision_meshes/XM430_W350_1______3_7.stl" />
+    <mesh name="vis_XM430_W350_1______3_8" file="../meshes/XM430_W350_1______3_8.stl" />
+    <mesh name="col_XM430_W350_1______3_8" file="../collision_meshes/XM430_W350_1______3_8.stl" />
+    <mesh name="vis_XM430_W350_1______3_9" file="../meshes/XM430_W350_1______3_9.stl" />
+    <mesh name="col_XM430_W350_1______3_9" file="../collision_meshes/XM430_W350_1______3_9.stl" />
+    <mesh name="vis_XM430_W350_1______4" file="../meshes/XM430_W350_1______4.stl" />
+    <mesh name="col_XM430_W350_1______4" file="../collision_meshes/XM430_W350_1______4.stl" />
+    <mesh name="vis_XM430_W350_1______4_1" file="../meshes/XM430_W350_1______4_1.stl" />
+    <mesh name="col_XM430_W350_1______4_1" file="../collision_meshes/XM430_W350_1______4_1.stl" />
+    <mesh name="vis_XM430_W350_1______4_10" file="../meshes/XM430_W350_1______4_10.stl" />
+    <mesh name="col_XM430_W350_1______4_10" file="../collision_meshes/XM430_W350_1______4_10.stl" />
+    <mesh name="vis_XM430_W350_1______4_11" file="../meshes/XM430_W350_1______4_11.stl" />
+    <mesh name="col_XM430_W350_1______4_11" file="../collision_meshes/XM430_W350_1______4_11.stl" />
+    <mesh name="vis_XM430_W350_1______4_2" file="../meshes/XM430_W350_1______4_2.stl" />
+    <mesh name="col_XM430_W350_1______4_2" file="../collision_meshes/XM430_W350_1______4_2.stl" />
+    <mesh name="vis_XM430_W350_1______4_3" file="../meshes/XM430_W350_1______4_3.stl" />
+    <mesh name="col_XM430_W350_1______4_3" file="../collision_meshes/XM430_W350_1______4_3.stl" />
+    <mesh name="vis_XM430_W350_1______4_4" file="../meshes/XM430_W350_1______4_4.stl" />
+    <mesh name="col_XM430_W350_1______4_4" file="../collision_meshes/XM430_W350_1______4_4.stl" />
+    <mesh name="vis_XM430_W350_1______4_5" file="../meshes/XM430_W350_1______4_5.stl" />
+    <mesh name="col_XM430_W350_1______4_5" file="../collision_meshes/XM430_W350_1______4_5.stl" />
+    <mesh name="vis_XM430_W350_1______4_6" file="../meshes/XM430_W350_1______4_6.stl" />
+    <mesh name="col_XM430_W350_1______4_6" file="../collision_meshes/XM430_W350_1______4_6.stl" />
+    <mesh name="vis_XM430_W350_1______4_7" file="../meshes/XM430_W350_1______4_7.stl" />
+    <mesh name="col_XM430_W350_1______4_7" file="../collision_meshes/XM430_W350_1______4_7.stl" />
+    <mesh name="vis_XM430_W350_1______4_8" file="../meshes/XM430_W350_1______4_8.stl" />
+    <mesh name="col_XM430_W350_1______4_8" file="../collision_meshes/XM430_W350_1______4_8.stl" />
+    <mesh name="vis_XM430_W350_1______4_9" file="../meshes/XM430_W350_1______4_9.stl" />
+    <mesh name="col_XM430_W350_1______4_9" file="../collision_meshes/XM430_W350_1______4_9.stl" />
+    <mesh name="vis_XM430_W350_1______5" file="../meshes/XM430_W350_1______5.stl" />
+    <mesh name="col_XM430_W350_1______5" file="../collision_meshes/XM430_W350_1______5.stl" />
+    <mesh name="vis_XM430_W350_1______5_1" file="../meshes/XM430_W350_1______5_1.stl" />
+    <mesh name="col_XM430_W350_1______5_1" file="../collision_meshes/XM430_W350_1______5_1.stl" />
+    <mesh name="vis_XM430_W350_1______5_10" file="../meshes/XM430_W350_1______5_10.stl" />
+    <mesh name="col_XM430_W350_1______5_10" file="../collision_meshes/XM430_W350_1______5_10.stl" />
+    <mesh name="vis_XM430_W350_1______5_11" file="../meshes/XM430_W350_1______5_11.stl" />
+    <mesh name="col_XM430_W350_1______5_11" file="../collision_meshes/XM430_W350_1______5_11.stl" />
+    <mesh name="vis_XM430_W350_1______5_2" file="../meshes/XM430_W350_1______5_2.stl" />
+    <mesh name="col_XM430_W350_1______5_2" file="../collision_meshes/XM430_W350_1______5_2.stl" />
+    <mesh name="vis_XM430_W350_1______5_3" file="../meshes/XM430_W350_1______5_3.stl" />
+    <mesh name="col_XM430_W350_1______5_3" file="../collision_meshes/XM430_W350_1______5_3.stl" />
+    <mesh name="vis_XM430_W350_1______5_4" file="../meshes/XM430_W350_1______5_4.stl" />
+    <mesh name="col_XM430_W350_1______5_4" file="../collision_meshes/XM430_W350_1______5_4.stl" />
+    <mesh name="vis_XM430_W350_1______5_5" file="../meshes/XM430_W350_1______5_5.stl" />
+    <mesh name="col_XM430_W350_1______5_5" file="../collision_meshes/XM430_W350_1______5_5.stl" />
+    <mesh name="vis_XM430_W350_1______5_6" file="../meshes/XM430_W350_1______5_6.stl" />
+    <mesh name="col_XM430_W350_1______5_6" file="../collision_meshes/XM430_W350_1______5_6.stl" />
+    <mesh name="vis_XM430_W350_1______5_7" file="../meshes/XM430_W350_1______5_7.stl" />
+    <mesh name="col_XM430_W350_1______5_7" file="../collision_meshes/XM430_W350_1______5_7.stl" />
+    <mesh name="vis_XM430_W350_1______5_8" file="../meshes/XM430_W350_1______5_8.stl" />
+    <mesh name="col_XM430_W350_1______5_8" file="../collision_meshes/XM430_W350_1______5_8.stl" />
+    <mesh name="vis_XM430_W350_1______5_9" file="../meshes/XM430_W350_1______5_9.stl" />
+    <mesh name="col_XM430_W350_1______5_9" file="../collision_meshes/XM430_W350_1______5_9.stl" />
+    <mesh name="vis_XM540_W270_1______2_2" file="../meshes/XM540_W270_1______2_2.stl" />
+    <mesh name="col_XM540_W270_1______2_2" file="../collision_meshes/XM540_W270_1______2_2.stl" />
+    <mesh name="vis_XM540_W270_1______2_3" file="../meshes/XM540_W270_1______2_3.stl" />
+    <mesh name="col_XM540_W270_1______2_3" file="../collision_meshes/XM540_W270_1______2_3.stl" />
+    <mesh name="vis_XM540_W270_1______2_4" file="../meshes/XM540_W270_1______2_4.stl" />
+    <mesh name="col_XM540_W270_1______2_4" file="../collision_meshes/XM540_W270_1______2_4.stl" />
+    <mesh name="vis_XM540_W270_1______4_1" file="../meshes/XM540_W270_1______4_1.stl" />
+    <mesh name="col_XM540_W270_1______4_1" file="../collision_meshes/XM540_W270_1______4_1.stl" />
+    <mesh name="vis_XM540_W270_1______4_1_2" file="../meshes/XM540_W270_1______4_1_2.stl" />
+    <mesh name="col_XM540_W270_1______4_1_2" file="../collision_meshes/XM540_W270_1______4_1_2.stl" />
+    <mesh name="vis_XM540_W270_1______4_1_4" file="../meshes/XM540_W270_1______4_1_4.stl" />
+    <mesh name="col_XM540_W270_1______4_1_4" file="../collision_meshes/XM540_W270_1______4_1_4.stl" />
+    <mesh name="vis_XM540_W270_1______4_2" file="../meshes/XM540_W270_1______4_2.stl" />
+    <mesh name="col_XM540_W270_1______4_2" file="../collision_meshes/XM540_W270_1______4_2.stl" />
+    <mesh name="vis_XM540_W270_1______4_3" file="../meshes/XM540_W270_1______4_3.stl" />
+    <mesh name="col_XM540_W270_1______4_3" file="../collision_meshes/XM540_W270_1______4_3.stl" />
+    <mesh name="vis_XM540_W270_1______4_4" file="../meshes/XM540_W270_1______4_4.stl" />
+    <mesh name="col_XM540_W270_1______4_4" file="../collision_meshes/XM540_W270_1______4_4.stl" />
+    <mesh name="vis_XM540_W270_1______5_2" file="../meshes/XM540_W270_1______5_2.stl" />
+    <mesh name="col_XM540_W270_1______5_2" file="../collision_meshes/XM540_W270_1______5_2.stl" />
+    <mesh name="vis_XM540_W270_1______5_3" file="../meshes/XM540_W270_1______5_3.stl" />
+    <mesh name="col_XM540_W270_1______5_3" file="../collision_meshes/XM540_W270_1______5_3.stl" />
+    <mesh name="vis_XM540_W270_1______5_4" file="../meshes/XM540_W270_1______5_4.stl" />
+    <mesh name="col_XM540_W270_1______5_4" file="../collision_meshes/XM540_W270_1______5_4.stl" />
+  </asset>
+  <worldbody>
+    <body name="base">
+      <body name="_ゴム足Φ24x10_c_30_rk_24_black_1__none_1" pos="-0.0123935 -0.0283965 0.0895783">
+        <inertial pos="0.17 0.125 -0.341462" quat="0.5 0.5 -0.5 0.5" mass="0.008799327" diaginertia="5.710473e-07 3.552822e-07 3.552822e-07" />
+        <geom mesh="vis______24x10_C_30_RK_24_black_1__NONE_1" class="rakuda_visual" />
+        <geom mesh="col______24x10_C_30_RK_24_black_1__NONE_1" class="rakuda_collision" />
+      </body>
+      <body name="_ゴム足Φ24x10_c_30_rk_24_black_1__none_2__1_" pos="-0.0123935 -0.0283965 0.0895783">
+        <inertial pos="0 0 0" quat="1 0 0 0" mass="2.7e-06" diaginertia="1.08e-10 1.08e-10 1.08e-10" />
+      </body>
+      <body name="base_plate_03jk_rakuda_1__ソリッド1" pos="-0.0123935 -0.0283965 0.0895783">
+        <inertial pos="0.0403249 2.37656e-18 -0.333093" quat="0.50001082 0.50001082 -0.49998918 0.49998918" mass="1.9246221" diaginertia="0.02858895 0.014332788 0.014276682" />
+        <geom rgba="0.898039 0.898039 0.898039 1" mesh="vis_Base_Plate_03JK_rakuda_1______1" class="rakuda_visual" />
+        <geom mesh="col_Base_Plate_03JK_rakuda_1______1" class="rakuda_collision" />
+      </body>
+      <body name="_5シリーズ2列_nfs5_2040_297_1___nfs5_2040_910" pos="-0.0123935 -0.0283965 0.0895783">
+        <inertial pos="8.29629e-16 1.99414e-06 -0.1806" quat="0.707106781 0 0 0.707106781" mass="0.25856172" diaginertia="0.0019415646 0.0019115001 5.181948e-05" />
+        <geom rgba="0.886275 0.862745 0.164706 1" mesh="vis__5____2__NFS5_2040_297_1___NFS5_2040_910" class="rakuda_visual" />
+        <geom mesh="col__5____2__NFS5_2040_297_1___NFS5_2040_910" class="rakuda_collision" />
+      </body>
+      <body name="_ゴム足Φ24x10_c_30_rk_24_black_1__none_3__1_" pos="-0.0123935 -0.0283965 0.0895783">
+        <inertial pos="0 0 0" quat="1 0 0 0" mass="2.7e-06" diaginertia="1.08e-10 1.08e-10 1.08e-10" />
+      </body>
+      <body name="rakuda2_r3_waist_base_1__ソリッド1" pos="-0.0123935 -0.0283965 0.0895783">
+        <inertial pos="8.71564e-05 -3.17173e-09 -0.0378542" quat="0 0.708502983 0 0.705707817" mass="0.0769878" diaginertia="3.12859311e-05 2.3503905e-05 1.71392439e-05" />
+        <geom rgba="0 0 0 1" mesh="vis_rakuda2_r3_waist_base_1______1" class="rakuda_visual" />
+        <geom mesh="col_rakuda2_r3_waist_base_1______1" class="rakuda_collision" />
+        <body name="torso_yaw" pos="0 0 -0.0267">
+          <inertial pos="0.000762172 -0.000160873 0.00268115" quat="0.562794203 0.427728556 -0.563061747 0.428103301" mass="0.004776543" diaginertia="4.00690875e-07 2.2359598e-07 1.91763845e-07" />
+          <joint name="torso_yaw_dof" range="-3.14159 3.14159" actuatorfrcrange="-1 1" axis="0 0 -1" armature="0.01" damping="0.5" />
+          <geom pos="0 0 0.0268" quat="0.997501 0 0 -0.0706586" rgba="0.74902 0.74902 0.74902 1" mesh="vis_HN13_C101_1______1" class="rakuda_visual" />
+          <geom pos="0 0 0.0268" quat="0.997501 0 0 -0.0706586" mesh="col_HN13_C101_1______1" class="rakuda_collision" />
+          <body name="xm540_w270_1__ソリッド2_torso__1_" pos="0 0 0.0012" quat="0.997501 0 0 -0.0706586">
+            <inertial pos="0 0 0" quat="1 0 0 0" mass="2.7e-06" diaginertia="1.08e-10 1.08e-10 1.08e-10" />
+            <body name="rakuda_r3__spacer_axk1160_waist_r2_1__ソリッド1" pos="-0.0105 0.0135 0.0036">
+              <inertial pos="0.01526 -0.0135 0.00109804" quat="0.486318676 0.486318676 -0.513316808 0.513316808" mass="0.014778909" diaginertia="5.54454963e-06 3.24913437e-06 2.4455223e-06" />
+              <geom pos="0.0105 -0.0135 0.022" quat="1 0 0 0" rgba="1 0.968627 0.72549 1" mesh="vis_rakuda_r3__spacer_AXK1160_waist_r2_1______1" class="rakuda_visual" />
+              <geom pos="0.0105 -0.0135 0.022" quat="1 0 0 0" mesh="col_rakuda_r3__spacer_AXK1160_waist_r2_1______1" class="rakuda_collision" />
+            </body>
+            <body name="xm540_w270_1__ソリッド5__1_" pos="-0.0155 0 0.0151">
+              <inertial pos="0 0 0" quat="1 0 0 0" mass="2.7e-06" diaginertia="1.08e-10 1.08e-10 1.08e-10" />
+              <body name="xm540_w270_1__ソリッド4_1" pos="-0.026 0.0135 0.021">
+                <inertial pos="0.0240073 -0.0135 0.00541686" quat="0 0.710393793 0 0.703804418" mass="0.04690845" diaginertia="1.88796175e-05 1.5000741e-05 4.85878246e-06" />
+                <geom pos="0.0415 -0.0135 -0.0105" quat="1 0 0 0" mesh="vis_XM540_W270_1______4_1" class="rakuda_visual" />
+                <geom pos="0.0415 -0.0135 -0.0105" quat="1 0 0 0" mesh="col_XM540_W270_1______4_1" class="rakuda_collision" />
+                <body name="rakuda_r3__plate_waist_x540_r8_1__ソリッド1" pos="0.052 -0.027 0.0115">
+                  <inertial pos="-0.0105798 0.0135 0.0203445" quat="0.706349075 0.70634317 0.0327896986 -0.0327894245" mass="0.26132652" diaginertia="0.000228265319 0.000186013231 0.00018067698" />
+                  <geom pos="-0.0105 0.0135 -0.022" rgba="1 0.968627 0.72549 1" mesh="vis_rakuda_r3__plate_waist_x540_r8_1______1" class="rakuda_visual" />
+                  <geom pos="-0.0105 0.0135 -0.022" mesh="col_rakuda_r3__plate_waist_x540_r8_1______1" class="rakuda_collision" />
+                  <body name="xm430_w350_1__ソリッド3" pos="-0.0425 0.0025 0.0405" quat="1 0 0 0">
+                    <inertial pos="0.0183398 0.011 0.00453739" quat="0 0.704425534 0 0.7097779" mass="0.021624948" diaginertia="5.72966705e-06 4.433022e-06 1.53996955e-06" />
+                    <geom pos="0.032 0.011 -0.0625" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______3" class="rakuda_visual" />
+                    <geom pos="0.032 0.011 -0.0625" quat="1 0 0 0" mesh="col_XM430_W350_1______3" class="rakuda_collision" />
+                    <body name="xm430_w350_1__ソリッド4" pos="0 0 0.0085" quat="1 0 0 0">
+                      <inertial pos="0.0200352 0.011 0.00767145" quat="0 0.707390987 0 0.706822462" mass="0.05954472" diaginertia="1.43849308e-05 1.187325e-05 5.36465117e-06" />
+                      <geom pos="0.032 0.011 -0.071825" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______4" class="rakuda_visual" />
+                      <geom pos="0.032 0.011 -0.071825" quat="1 0 0 0" mesh="col_XM430_W350_1______4" class="rakuda_collision" />
+                      <body name="xm430_w350_1__ソリッド5" pos="0.02 0.011 0.016175">
+                        <inertial pos="-6.82349e-05 -3.7857e-18 0.00419582" quat="0 0.707240406 0 0.706973131" mass="0.02915136" diaginertia="6.91254069e-06 5.186349e-06 2.08086771e-06" />
+                        <geom pos="0.012 0 -0.088" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______5" class="rakuda_visual" />
+                        <geom pos="0.012 0 -0.088" quat="1 0 0 0" mesh="col_XM430_W350_1______5" class="rakuda_collision" />
+                        <body name="head_yaw" pos="0.012 0 0.01195">
+                          <inertial pos="-1.29259e-07 3.15981e-08 -0.00219311" quat="0.5 0.5 -0.5 0.5" mass="0.001567755" diaginertia="6.981039e-08 3.627342e-08 3.627288e-08" />
+                          <joint name="head_yaw_dof" range="-1.81055 1.33104" actuatorfrcrange="-1 1" axis="0 0 -1" armature="0.01" damping="0.5" />
+                          <geom pos="0 0 -0.09995" quat="0.992823 0 0 -0.11959" rgba="0.956863 0.956863 0.956863 1" mesh="vis_HN12_N101_1______1" class="rakuda_visual" />
+                          <geom pos="0 0 -0.09995" quat="0.992823 0 0 -0.11959" mesh="col_HN12_N101_1______1" class="rakuda_collision" />
+                          <body name="fr12_h104_1__ソリッド1" pos="0 0 -0.00145" quat="0.992823 0 0 -0.11959">
+                            <inertial pos="0.0150008 -1.1096e-09 0.0057235" quat="0.419040278 0.419040278 -0.569565839 0.569565839" mass="0.011649447" diaginertia="5.02568828e-06 3.50234272e-06 2.736882e-06" />
+                            <geom pos="0 0 -0.0985" quat="1 0 0 0" rgba="0.0196078 0.0196078 0.0196078 1" mesh="vis_fr12_h104_1______1" class="rakuda_visual" />
+                            <geom pos="0 0 -0.0985" quat="1 0 0 0" mesh="col_fr12_h104_1______1" class="rakuda_collision" />
+                            <body name="hn12_n101_1__ソリッド1_1" pos="0.024 -0.019 0.02" quat="1 0 0 0">
+                              <inertial pos="3.7817e-16 0.000493106 0.00799987" quat="0.707106781 0 0 0.707106781" mass="0.001567755" diaginertia="6.981039e-08 3.627288e-08 3.627342e-08" />
+                              <geom pos="-0.024 0.01875 -0.1185" quat="1 0 0 0" rgba="0.956863 0.956863 0.956863 1" mesh="vis_HN12_N101_1______1_1" class="rakuda_visual" />
+                              <geom pos="-0.024 0.01875 -0.1185" quat="1 0 0 0" mesh="col_HN12_N101_1______1_1" class="rakuda_collision" />
+                              <body name="head_pitch" pos="0 -0.00235 0.008" quat="0.97447 0 -0.224517 0">
+                                <inertial pos="0.00412758 0.00775418 0.0113404" quat="0.696387433 0.122919412 0.122656198 0.696341021" mass="0.02915136" diaginertia="6.91254069e-06 5.18636512e-06 2.08086779e-06" />
+                                <joint name="head_pitch_dof" range="-1.50009 0.594303" actuatorfrcrange="-1 1" axis="0 -1 0" armature="0.01" damping="0.5" />
+                                <geom pos="-0.024 0.02045 -0.1265" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______5_1" class="rakuda_visual" />
+                                <geom pos="-0.024 0.02045 -0.1265" quat="1 0 0 0" mesh="col_XM430_W350_1______5_1" class="rakuda_collision" />
+                                <body name="xm430_w350_1__ソリッド4_1" pos="0.00410424 0.01195 0.0112763" quat="1 0 0 0">
+                                  <inertial pos="-1.20507e-05 0.00850355 -3.31092e-05" quat="0.696413485 0.123068083 0.122508194 0.696314761" mass="0.05954472" diaginertia="1.43849308e-05 1.18732394e-05 5.36466175e-06" />
+                                  <geom pos="-0.0281042 0.0085 -0.137776" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______4_1" class="rakuda_visual" />
+                                  <geom pos="-0.0281042 0.0085 -0.137776" quat="1 0 0 0" mesh="col_XM430_W350_1______4_1" class="rakuda_collision" />
+                                  <body name="xm430_w350_1__ソリッド3_1" pos="-0.00349622 0.017 0.0225561">
+                                    <inertial pos="0.00406404 0.00396261 -0.020996" quat="0.69589456 0.120151264 0.12542233 0.69682399" mass="0.021624948" diaginertia="5.72966705e-06 4.43302521e-06 1.53997174e-06" />
+                                    <geom pos="-0.024608 -0.0085 -0.160332" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______3_1" class="rakuda_visual" />
+                                    <geom pos="-0.024608 -0.0085 -0.160332" quat="1 0 0 0" mesh="col_XM430_W350_1______3_1" class="rakuda_collision" />
+                                  </body>
+                                  <body name="rakuda_r3__head_cover_front_1__ソリッド1" pos="0.0106545 0.0025 -0.0123913" quat="1 0 0 0">
+                                    <inertial pos="-0.00461827 0.006 0.0029553" quat="0.970415923 0 0.241439303 0" mass="0.02885652" diaginertia="1.67087087e-05 1.5787629e-05 5.95773726e-06" />
+                                    <geom pos="-0.0387587 0.006 -0.125385" rgba="1 1 0 1" mesh="vis_rakuda_r3__head_cover_front_1______1" class="rakuda_visual" />
+                                    <geom pos="-0.0387587 0.006 -0.125385" mesh="col_rakuda_r3__head_cover_front_1______1" class="rakuda_collision" />
+                                  </body>
+                                  <body name="rakuda_r3__head_mount_d435_1__ソリッド1" pos="-0.0079183 0.0145 0.0199089" quat="1 0 0 0">
+                                    <inertial pos="0.00244452 -0.0165994 0.0116651" quat="0.807028556 0.56421143 0.147830933 -0.0922842749" mass="0.05117742" diaginertia="5.07094718e-05 3.65269029e-05 1.48243813e-05" />
+                                    <geom pos="-0.0201859 -0.006 -0.157685" quat="1 0 0 0" rgba="1 0.968627 0.72549 1" mesh="vis_rakuda_r3__head_mount_d435_1______1" class="rakuda_visual" />
+                                    <geom pos="-0.0201859 -0.006 -0.157685" quat="1 0 0 0" mesh="col_rakuda_r3__head_mount_d435_1______1" class="rakuda_collision" />
+                                    <body name="rakuda_r3__head_cable_guide_d435usb_1__ソリッド1" pos="0.0180863 -0.06955 0.0274708">
+                                      <inertial pos="-0.00138791 -1.38778e-16 -0.00721013" quat="0.984807685 0 0.173648564 0" mass="0.0011041002" diaginertia="5.31940997e-08 4.644189e-08 7.83448631e-09" />
+                                      <geom pos="-0.0382723 0.06355 -0.185156" rgba="1 0.968627 0.72549 1" mesh="vis_rakuda_r3__head_cable_guide_d435usb_1______1" class="rakuda_visual" />
+                                      <geom pos="-0.0382723 0.06355 -0.185156" mesh="col_rakuda_r3__head_cable_guide_d435usb_1______1" class="rakuda_collision" />
+                                    </body>
+                                    <body name="intel_realsense_depth_camera_d435_1__ソリッド1_1" pos="0.008465 -0.0285 0.0232574">
+                                      <inertial pos="0.0109557 0.023919 -0.00401326" quat="0.586546334 0.59232081 -0.388344197 0.392820876" mass="0.09861912" diaginertia="6.38829313e-05 6.33154973e-05 9.47603036e-06" />
+                                      <geom pos="-0.0286509 0.0225 -0.180943" quat="1 0 0 0" rgba="0.74902 0.74902 0.74902 1" mesh="vis_Intel_RealSense_Depth_Camera_D435_1______1_1" class="rakuda_visual" />
+                                      <geom pos="-0.0286509 0.0225 -0.180943" quat="1 0 0 0" mesh="col_Intel_RealSense_Depth_Camera_D435_1______1_1" class="rakuda_collision" />
+                                      <body name="head_camera_link" pos="0.0234453 0.0405 -0.0085334" quat="1.08685e-06 -0.819152 -7.61018e-07 -0.573576">
+                                        <inertial pos="0 0 0" quat="1 0 0 0" mass="2.7e-06" diaginertia="1.08e-10 1.08e-10 1.08e-10" />
+                                        <site name="head_camera" pos="0 0 0" quat="1 0 0 0" size="0.005" group="4" />
+                                      </body>
+                                    </body>
+                                  </body>
+                                </body>
+                              </body>
+                            </body>
+                            <body name="hn12_i101_1__ソリッド1" pos="0.024 0.019 0.02" quat="1 0 0 0">
+                              <inertial pos="-6.93889e-18 -0.00207927 0.008" quat="0.707106781 0 0 0.707106781" mass="0.0014627547" diaginertia="7.154055e-08 4.325373e-08 4.325373e-08" />
+                              <geom pos="-0.024 -0.0188 -0.1185" quat="1 0 0 0" rgba="0.898039 0.898039 0.898039 1" mesh="vis_HN12_I101_1______1" class="rakuda_visual" />
+                              <geom pos="-0.024 -0.0188 -0.1185" quat="1 0 0 0" mesh="col_HN12_I101_1______1" class="rakuda_collision" />
+                            </body>
+                            <body name="rakuda_r3__neck_cable_guide2head_base_1__ソリッド1" pos="0.032 0.011 0.0015">
+                              <inertial pos="-0.0248369 -0.0113396 0.00594938" quat="-0.0166198753 0.781778073 0.00379863644 0.623323668" mass="0.02831058" diaginertia="7.62714918e-06 5.25072443e-06 3.20527039e-06" />
+                              <geom pos="-0.032 -0.011 -0.1" quat="1 0 0 0" rgba="1 0.968627 0.72549 1" mesh="vis_rakuda_r3__neck_cable_guide2head_base_1______1" class="rakuda_visual" />
+                              <geom pos="-0.032 -0.011 -0.1" quat="1 0 0 0" mesh="col_rakuda_r3__neck_cable_guide2head_base_1______1" class="rakuda_collision" />
+                            </body>
+                            <body name="cable_guide_fr12_hinge_head_r4_1__ソリッド1" pos="0.032 0.0205 0.0055" quat="1 0 0 0">
+                              <inertial pos="-0.00779783 0.00385581 0.0161862" quat="0.710289856 0.00371250427 -0.0288728297 0.703307115" mass="0.007195311" diaginertia="1.28077547e-06 1.03192928e-06 3.14244052e-07" />
+                              <geom pos="-0.032 -0.0205 -0.104" quat="1 0 0 0" rgba="1 1 0 1" mesh="vis_cable_guide_fr12_hinge_head_r4_1______1" class="rakuda_visual" />
+                              <geom pos="-0.032 -0.0205 -0.104" quat="1 0 0 0" mesh="col_cable_guide_fr12_hinge_head_r4_1______1" class="rakuda_collision" />
+                            </body>
+                          </body>
+                        </body>
+                        <body name="x430_thrust_washer_1__part_1" pos="0.012 0 0.0085">
+                          <inertial pos="0.00311118 2.88829e-18 -0.0013106" quat="0.512113536 0.512113536 -0.487585609 0.487585609" mass="0.007138962" diaginertia="1.80161674e-06 1.24314626e-06 6.363657e-07" />
+                          <geom pos="0 0 -0.0965" quat="1 0 0 0" rgba="0.615686 0.811765 0.929412 1" mesh="vis_x430_thrust_washer_1__Part_1" class="rakuda_visual" />
+                          <geom pos="0 0 -0.0965" quat="1 0 0 0" mesh="col_x430_thrust_washer_1__Part_1" class="rakuda_collision" />
+                        </body>
+                      </body>
+                      <body name="rakuda_r3__neck_cover_r4_1__ソリッド1" pos="-0.00325 0.003 0.013675" quat="1 0 0 0">
+                        <inertial pos="0.0131323 0.008 -0.00383055" quat="0.54052897 0.54052897 -0.455882038 0.455882038" mass="0.05109804" diaginertia="3.00099015e-05 1.94795595e-05 1.8963342e-05" />
+                        <geom pos="0.03525 0.008 -0.0855" quat="1 0 0 0" rgba="1 1 0 1" mesh="vis_rakuda_r3__neck_cover_r4_1______1" class="rakuda_visual" />
+                        <geom pos="0.03525 0.008 -0.0855" quat="1 0 0 0" mesh="col_rakuda_r3__neck_cover_r4_1______1" class="rakuda_collision" />
+                      </body>
+                    </body>
+                  </body>
+                  <body name="xm540_w270_1__ソリッド4_1_3__1_" pos="-0.024 -0.0215 0.049">
+                    <inertial pos="0 0 0" quat="1 0 0 0" mass="2.7e-06" diaginertia="1.08e-10 1.08e-10 1.08e-10" />
+                    <body name="xm540_w270_1__ソリッド4_3" pos="0.0135 -0.00175 0.00145" quat="1 0 -3.49561e-08 0">
+                      <inertial pos="-3.53701e-19 -2.19883e-05 0.000839942" quat="0 0.707106781 0 0.707106781" mass="0.000120042" diaginertia="7.216695e-10 6.370353e-10 1.4147865e-10" />
+                      <geom pos="0 0.0367 -0.07255" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM540_W270_1______4_3" class="rakuda_visual" />
+                      <geom pos="0 0.0367 -0.07255" mesh="col_XM540_W270_1______4_3" class="rakuda_collision" />
+                    </body>
+                    <body name="xm540_w270_1__ソリッド5_3" pos="0.027 -0.0115 -0.052">
+                      <inertial pos="-0.0135 -0.0105642 0.0260382" quat="0.707106712 -0.000311868663 0.000311868663 0.707106712" mass="0.10918746" diaginertia="4.0900701e-05 3.4857e-05 1.3941942e-05" />
+                      <geom pos="-0.0135 0.0465 -0.019" quat="1 0 0 0" mesh="vis_XM540_W270_1______5_3" class="rakuda_visual" />
+                      <geom pos="-0.0135 0.0465 -0.019" quat="1 0 0 0" mesh="col_XM540_W270_1______5_3" class="rakuda_collision" />
+                      <body name="xm540_w270_1__ソリッド2_3" pos="-0.0135 -0.021 0.026">
+                        <inertial pos="2.37986e-18 -0.00573412 2.00833e-05" quat="0.707106603 0.000501864511 -0.000501864511 0.707106603" mass="0.05965056" diaginertia="2.19325369e-05 1.7171757e-05 6.09662209e-06" />
+                        <geom pos="0 0.0675 -0.045" quat="1 0 0 0" mesh="vis_XM540_W270_1______2_3" class="rakuda_visual" />
+                        <geom pos="0 0.0675 -0.045" quat="1 0 0 0" mesh="col_XM540_W270_1______2_3" class="rakuda_collision" />
+                        <body name="shoulder_pitch_right" pos="0 -0.0151 0.0155" quat="1 0 0 0">
+                          <inertial pos="-5.35046e-05 0.00148115 0.000777126" quat="0.531965507 0.465902417 0.466195388 0.531610287" mass="0.004776543" diaginertia="4.00690875e-07 2.23596165e-07 1.9176393e-07" />
+                          <joint name="shoulder_pitch_right_dof" range="-3.14159 3.14159" actuatorfrcrange="-1 1" axis="0 1 0" armature="0.01" damping="0.5" />
+                          <geom pos="0.000130502 0.0826 -0.0604999" quat="0.999999 0 -0.00107852 0" rgba="0.74902 0.74902 0.74902 1" mesh="vis_HN13_C101_1______1_2" class="rakuda_visual" />
+                          <geom pos="0.000130502 0.0826 -0.0604999" quat="0.999999 0 -0.00107852 0" mesh="col_HN13_C101_1______1_2" class="rakuda_collision" />
+                          <body name="rakuda_r3__shoulder_base_hinge_1__ソリッド1_1" pos="0 -0.0012 0" quat="0.999999 0 -0.00107852 0">
+                            <inertial pos="-1.04929e-07 -0.00300227 -0.00980595" quat="0.707059294 -0.00815055641 0.0081454789 0.707060375" mass="0.0385101" diaginertia="1.68494808e-05 1.0461852e-05 6.79053118e-06" />
+                            <geom pos="0 0.0836 -0.0605" quat="1 0 0 0" rgba="0.921569 0.921569 0.921569 1" mesh="vis_rakuda_r3__shoulder_base_hinge_1______1_1" class="rakuda_visual" />
+                            <geom pos="0 0.0836 -0.0605" quat="1 0 0 0" mesh="col_rakuda_r3__shoulder_base_hinge_1______1_1" class="rakuda_collision" />
+                            <body name="fr13_h101_1__ソリッド1_1" pos="0.016 -0.008 -0.016" quat="1 0 0 0">
+                              <inertial pos="-0.016 -0.00886218 -0.008" quat="0 0.707106781 0 0.707106781" mass="0.016280514" diaginertia="8.502354e-06 8.424081e-06 3.20652e-06" />
+                              <geom pos="-0.016 0.0916 -0.0445" quat="1 0 0 0" rgba="0.74902 0.74902 0.74902 1" mesh="vis_fr13_h101_1______1_1" class="rakuda_visual" />
+                              <geom pos="-0.016 0.0916 -0.0445" quat="1 0 0 0" mesh="col_fr13_h101_1______1_1" class="rakuda_collision" />
+                              <body name="rakuda_r3__shoulder_hinge_cover_1__ソリッド1_2" pos="-0.0425 -0.016 0" quat="1 0 0 0">
+                                <inertial pos="-0.00276299 -0.00543175 -0.008" quat="0.707105086 0.707105086 0.00154840615 0.00154840615" mass="0.019116864" diaginertia="8.04368248e-06 6.144363e-06 2.17952732e-06" />
+                                <geom pos="0.0265 0.1076 -0.0445" quat="1 0 0 0" mesh="vis_rakuda_r3__shoulder_hinge_cover_1______1_2" class="rakuda_visual" />
+                                <geom pos="0.0265 0.1076 -0.0445" quat="1 0 0 0" mesh="col_rakuda_r3__shoulder_hinge_cover_1______1_2" class="rakuda_collision" />
+                              </body>
+                              <body name="rakuda_r3__shoulder_hinge_cover_1__ソリッド1_3__1_" pos="0.0105 -0.016 -0.016" quat="1 0 0 0">
+                                <inertial pos="0 0 0" quat="1 0 0 0" mass="2.7e-06" diaginertia="1.08e-10 1.08e-10 1.08e-10" />
+                              </body>
+                              <body name="hn13_n101_1__ソリッド1_1" pos="0.0085 -0.021 -0.008" quat="1 0 0 0">
+                                <inertial pos="-0.00100805 -0.0109999 -5.16328e-12" quat="1 0 0 0" mass="0.003309336" diaginertia="2.699352e-07 1.3865094e-07 1.3865013e-07" />
+                                <geom pos="-0.0245 0.1126 -0.0365" rgba="0.956863 0.956863 0.956863 1" mesh="vis_HN13_N101_1______1_1" class="rakuda_visual" />
+                                <geom pos="-0.0245 0.1126 -0.0365" mesh="col_HN13_N101_1______1_1" class="rakuda_collision" />
+                                <body name="shoulder_roll_right" pos="0.0011 -0.011 0" quat="1 0 0 0">
+                                  <inertial pos="-0.00936588 -0.00712599 -0.0137422" quat="0.971530412 -0.236913811 0.000689537745 -0.000168148123" mass="0.05965056" diaginertia="2.19325369e-05 1.71717779e-05 6.09662816e-06" />
+                                  <joint name="shoulder_roll_right_dof" range="-3.36135 0.478376" actuatorfrcrange="-1 1" axis="1 0 0" armature="0.01" damping="0.5" />
+                                  <geom pos="-0.0256 0.117861 -0.0521335" quat="0.997911 -0.06461 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM540_W270_1______2_4" class="rakuda_visual" />
+                                  <geom pos="-0.0256 0.117861 -0.0521335" quat="0.997911 -0.06461 0 0" mesh="col_XM540_W270_1______2_4" class="rakuda_collision" />
+                                  <body name="xm540_w270_1__ソリッド5_4" pos="-0.0151 0.0168181 0.00310675" quat="0.997911 -0.06461 0 0">
+                                    <inertial pos="-0.0104358 -0.0215653 -0.0197789" quat="0.98480769 -0.173647977 -0.000434348671 7.65873061e-05" mass="0.10918746" diaginertia="4.0900701e-05 3.48571354e-05 1.39419416e-05" />
+                                    <geom pos="-0.0105 0.107323 -0.0417495" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM540_W270_1______5_4" class="rakuda_visual" />
+                                    <geom pos="-0.0105 0.107323 -0.0417495" mesh="col_XM540_W270_1______5_4" class="rakuda_collision" />
+                                    <body name="xm540_w270_1__ソリッド4_1_4" pos="-0.021 0 0" quat="1 0 0 0">
+                                      <inertial pos="-0.00541686 -0.0222599 -0.0216872" quat="0.984797052 -0.173646357 0.00458860746 -0.000809095608" mass="0.04690845" diaginertia="1.88796175e-05 1.50007373e-05 4.85878611e-06" />
+                                      <geom pos="0.0105 0.107323 -0.0417495" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM540_W270_1______4_1_4" class="rakuda_visual" />
+                                      <geom pos="0.0105 0.107323 -0.0417495" mesh="col_XM540_W270_1______4_1_4" class="rakuda_collision" />
+                                      <body name="xm540_w270_1__ソリッド4_4" pos="-0.00975 -0.0121899 0.00597983" quat="1 3.49561e-08 0 0">
+                                        <inertial pos="2.19883e-05 0.000287277 0.000789287" quat="0.579227887 0.4055799 -0.4055799 0.579227887" mass="0.000120042" diaginertia="7.2166879e-10 6.370353e-10 1.4147882e-10" />
+                                        <geom pos="0.0203 0.119479 -0.0478233" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM540_W270_1______4_4" class="rakuda_visual" />
+                                        <geom pos="0.0203 0.119479 -0.0478233" mesh="col_XM540_W270_1______4_4" class="rakuda_collision" />
+                                      </body>
+                                      <body name="rakuda_r3__arm_joint_upper_arm_back_1__ソリッド2_1" pos="-0.0115 -0.0431567 -0.0396295" quat="1 0 0 0">
+                                        <inertial pos="-0.00338641 0.0112705 -0.00850599" quat="0.819001491 0.573470527 0.0110047879 -0.0157164793" mass="0.011601036" diaginertia="1.64579103e-06 1.03268835e-06 6.72660716e-07" />
+                                        <geom pos="0.022 0.15048 -0.00212003" quat="1 0 0 0" rgba="1 0.968627 0.72549 1" mesh="vis_rakuda_r3__arm_joint_upper_arm_back_1______2_1" class="rakuda_visual" />
+                                        <geom pos="0.022 0.15048 -0.00212003" quat="1 0 0 0" mesh="col_rakuda_r3__arm_joint_upper_arm_back_1______2_1" class="rakuda_collision" />
+                                      </body>
+                                    </body>
+                                    <body name="rakuda_r3__arm_cover_upperarm_side_1__ソリッド1_1" pos="-0.0025 -0.034069 -0.00515882" quat="1 0 0 0">
+                                      <inertial pos="-0.008 0.0119914 -0.00141357" quat="0.440342409 0.897829919 0 0" mass="0.06986088" diaginertia="5.987142e-05 5.71233305e-05 3.16208095e-05" />
+                                      <geom pos="-0.008 0.141392 -0.0365907" quat="1 0 0 0" rgba="1 1 0 1" mesh="vis_rakuda_r3__arm_cover_upperarm_side_1______1_1" class="rakuda_visual" />
+                                      <geom pos="-0.008 0.141392 -0.0365907" mesh="col_rakuda_r3__arm_cover_upperarm_side_1______1_1" class="rakuda_collision" />
+                                    </body>
+                                  </body>
+                                  <body name="rakuda29_joint_upper_arm_r1_1__ソリッド1_1" pos="-0.0036 -0.00711948 -0.0430559" quat="0.997911 -0.06461 0 0">
+                                    <inertial pos="0.00343342 -0.0161305 -0.00484676" quat="0.984727512 -0.173633821 -0.0125740559 0.00221714266" mass="0.014964129" diaginertia="3.24851633e-06 1.99517789e-06 1.32618608e-06" />
+                                    <geom pos="-0.022 0.125108 0.00711452" rgba="1 0.968627 0.72549 1" mesh="vis_rakuda29_joint_upper_arm_r1_1______1_1" class="rakuda_visual" />
+                                    <geom pos="-0.022 0.125108 0.00711452" mesh="col_rakuda29_joint_upper_arm_r1_1______1_1" class="rakuda_collision" />
+                                    <body name="xm430_w350_1__ソリッド4_4" pos="0.00125 -0.0141463 -0.0227858" quat="1 0 0 0">
+                                      <inertial pos="-0.0232148 -0.00546421 0.00837765" quat="0.122738606 0.696084209 0.12283733 0.696644097" mass="0.05954472" diaginertia="1.43849269e-05 1.1873254e-05 5.36465117e-06" />
+                                      <geom pos="-0.02325 0.139254 0.0299003" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______4_4" class="rakuda_visual" />
+                                      <geom pos="-0.02325 0.139254 0.0299003" quat="1 0 0 0" mesh="col_XM430_W350_1______4_4" class="rakuda_collision" />
+                                      <body name="xm430_w350_1__ソリッド3_4" pos="-0.04325 -0.0128949 0.0201239" quat="1 0 0 0">
+                                        <inertial pos="0.0183398 0.0116919 -3.85835e-05" quat="0.123251184 0.698994853 0.122321761 0.693723813" mass="0.021624948" diaginertia="5.72968576e-06 4.43303028e-06 1.53996955e-06" />
+                                        <geom pos="0.02 0.152149 0.00977641" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______3_4" class="rakuda_visual" />
+                                        <geom pos="0.02 0.152149 0.00977641" quat="1 0 0 0" mesh="col_XM430_W350_1______3_4" class="rakuda_collision" />
+                                        <body name="xm430_w350_1__ソリッド2_4" pos="0.04145 0.0126453 0.0025807" quat="1 0 0 0">
+                                          <inertial pos="0.000839942 -7.52044e-06 -2.06622e-05" quat="0.819151873 0.573576681 0 0" mass="0.000104652" diaginertia="5.018193e-10 4.2803928e-10 1.2334041e-10" />
+                                          <geom pos="-0.02155 0.139487 0.00714872" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______2_4" class="rakuda_visual" />
+                                          <geom pos="-0.02155 0.139487 0.00714872" mesh="col_XM430_W350_1______2_4" class="rakuda_collision" />
+                                        </body>
+                                      </body>
+                                      <body name="xm430_w350_1__ソリッド5_4" pos="-0.02325 -0.00837259 0.00038693" quat="1 0 0 0">
+                                        <inertial pos="-6.82349e-05 -0.00143505 -0.00394278" quat="0.122765212 0.696232512 0.122811624 0.696495727" mass="0.02915136" diaginertia="6.9125341e-06 5.18635559e-06 2.08086771e-06" />
+                                        <geom pos="0 0.147627 0.0295134" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______5_4" class="rakuda_visual" />
+                                        <geom pos="0 0.147627 0.0295134" quat="1 0 0 0" mesh="col_XM430_W350_1______5_4" class="rakuda_collision" />
+                                        <body name="elbow_yaw_right" pos="0.012 -0.00408714 -0.0112293" quat="1 0 0 0">
+                                          <inertial pos="-8.90433e-08 0.000749994 0.00206088" quat="0.57922656 0.405581795 -0.405581795 0.57922656" mass="0.001567755" diaginertia="6.98105217e-08 3.627315e-08 3.62732883e-08" />
+                                          <joint name="elbow_yaw_right_dof" range="-3.45569 2.82749" actuatorfrcrange="-1 1" axis="0 0.34202 0.939693" armature="0.01" damping="0.5" />
+                                          <geom pos="-0.0511543 0.142316 0.0441632" quat="0.987693 1.86202e-08 0.0534935 0.146973" rgba="0.956863 0.956863 0.956863 1" mesh="vis_HN12_N101_1______1_3" class="rakuda_visual" />
+                                          <geom pos="-0.0511543 0.142316 0.0441632" quat="0.987693 1.86202e-08 0.0534935 0.146973" mesh="col_HN12_N101_1______1_3" class="rakuda_collision" />
+                                          <body name="fr12_s101_1__ソリッド1_1" pos="0 0.000495929 0.00136255" quat="0.987693 1.86202e-08 0.0534935 0.146973">
+                                            <inertial pos="0.0103923 0.00482014 -0.0042996" quat="0.454519723 0.541675015 -0.241843715 0.664463406" mass="0.008568531" diaginertia="3.11978123e-06 1.66247322e-06 1.58258784e-06" />
+                                            <geom pos="-0.012 0.151218 0.0393802" quat="1 0 0 0" rgba="0.0196078 0.0196078 0.0196078 1" mesh="vis_fr12_s101_1______1_1" class="rakuda_visual" />
+                                            <geom pos="-0.012 0.151218 0.0393802" quat="1 0 0 0" mesh="col_fr12_s101_1______1_1" class="rakuda_collision" />
+                                            <body name="xm430_w350_1__ソリッド5_5" pos="0.0015718 -0.0205005 -0.00158394" quat="1 0 0 0">
+                                              <inertial pos="0.0151093 0.00910538 -0.01502" quat="0.409441937 0.286693543 0.70948409 0.496786109" mass="0.02915136" diaginertia="6.91254197e-06 5.18636072e-06 2.08087631e-06" />
+                                              <geom pos="-0.0135718 0.171719 0.0409641" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______5_5" class="rakuda_visual" />
+                                              <geom pos="-0.0135718 0.171719 0.0409641" quat="1 0 0 0" mesh="col_XM430_W350_1______5_5" class="rakuda_collision" />
+                                              <body name="elbow_pitch_right" pos="0.0294378 0.00846526 -0.0147871" quat="1 0 0 0">
+                                                <inertial pos="-0.00142163 0.0023137 -0.000842018" quat="0.482602518 -0.130729439 0.0731112401 0.862936481" mass="0.001567755" diaginertia="6.98104451e-08 3.62730751e-08 3.62731698e-08" />
+                                                <joint name="elbow_pitch_right_dof" range="-2.79253 0" actuatorfrcrange="-1 1" axis="-0.5 0.813798 -0.296198" armature="0.01" damping="0.5" />
+                                                <geom pos="0.0244772 0.153323 -0.087648" quat="0.707107 -0.353552 0.575442 -0.209445" rgba="0.956863 0.956863 0.956863 1" mesh="vis_HN12_N101_1______1_5" class="rakuda_visual" />
+                                                <geom pos="0.0244772 0.153323 -0.087648" quat="0.707107 -0.353552 0.575442 -0.209445" mesh="col_HN12_N101_1______1_5" class="rakuda_collision" />
+                                                <body name="fr12_h104_1__ソリッド1_2" pos="0.0058782 0.00546775 -0.0019901" quat="0.707107 -0.353552 0.575442 -0.209445">
+                                                  <inertial pos="0.00979201 0.0201146 -0.0254112" quat="0.759880619 0.579630794 0.126201136 0.265862485" mass="0.011649447" diaginertia="5.02569681e-06 3.50232392e-06 2.73689227e-06" />
+                                                  <geom pos="-0.0422846 0.159337 0.0486631" quat="1 0 0 0" rgba="0.0196078 0.0196078 0.0196078 1" mesh="vis_fr12_h104_1______1_2" class="rakuda_visual" />
+                                                  <geom pos="-0.0422846 0.159337 0.0486631" mesh="col_fr12_h104_1______1_2" class="rakuda_collision" />
+                                                  <body name="hn12_i101_1__ソリッド1_2" pos="-0.019 0.0281882 -0.0187731" quat="1 0 0 0">
+                                                    <inertial pos="0.00113963 -0.00185486 0.000675114" quat="0.482605846 -0.13073296 0.073113936 0.862933858" mass="0.0014627547" diaginertia="7.15405008e-08 4.32538894e-08 4.32538898e-08" />
+                                                    <geom pos="-0.0232846 0.131149 0.0674362" quat="1 0 0 0" rgba="0.898039 0.898039 0.898039 1" mesh="vis_HN12_I101_1______1_2" class="rakuda_visual" />
+                                                    <geom pos="-0.0232846 0.131149 0.0674362" quat="1 0 0 0" mesh="col_HN12_I101_1______1_2" class="rakuda_collision" />
+                                                    <body name="igus_jfm_1113_05_1__1_1" pos="0.001 -0.0016276 0.000592396" quat="1 0 0 0">
+                                                      <inertial pos="0.000840798 -0.00136848 0.000498085" quat="0.48260622 -0.130733083 0.0731140816 0.862933618" mass="0.0008358039" diaginertia="3.86460543e-08 2.11345574e-08 2.11345542e-08" />
+                                                      <geom pos="-0.0242846 0.132777 0.0668438" quat="1 0 0 0" rgba="0.858824 0.823529 0.705882 1" mesh="vis_igus_JFM_1113_05_1__1_1" class="rakuda_visual" />
+                                                      <geom pos="-0.0242846 0.132777 0.0668438" quat="1 0 0 0" mesh="col_igus_JFM_1113_05_1__1_1" class="rakuda_collision" />
+                                                    </body>
+                                                  </body>
+                                                  <body name="xm430_w350_1__ソリッド3_7" pos="0.0202487 0.0196661 -0.00715787" quat="1 0 0 0">
+                                                    <inertial pos="-0.00157051 0.00367543 -0.024388" quat="0.951073829 -0.1686945 0.0485436975 0.254252329" mass="0.021624948" diaginertia="5.72966581e-06 4.43301729e-06 1.5399701e-06" />
+                                                    <geom pos="-0.0625333 0.139671 0.055821" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______3_7" class="rakuda_visual" />
+                                                    <geom pos="-0.0625333 0.139671 0.055821" mesh="col_XM430_W350_1______3_7" class="rakuda_collision" />
+                                                    <body name="xm430_w350_1__ソリッド2_7" pos="-0.00398446 0.0102699 -0.00219489" quat="1 0 0 0">
+                                                      <inertial pos="1.90424e-05 0.000297608 0.000785527" quat="0.447154801 0.538387428 -0.247621259 0.669981547" mass="0.000104652" diaginertia="5.01856335e-10 4.28000972e-10 1.23341143e-10" />
+                                                      <geom pos="-0.0585056 0.12939 0.0579134" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______2_7" class="rakuda_visual" />
+                                                      <geom pos="-0.0585056 0.12939 0.0579134" mesh="col_XM430_W350_1______2_7" class="rakuda_collision" />
+                                                    </body>
+                                                    <body name="xm430_w350_1__ソリッド4_7" pos="0.00736122 0.00399369 -0.00145359" quat="1 0 0 0">
+                                                      <inertial pos="0.00185814 0.00611545 -0.0234719" quat="0.951269087 -0.16762869 0.0445611176 0.254955004" mass="0.05954472" diaginertia="1.4384938e-05 1.18732609e-05 5.36466014e-06" />
+                                                      <geom pos="-0.0698945 0.135677 0.0572746" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______4_7" class="rakuda_visual" />
+                                                      <geom pos="-0.0698945 0.135677 0.0572746" mesh="col_XM430_W350_1______4_7" class="rakuda_collision" />
+                                                      <body name="xm430_w350_1__ソリッド5_7" pos="0.00922243 0.0100988 -0.0249592" quat="1 0 0 0">
+                                                        <inertial pos="0.00363368 0.00194805 -0.000781647" quat="0.95125981 -0.167683109 0.0447635996 0.254918358" mass="0.02915136" diaginertia="6.91254496e-06 5.1863583e-06 2.08086764e-06" />
+                                                        <geom pos="-0.079117 0.125579 0.0822338" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______5_7" class="rakuda_visual" />
+                                                        <geom pos="-0.079117 0.125579 0.0822338" mesh="col_XM430_W350_1______5_7" class="rakuda_collision" />
+                                                        <body name="wrist_yaw_right" pos="0.010349 0.00971891 0.00923274" quat="0.824411 0.490163 0.26593 -0.0967903">
+                                                          <inertial pos="-0.00189926 -0.00103042 0.000375174" quat="0.965694628 -0.0211128653 0.0831891096 0.245087135" mass="0.001567755" diaginertia="6.98102958e-08 3.62726691e-08 3.62734552e-08" />
+                                                          <joint name="wrist_yaw_right_dof" range="-0.891121 3.29767" actuatorfrcrange="-1 1" axis="-0.866025 -0.469846 0.17101" armature="0.01" damping="0.5" />
+                                                          <geom pos="-0.089466 0.11586 0.073001" rgba="0.956863 0.956863 0.956863 1" mesh="vis_HN12_N101_1______1_7" class="rakuda_visual" />
+                                                          <geom pos="-0.089466 0.11586 0.073001" mesh="col_HN12_N101_1______1_7" class="rakuda_collision" />
+                                                          <body name="fr12_s102_1__ソリッド1_1" pos="-0.00125574 -0.000681277 0.000247965" quat="1 0 0 0">
+                                                            <inertial pos="0.00241456 0.00130998 -0.000476793" quat="0.683012796 0.68301264 0.234569621 0.109381661" mass="0.00560979" diaginertia="1.44075087e-06 1.12405205e-06 4.32569676e-07" />
+                                                            <geom pos="-0.0882102 0.116541 0.0727531" quat="1 0 0 0" rgba="0.0196078 0.0196078 0.0196078 1" mesh="vis_fr12_s102_1______1_1" class="rakuda_visual" />
+                                                            <geom pos="-0.0882102 0.116541 0.0727531" quat="1 0 0 0" mesh="col_fr12_s102_1______1_1" class="rakuda_collision" />
+                                                            <body name="xm430_w350_1__ソリッド5_9" pos="0.0172297 -0.0105215 0.00864203" quat="1 0 0 0">
+                                                              <inertial pos="0.013358 0.0126862 -0.0140508" quat="0.316974037 0.405513195 0.648888288 0.560384241" mass="0.02915136" diaginertia="6.91253934e-06 5.18635206e-06 2.0808606e-06" />
+                                                              <geom pos="-0.10544 0.127063 0.064111" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______5_9" class="rakuda_visual" />
+                                                              <geom pos="-0.10544 0.127063 0.064111" quat="1 0 0 0" mesh="col_XM430_W350_1______5_9" class="rakuda_collision" />
+                                                              <body name="wrist_pitch_right" pos="0.0274527 0.0115196 -0.0164485" quat="1 0 0 0">
+                                                                <inertial pos="-0.00133583 0.00250675 0.000122552" quat="0.514524244 0.0184674189 -0.0110847833 0.857205275" mass="0.001567755" diaginertia="6.9810464e-08 3.62729106e-08 3.62735854e-08" />
+                                                                <joint name="wrist_pitch_right_dof" range="-2.48005 1.41204" actuatorfrcrange="-1 1" axis="-0.469846 0.881697 0.0430586" armature="0.01" damping="0.5" />
+                                                                <geom pos="-0.164194 0.102893 0.0131226" quat="0.920833 0.18322 -0.343824 -0.0167908" rgba="0.956863 0.956863 0.956863 1" mesh="vis_HN12_N101_1______1_9" class="rakuda_visual" />
+                                                                <geom pos="-0.164194 0.102893 0.0131226" quat="0.920833 0.18322 -0.343824 -0.0167908" mesh="col_HN12_N101_1______1_9" class="rakuda_collision" />
+                                                                <body name="fr12_h104_1__ソリッド1_4" pos="-0.000986677 0.00185156 9.04231e-05" quat="0.920833 0.18322 -0.343824 -0.0167908">
+                                                                  <inertial pos="0.000312605 0.0227191 -0.0205419" quat="0.416850548 0.65510127 -0.303927215 0.552001988" mass="0.011649447" diaginertia="5.02570193e-06 3.5023256e-06 2.73688547e-06" />
+                                                                  <geom pos="-0.132211 0.114265 0.0804971" quat="1 0 0 0" rgba="0.0196078 0.0196078 0.0196078 1" mesh="vis_fr12_h104_1______1_4" class="rakuda_visual" />
+                                                                  <geom pos="-0.132211 0.114265 0.0804971" quat="1 0 0 0" mesh="col_fr12_h104_1______1_4" class="rakuda_collision" />
+                                                                  <body name="hn12_i101_1__ソリッド1_4" pos="-0.0178542 0.0335045 0.00163623" quat="1 0 0 0">
+                                                                    <inertial pos="0.0010709 -0.00200962 -9.8142e-05" quat="0.514524968 0.0184636452 -0.011082538 0.857204951" mass="0.0014627547" diaginertia="7.15404837e-08 4.32538611e-08 4.32539352e-08" />
+                                                                    <geom pos="-0.114357 0.08076 0.0788609" quat="1 0 0 0" rgba="0.898039 0.898039 0.898039 1" mesh="vis_HN12_I101_1______1_4" class="rakuda_visual" />
+                                                                    <geom pos="-0.114357 0.08076 0.0788609" quat="1 0 0 0" mesh="col_HN12_I101_1______1_4" class="rakuda_collision" />
+                                                                    <body name="igus_jfm_1113_05_1__1_3" pos="0.000939693 -0.00176339 -8.61172e-05" quat="1 0 0 0">
+                                                                      <inertial pos="0.000790091 -0.00148266 -7.24071e-05" quat="0.514525731 0.018463516 -0.0110824828 0.857204497" mass="0.0008358039" diaginertia="3.86461344e-08 2.11345786e-08 2.1134561e-08" />
+                                                                      <geom pos="-0.115297 0.0825234 0.078947" quat="1 0 0 0" rgba="0.858824 0.823529 0.705882 1" mesh="vis_igus_JFM_1113_05_1__1_3" class="rakuda_visual" />
+                                                                      <geom pos="-0.115297 0.0825234 0.078947" quat="1 0 0 0" mesh="col_igus_JFM_1113_05_1__1_3" class="rakuda_collision" />
+                                                                    </body>
+                                                                  </body>
+                                                                  <body name="xm430_w350_1__ソリッド3_11" pos="0.026077 0.0241734 -0.0246503" quat="1 0 0 0">
+                                                                    <inertial pos="-0.0210541 0.00153406 -0.00568415" quat="-0.193510608 0.655545986 0.14732606 0.714918273" mass="0.021624948" diaginertia="5.72967965e-06 4.43302025e-06 1.5399695e-06" />
+                                                                    <geom pos="-0.158288 0.0900912 0.105147" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______3_11" class="rakuda_visual" />
+                                                                    <geom pos="-0.158288 0.0900912 0.105147" quat="1 0 0 0" mesh="col_XM430_W350_1______3_11" class="rakuda_collision" />
+                                                                    <body name="xm430_w350_1__ソリッド4_11" pos="-0.0347299 -0.0179191 -0.0120411" quat="1 0 0 0">
+                                                                      <inertial pos="0.0129172 0.0196617 -0.00619229" quat="-0.192892195 0.658533364 0.148134823 0.712167455" mass="0.05954472" diaginertia="1.43849432e-05 1.18732546e-05 5.36466118e-06" />
+                                                                      <geom pos="-0.123558 0.10801 0.117189" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______4_11" class="rakuda_visual" />
+                                                                      <geom pos="-0.123558 0.10801 0.117189" quat="1 0 0 0" mesh="col_XM430_W350_1______4_11" class="rakuda_collision" />
+                                                                      <body name="xm430_w350_1__ソリッド5_11" pos="0.0134496 0.0203585 -0.0146506" quat="1 0 0 0">
+                                                                        <inertial pos="0.000307488 0.000367451 -0.00416893" quat="-0.192923159 0.658381738 0.14809342 0.712307855" mass="0.02915136" diaginertia="6.91255355e-06 5.18636123e-06 2.08086421e-06" />
+                                                                        <geom pos="-0.137008 0.0876518 0.131839" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______5_11" class="rakuda_visual" />
+                                                                        <geom pos="-0.137008 0.0876518 0.131839" quat="1 0 0 0" mesh="col_XM430_W350_1______5_11" class="rakuda_collision" />
+                                                                        <body name="gripper_right_dof" pos="-0.00986474 -0.00462361 -0.0129658" quat="0.0310961 -0.965035 -0.257356 -0.0388423">
+                                                                          <inertial pos="0 0 0" quat="1 0 0 0" mass="2.7e-06" diaginertia="1.08e-10 1.08e-10 1.08e-10" />
+                                                                          <site name="gripper_right" pos="0 0 0" quat="1 0 0 0" size="0.005" group="4" />
+                                                                        </body>
+                                                                      </body>
+                                                                    </body>
+                                                                    <body name="xm430_w350_1__ソリッド2_11" pos="-0.0415733 -0.00943477 -0.00498077" quat="1 0 0 0">
+                                                                      <inertial pos="-0.000738505 -0.000388798 -9.71212e-05" quat="0.665137991 0.706161866 0.151195622 0.189912494" mass="0.000104652" diaginertia="5.01856796e-10 4.28001324e-10 1.2334033e-10" />
+                                                                      <geom pos="-0.116624 0.0995764 0.110087" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______2_11" class="rakuda_visual" />
+                                                                      <geom pos="-0.116624 0.0995764 0.110087" mesh="col_XM430_W350_1______2_11" class="rakuda_collision" />
+                                                                    </body>
+                                                                  </body>
+                                                                </body>
+                                                              </body>
+                                                              <body name="xm430_w350_1__ソリッド4_9" pos="0.0114457 0.0164177 -0.0138818" quat="1 0 0 0">
+                                                                <inertial pos="-0.00396485 0.00751411 0.000360126" quat="0.316836165 0.405393442 0.648955851 0.560470611" mass="0.05954472" diaginertia="1.43849242e-05 1.1873255e-05 5.36465274e-06" />
+                                                                <geom pos="-0.116886 0.110645 0.0779929" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______4_9" class="rakuda_visual" />
+                                                                <geom pos="-0.116886 0.110645 0.0779929" quat="1 0 0 0" mesh="col_XM430_W350_1______4_9" class="rakuda_collision" />
+                                                                <body name="xm430_w350_1__ソリッド3_9" pos="0.0112142 0.0248594 0.0081394" quat="1 0 0 0">
+                                                                  <inertial pos="-0.0225012 -0.00715678 -0.00695287" quat="0.319550259 0.407736686 0.647623966 0.558767953" mass="0.021624948" diaginertia="5.72968037e-06 4.43301064e-06 1.53997029e-06" />
+                                                                  <geom pos="-0.1281 0.0857854 0.0698535" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______3_9" class="rakuda_visual" />
+                                                                  <geom pos="-0.1281 0.0857854 0.0698535" quat="1 0 0 0" mesh="col_XM430_W350_1______3_9" class="rakuda_collision" />
+                                                                  <body name="xm430_w350_1__ソリッド2_9" pos="-0.00379684 0.00615909 -0.0107849" quat="1 0 0 0">
+                                                                    <inertial pos="0.000737742 0.000375256 -0.000144585" quat="0.963573752 0.000832893205 0.088515651 0.252368601" mass="0.000104652" diaginertia="5.01855887e-10 4.28001373e-10 1.23340381e-10" />
+                                                                    <geom pos="-0.124366 0.0795353 0.0806533" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______2_9" class="rakuda_visual" />
+                                                                    <geom pos="-0.124366 0.0795353 0.0806533" mesh="col_XM430_W350_1______2_9" class="rakuda_collision" />
+                                                                  </body>
+                                                                </body>
+                                                              </body>
+                                                            </body>
+                                                          </body>
+                                                        </body>
+                                                        <body name="x430_thrust_washer_1__part_1_4" pos="0.00186122 0.0143135 -0.000952995" quat="1 0 0 0">
+                                                          <inertial pos="0.00436499 -0.00576731 0.0139234" quat="0.787360632 0.559066007 0.198359393 0.167815332" mass="0.007138962" diaginertia="1.80161816e-06 1.24314784e-06 6.36365401e-07" />
+                                                          <geom pos="-0.0809782 0.111265 0.0831868" quat="1 0 0 0" rgba="0.615686 0.811765 0.929412 1" mesh="vis_x430_thrust_washer_1__Part_1_4" class="rakuda_visual" />
+                                                          <geom pos="-0.0809782 0.111265 0.0831868" quat="1 0 0 0" mesh="col_x430_thrust_washer_1__Part_1_4" class="rakuda_collision" />
+                                                        </body>
+                                                      </body>
+                                                      <body name="rakuda_r3__upper_arm_cover_inside_l_r1_1__ソリッド1" pos="0.00379006 -0.013783 -0.0332938" quat="-1.38956e-07 0.353554 -0.817287 -0.455018">
+                                                        <inertial pos="-0.00660335 -0.00723941 0.00757773" quat="0.926846058 0.222242206 0.0820767629 -0.291252799" mass="0.018620307" diaginertia="4.88118571e-06 4.67120092e-06 1.83866227e-06" />
+                                                        <geom pos="-0.0809519 0.141216 0.101285" quat="1 0 0 0" rgba="1 1 0 1" mesh="vis_rakuda_r3__upper_arm_cover_inside_L_r1_1______1" class="rakuda_visual" />
+                                                        <geom pos="-0.0809519 0.141216 0.101285" quat="1 0 0 0" mesh="col_rakuda_r3__upper_arm_cover_inside_L_r1_1______1" class="rakuda_collision" />
+                                                      </body>
+                                                    </body>
+                                                  </body>
+                                                </body>
+                                              </body>
+                                              <body name="xm430_w350_1__ソリッド4_5" pos="0.0130705 0.012552 -0.0162745" quat="1 0 0 0">
+                                                <inertial pos="-0.00422126 0.00693672 -0.00252476" quat="0.409290709 0.286588287 0.709570916 0.496847446" mass="0.05954472" diaginertia="1.43849458e-05 1.18732614e-05 5.36465181e-06" />
+                                                <geom pos="-0.0266423 0.159167 0.0572386" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______4_5" class="rakuda_visual" />
+                                                <geom pos="-0.0266423 0.159167 0.0572386" quat="1 0 0 0" mesh="col_XM430_W350_1______4_5" class="rakuda_collision" />
+                                                <body name="xm430_w350_1__ソリッド3_5" pos="-0.025408 0.00752847 0.00896582" quat="1 0 0 0">
+                                                  <inertial pos="0.0139014 0.00807943 -0.0146466" quat="0.412257809 0.288666239 0.707851306 0.495642845" mass="0.021624948" diaginertia="5.72967467e-06 4.43301531e-06 1.53996863e-06" />
+                                                  <geom pos="-0.000821797 0.150967 0.0485172" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______3_5" class="rakuda_visual" />
+                                                  <geom pos="-0.000821797 0.150967 0.0485172" quat="1 0 0 0" mesh="col_XM430_W350_1______3_5" class="rakuda_collision" />
+                                                  <body name="xm430_w350_1__ソリッド2_5" pos="0.0316468 0.0226302 -0.0199427" quat="1 0 0 0">
+                                                    <inertial pos="0.000738405 0.000376749 -0.000137126" quat="0.948314674 -0.16721329 0.0468331574 0.26560431" mass="0.000104652" diaginertia="5.01856949e-10 4.28000647e-10 1.23340314e-10" />
+                                                    <geom pos="-0.0334052 0.129673 0.0679734" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______2_5" class="rakuda_visual" />
+                                                    <geom pos="-0.0334052 0.129673 0.0679734" mesh="col_XM430_W350_1______2_5" class="rakuda_collision" />
+                                                  </body>
+                                                </body>
+                                                <body name="elbow_cover_right" pos="-0.0273851 0.0036123 0.00719865" quat="1 0 0 0">
+                                                  <inertial pos="0.0262267 0.00205994 -0.0183559" quat="0.415068484 0.278778298 0.699622644 0.510420385" mass="0.05136615" diaginertia="3.2058413e-05 2.99726125e-05 1.40572695e-05" />
+                                                  <geom pos="0.000742786 0.155554 0.05004" quat="1 0 0 0" rgba="1 1 0 1" mesh="vis_elbow_cover_right" class="rakuda_visual" />
+                                                  <geom pos="0.000742786 0.155554 0.05004" quat="1 0 0 0" mesh="col_elbow_cover_right" class="rakuda_collision" />
+                                                </body>
+                                              </body>
+                                            </body>
+                                          </body>
+                                        </body>
+                                        <body name="x430_thrust_washer_1__part_1_2" pos="0.02 -0.0132438 -0.00422517" quat="1 0 0 0">
+                                          <inertial pos="-0.00488882 0.0107849 -0.00253066" quat="0.564846724 0.395509499 -0.415405439 0.593261102" mass="0.007138962" diaginertia="1.80161884e-06 1.24314627e-06 6.36366288e-07" />
+                                          <geom pos="-0.02 0.160871 0.0337386" quat="1 0 0 0" rgba="0.615686 0.811765 0.929412 1" mesh="vis_x430_thrust_washer_1__Part_1_2" class="rakuda_visual" />
+                                          <geom pos="-0.02 0.160871 0.0337386" quat="1 0 0 0" mesh="col_x430_thrust_washer_1__Part_1_2" class="rakuda_collision" />
+                                        </body>
+                                      </body>
+                                      <body name="rakuda_r3__upper_arm_cover_inside_r_1__ソリッド1" pos="-0.0465 -0.0150351 0.00547232" quat="1 0 0 0">
+                                        <inertial pos="0.00252003 0.0171047 -0.00409554" quat="0.607692832 0.712286263 -0.173782572 -0.30521684" mass="0.018123318" diaginertia="4.89328035e-06 4.673111e-06 1.88806165e-06" />
+                                        <geom pos="0.02325 0.154289 0.024428" quat="1 0 0 0" rgba="1 1 0 1" mesh="vis_rakuda_r3__upper_arm_cover_inside_R_1______1" class="rakuda_visual" />
+                                        <geom pos="0.02325 0.154289 0.024428" quat="1 0 0 0" mesh="col_rakuda_r3__upper_arm_cover_inside_R_1______1" class="rakuda_collision" />
+                                      </body>
+                                    </body>
+                                  </body>
+                                </body>
+                              </body>
+                              <body name="hn13_i101_1__ソリッド1_1" pos="-0.0405 -0.032 0.003" quat="1 0 0 0">
+                                <inertial pos="0.00270614 -1.38778e-17 -0.011" quat="1 0 0 0" mass="0.003170475" diaginertia="2.6524206e-07 1.5600141e-07 1.5600141e-07" />
+                                <geom pos="0.0245 0.1236 -0.0475" rgba="0.956863 0.956863 0.956863 1" mesh="vis_HN13_I101_1______1_1" class="rakuda_visual" />
+                                <geom pos="0.0245 0.1236 -0.0475" mesh="col_HN13_I101_1______1_1" class="rakuda_collision" />
+                              </body>
+                            </body>
+                          </body>
+                        </body>
+                        <body name="rakuda_r3__x540_thrust_axk1160_1__ソリッド1_1" pos="0.0135 -0.011175 0.005">
+                          <inertial pos="-0.0135 0.00109164 0.01525" quat="0.513347085 0.486286716 0.513347085 0.486286716" mass="0.014810148" diaginertia="5.54974648e-06 3.25125452e-06 2.4490971e-06" />
+                          <geom pos="-0.0135 0.079 -0.05" quat="1 0 0 0" rgba="1 0.968627 0.72549 1" mesh="vis_rakuda_r3__x540_thrust_AXK1160_1______1_1" class="rakuda_visual" />
+                          <geom pos="-0.0135 0.079 -0.05" quat="1 0 0 0" mesh="col_rakuda_r3__x540_thrust_AXK1160_1______1_1" class="rakuda_collision" />
+                          <body name="rakuda34_r2__spacer_axk1160_waist_ring_r1_1__ソリッド1_1" pos="-0.0135 -0.0022 0.0105" quat="1 0 0 0">
+                            <inertial pos="-3.10112e-18 -0.000875 0" quat="0.707106781 0 0 0.707106781" mass="0.0007065765" diaginertia="1.3899924e-07 6.967998e-08 6.967998e-08" />
+                            <geom pos="0 0.08115 -0.0605" quat="1 0 0 0" rgba="0 0 0 1" mesh="vis_rakuda34_r2__spacer_AXK1160_waist_ring_r1_1______1_1" class="rakuda_visual" />
+                            <geom pos="0 0.08115 -0.0605" quat="1 0 0 0" mesh="col_rakuda34_r2__spacer_AXK1160_waist_ring_r1_1______1_1" class="rakuda_collision" />
+                            <body name="axk1106_1___axk1106_2" pos="0 0 0">
+                              <inertial pos="4.31891e-18 -0.00072 6.93889e-18" quat="0.707106781 0 0 0.707106781" mass="0.004125816" diaginertia="1.6037325e-06 8.026479e-07 8.026479e-07" />
+                              <geom pos="0 0.08138 -0.0605" quat="1 0 0 0" rgba="0.74902 0.74902 0.74902 1" mesh="vis_AXK1106_1___AXK1106_2" class="rakuda_visual" />
+                              <geom pos="0 0.08138 -0.0605" quat="1 0 0 0" mesh="col_AXK1106_1___AXK1106_2" class="rakuda_collision" />
+                            </body>
+                          </body>
+                        </body>
+                      </body>
+                      <body name="rakuda_r3__chest_cover_r1_1__ソリッド1_1__1_" pos="-0.03025 -0.0025 0.0355" quat="1 0 0 0">
+                        <inertial pos="0 0 0" quat="1 0 0 0" mass="2.7e-06" diaginertia="1.08e-10 1.08e-10 1.08e-10" />
+                      </body>
+                    </body>
+                  </body>
+                  <body name="xm540_w270_1__ソリッド4_1_1__1_" pos="-0.024 0.0485 -0.003" quat="1 0 0 0">
+                    <inertial pos="0 0 0" quat="1 0 0 0" mass="2.7e-06" diaginertia="1.08e-10 1.08e-10 1.08e-10" />
+                    <body name="xm540_w270_1__ソリッド5_1__1_" pos="0 0.0115 0.052" quat="1 0 0 0">
+                      <inertial pos="0 0 0" quat="1 0 0 0" mass="2.7e-06" diaginertia="1.08e-10 1.08e-10 1.08e-10" />
+                      <body name="xm540_w270_1__ソリッド2_1__1_" pos="0.0135 0.021 -0.026">
+                        <inertial pos="0 0 0" quat="1 0 0 0" mass="2.7e-06" diaginertia="1.08e-10 1.08e-10 1.08e-10" />
+                        <body name="shoulder_pitch_left" pos="0 0.0151 0.0155" quat="1 0 0 0">
+                          <inertial pos="0.000153022 -0.00148115 0.000763788" quat="0.430672193 0.560905272 0.560531909 0.430941662" mass="0.004776543" diaginertia="4.00690875e-07 2.23596028e-07 1.91763797e-07" />
+                          <joint name="shoulder_pitch_left_dof" range="-3.14159 3.14159" actuatorfrcrange="-1 1" axis="0 -1 0" armature="0.01" damping="0.5" />
+                          <geom pos="-0.0079115 -0.0826 -0.0599805" quat="0.997851 0 0.065525 0" rgba="0.74902 0.74902 0.74902 1" mesh="vis_HN13_C101_1______1_1" class="rakuda_visual" />
+                          <geom pos="-0.0079115 -0.0826 -0.0599805" quat="0.997851 0 0.065525 0" mesh="col_HN13_C101_1______1_1" class="rakuda_collision" />
+                          <body name="rakuda_r3__shoulder_base_hinge_1__ソリッド1" pos="0 0.0012 0" quat="0.997851 0 0.065525 0">
+                            <inertial pos="1.04929e-07 0.00300227 -0.00980595" quat="0.707059294 0.00815055641 -0.0081454789 0.707060375" mass="0.0385101" diaginertia="1.68494808e-05 1.0461852e-05 6.79053118e-06" />
+                            <geom pos="0 -0.0836 -0.0605" quat="1 0 0 0" rgba="0.921569 0.921569 0.921569 1" mesh="vis_rakuda_r3__shoulder_base_hinge_1______1" class="rakuda_visual" />
+                            <geom pos="0 -0.0836 -0.0605" quat="1 0 0 0" mesh="col_rakuda_r3__shoulder_base_hinge_1______1" class="rakuda_collision" />
+                            <body name="fr13_h101_1__ソリッド1" pos="-0.016 0.008 -0.016" quat="1 0 0 0">
+                              <inertial pos="0.016 0.00886218 -0.008" quat="0 0.707106781 0 0.707106781" mass="0.016280514" diaginertia="8.502354e-06 8.424081e-06 3.20652e-06" />
+                              <geom pos="0.016 -0.0916 -0.0445" quat="1 0 0 0" rgba="0.74902 0.74902 0.74902 1" mesh="vis_fr13_h101_1______1" class="rakuda_visual" />
+                              <geom pos="0.016 -0.0916 -0.0445" quat="1 0 0 0" mesh="col_fr13_h101_1______1" class="rakuda_collision" />
+                              <body name="hn13_n101_1__ソリッド1" pos="0.0405 0.032 -0.008" quat="1 0 0 0">
+                                <inertial pos="-0.00100805 -6.17483e-08 5.16327e-12" quat="1 0 0 0" mass="0.003309336" diaginertia="2.699352e-07 1.3865094e-07 1.3865013e-07" />
+                                <geom pos="-0.0245 -0.1236 -0.0365" rgba="0.956863 0.956863 0.956863 1" mesh="vis_HN13_N101_1______1" class="rakuda_visual" />
+                                <geom pos="-0.0245 -0.1236 -0.0365" mesh="col_HN13_N101_1______1" class="rakuda_collision" />
+                                <body name="shoulder_roll_left" pos="0.0011 0 0" quat="0.999759 0.0219313 0 0">
+                                  <inertial pos="-0.00936588 0.00529444 -0.0145464" quat="0.984807538 0.173647948 0.000698961144 0.000123245572" mass="0.05965056" diaginertia="2.19325369e-05 1.71717534e-05 6.09662566e-06" />
+                                  <joint name="shoulder_roll_left_dof" range="-0.392932 3.44679" actuatorfrcrange="-1 1" axis="1 0 0" armature="0.01" damping="0.5" />
+                                  <geom pos="-0.0256 -0.1236 -0.0365" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM540_W270_1______2_2" class="rakuda_visual" />
+                                  <geom pos="-0.0256 -0.1236 -0.0365" mesh="col_XM540_W270_1______2_2" class="rakuda_collision" />
+                                  <body name="xm540_w270_1__ソリッド5_2" pos="-0.0151 0.00530131 -0.0145652" quat="1 0 0 0">
+                                    <inertial pos="-0.0104358 -1.30556e-05 3.587e-05" quat="0.98480769 0.173647977 -0.000434348671 -7.65873061e-05" mass="0.10918746" diaginertia="4.0900701e-05 3.48571354e-05 1.39419416e-05" />
+                                    <geom pos="-0.0105 -0.128901 -0.0219348" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM540_W270_1______5_2" class="rakuda_visual" />
+                                    <geom pos="-0.0105 -0.128901 -0.0219348" mesh="col_XM540_W270_1______5_2" class="rakuda_collision" />
+                                    <body name="xm540_w270_1__ソリッド4_1_2" pos="-0.021 0.00379333 0.0290493" quat="1 0 0 0">
+                                      <inertial pos="-0.00541686 -0.00311179 -0.0309218" quat="0.984797052 0.173646357 0.00458860746 0.000809095608" mass="0.04690845" diaginertia="1.88796175e-05 1.50007373e-05 4.85878611e-06" />
+                                      <geom pos="0.0105 -0.132695 -0.050984" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM540_W270_1______4_1_2" class="rakuda_visual" />
+                                      <geom pos="0.0105 -0.132695 -0.050984" mesh="col_XM540_W270_1______4_1_2" class="rakuda_collision" />
+                                      <body name="xm540_w270_1__ソリッド4_2" pos="-0.00975 -0.0131818 -0.00325472" quat="1 3.49561e-08 0 0">
+                                        <inertial pos="2.19883e-05 -0.000287277 0.000789287" quat="0.4055799 0.579227887 -0.579227887 0.4055799" mass="0.000120042" diaginertia="7.2166879e-10 6.370353e-10 1.4147882e-10" />
+                                        <geom pos="0.0203 -0.119479 -0.0478233" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM540_W270_1______4_2" class="rakuda_visual" />
+                                        <geom pos="0.0203 -0.119479 -0.0478233" mesh="col_XM540_W270_1______4_2" class="rakuda_collision" />
+                                      </body>
+                                      <body name="rakuda_r3__arm_joint_upper_arm_back_1__ソリッド2" pos="-0.0115 -0.00758665 -0.0580986">
+                                        <inertial pos="-0.00338641 0.0141012 0.000728549" quat="0.573470527 0.819001491 0.0157164793 -0.0110047879" mass="0.011601036" diaginertia="1.64579103e-06 1.03268835e-06 6.72660716e-07" />
+                                        <geom pos="0.022 -0.125108 0.00711452" quat="1 0 0 0" rgba="1 0.968627 0.72549 1" mesh="vis_rakuda_r3__arm_joint_upper_arm_back_1______2" class="rakuda_visual" />
+                                        <geom pos="0.022 -0.125108 0.00711452" quat="1 0 0 0" mesh="col_rakuda_r3__arm_joint_upper_arm_back_1______2" class="rakuda_collision" />
+                                        <body name="xm430_w350_1__ソリッド4_2" pos="-0.00125 0.0250772 -0.00603719" quat="1 0 0 0">
+                                          <inertial pos="0.0232852 -0.00546663 -0.00837098" quat="-0.122738606 0.696084209 -0.12283733 0.696644097" mass="0.05954472" diaginertia="1.43849269e-05 1.1873254e-05 5.36465117e-06" />
+                                          <geom pos="0.02325 -0.150185 0.0131517" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______4_2" class="rakuda_visual" />
+                                          <geom pos="0.02325 -0.150185 0.0131517" quat="1 0 0 0" mesh="col_XM430_W350_1______4_2" class="rakuda_collision" />
+                                          <body name="xm430_w350_1__ソリッド3_2" pos="0.00325 0.00196403 0.00337529" quat="1 0 0 0">
+                                            <inertial pos="0.0183398 -0.0116919 -3.85835e-05" quat="-0.123251184 0.698994853 -0.122321761 0.693723813" mass="0.021624948" diaginertia="5.72968576e-06 4.43303028e-06 1.53996955e-06" />
+                                            <geom pos="0.02 -0.152149 0.00977641" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______3_2" class="rakuda_visual" />
+                                            <geom pos="0.02 -0.152149 0.00977641" quat="1 0 0 0" mesh="col_XM430_W350_1______3_2" class="rakuda_collision" />
+                                            <body name="xm430_w350_1__ソリッド2_2" pos="0.04145 -0.0126453 0.0025807" quat="1 0 0 0">
+                                              <inertial pos="0.000839942 7.52044e-06 -2.06622e-05" quat="0.573576681 0.819151873 0 0" mass="0.000104652" diaginertia="5.018193e-10 4.2803928e-10 1.2334041e-10" />
+                                              <geom pos="-0.02155 -0.139487 0.00714872" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______2_2" class="rakuda_visual" />
+                                              <geom pos="-0.02155 -0.139487 0.00714872" mesh="col_XM430_W350_1______2_2" class="rakuda_collision" />
+                                            </body>
+                                          </body>
+                                          <body name="xm430_w350_1__ソリッド5_2" pos="0.02325 -0.00255825 -0.0163617" quat="1 0 0 0">
+                                            <inertial pos="-6.82349e-05 0.00143505 -0.00394278" quat="-0.122765212 0.696232512 -0.122811624 0.696495727" mass="0.02915136" diaginertia="6.9125341e-06 5.18635559e-06 2.08086771e-06" />
+                                            <geom pos="0 -0.147627 0.0295134" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______5_2" class="rakuda_visual" />
+                                            <geom pos="0 -0.147627 0.0295134" quat="1 0 0 0" mesh="col_XM430_W350_1______5_2" class="rakuda_collision" />
+                                            <body name="elbow_yaw_left" pos="0.012 0.00408714 -0.0112293" quat="1 0 0 0">
+                                              <inertial pos="-1.0059e-07 -0.000750005 0.00206088" quat="0.405581437 0.57922681 -0.57922681 0.405581437" mass="0.001567755" diaginertia="6.98102864e-08 3.627315e-08 3.62729836e-08" />
+                                              <joint name="elbow_yaw_left_dof" range="-2.42791 3.85528" actuatorfrcrange="-1 1" axis="0 -0.34202 0.939693" armature="0.01" damping="0.5" />
+                                              <geom pos="-0.0932758 -0.114834 0.0541661" quat="0.937004 -3.21724e-08 0.119474 -0.328252" rgba="0.956863 0.956863 0.956863 1" mesh="vis_HN12_N101_1______1_2" class="rakuda_visual" />
+                                              <geom pos="-0.0932758 -0.114834 0.0541661" quat="0.937004 -3.21724e-08 0.119474 -0.328252" mesh="col_HN12_N101_1______1_2" class="rakuda_collision" />
+                                              <body name="fr12_s101_1__ソリッド1" pos="0 -0.000495929 0.00136255" quat="0.937004 -3.21724e-08 0.119474 -0.328252">
+                                                <inertial pos="0.012 0.000818014 -0.00224748" quat="0.405579865 0.579227911 -0.579227911 0.405579865" mass="0.008568531" diaginertia="3.11979487e-06 1.6624737e-06 1.58258723e-06" />
+                                                <geom pos="-0.012 -0.151218 0.0393802" quat="1 0 0 0" rgba="0.0196078 0.0196078 0.0196078 1" mesh="vis_fr12_s101_1______1" class="rakuda_visual" />
+                                                <geom pos="-0.012 -0.151218 0.0393802" quat="1 0 0 0" mesh="col_fr12_s101_1______1" class="rakuda_collision" />
+                                                <body name="xm430_w350_1__ソリッド5_3" pos="-0.008 0.0188819 -0.00217304" quat="1 0 0 0">
+                                                  <inertial pos="0.0199318 -0.000282388 -0.0118087" quat="0.405655919 0.579337784 0.405502616 0.579118844" mass="0.02915136" diaginertia="6.9125341e-06 5.18635559e-06 2.08086771e-06" />
+                                                  <geom pos="-0.004 -0.1701 0.0415532" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______5_3" class="rakuda_visual" />
+                                                  <geom pos="-0.004 -0.1701 0.0415532" quat="1 0 0 0" mesh="col_XM430_W350_1______5_3" class="rakuda_collision" />
+                                                  <body name="elbow_pitch_left" pos="0.032 0.00700416 -0.00915665" quat="1 0 0 0">
+                                                    <inertial pos="-1.30053e-07 -0.00206086 -0.00075006" quat="0.696364325 0.122787324 -0.122787324 0.696364325" mass="0.001567755" diaginertia="6.98104079e-08 3.627342e-08 3.62728621e-08" />
+                                                    <joint name="elbow_pitch_left_dof" range="-0.746788 2.30754" actuatorfrcrange="-1 1" axis="0 -0.939693 -0.34202" armature="0.01" damping="0.5" />
+                                                    <geom pos="-0.0122922 -0.178871 0.0555645" quat="0.994327 6.83094e-10 0.0999552 0.0363807" rgba="0.956863 0.956863 0.956863 1" mesh="vis_HN12_N101_1______1_4" class="rakuda_visual" />
+                                                    <geom pos="-0.0122922 -0.178871 0.0555645" quat="0.994327 6.83094e-10 0.0999552 0.0363807" mesh="col_HN12_N101_1______1_4" class="rakuda_collision" />
+                                                    <body name="fr12_h104_1__ソリッド1_1" pos="0 -0.00136255 -0.000495929" quat="0.994327 6.83094e-10 0.0999552 0.0363807">
+                                                      <inertial pos="0.0093885 -0.0102903 -0.0272799" quat="0.556916281 0.795361728 0.195987924 -0.13723233" mass="0.011649447" diaginertia="5.02568354e-06 3.50232257e-06 2.73687989e-06" />
+                                                      <geom pos="-0.036 -0.175742 0.0512058" quat="1 0 0 0" rgba="0.0196078 0.0196078 0.0196078 1" mesh="vis_fr12_h104_1______1_1" class="rakuda_visual" />
+                                                      <geom pos="-0.036 -0.175742 0.0512058" mesh="col_fr12_h104_1______1_1" class="rakuda_collision" />
+                                                      <body name="hn12_i101_1__ソリッド1_1" pos="0 -0.0357083 -0.0129968" quat="1 0 0 0">
+                                                        <inertial pos="-1.38778e-17 0.00167196 0.000608545" quat="0.696364084 0.122788693 -0.122788693 0.696364084" mass="0.0014627547" diaginertia="7.15403617e-08 4.325373e-08 4.32539183e-08" />
+                                                        <geom pos="-0.036 -0.140503 0.0640316" quat="1 0 0 0" rgba="0.898039 0.898039 0.898039 1" mesh="vis_HN12_I101_1______1_1" class="rakuda_visual" />
+                                                        <geom pos="-0.036 -0.140503 0.0640316" quat="1 0 0 0" mesh="col_HN12_I101_1______1_1" class="rakuda_collision" />
+                                                        <body name="igus_jfm_1113_05_1__1" pos="0 0.00140954 0.00051303" quat="1 0 0 0">
+                                                          <inertial pos="6.93889e-18 0.00158018 0.000575139" quat="0.696364322 0.122787339 -0.122787339 0.696364322" mass="0.0008358039" diaginertia="3.86461409e-08 2.1134547e-08 2.11345591e-08" />
+                                                          <geom pos="-0.036 -0.141913 0.0635185" quat="1 0 0 0" rgba="0.858824 0.823529 0.705882 1" mesh="vis_igus_JFM_1113_05_1__1" class="rakuda_visual" />
+                                                          <geom pos="-0.036 -0.141913 0.0635185" quat="1 0 0 0" mesh="col_igus_JFM_1113_05_1__1" class="rakuda_collision" />
+                                                        </body>
+                                                      </body>
+                                                      <body name="xm430_w350_1__ソリッド3_6" pos="-0.00282843 -0.0136801 -0.0501284" quat="1 0 0 0">
+                                                        <inertial pos="0.0161766 0.00699858 0.0129334" quat="-0.0670594365 0.380309294 -0.160177292 0.90841131" mass="0.021624948" diaginertia="5.72967629e-06 4.43301577e-06 1.53997194e-06" />
+                                                        <geom pos="-0.0331716 -0.162062 0.101334" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______3_6" class="rakuda_visual" />
+                                                        <geom pos="-0.0331716 -0.162062 0.101334" quat="1 0 0 0" mesh="col_XM430_W350_1______3_6" class="rakuda_collision" />
+                                                        <body name="xm430_w350_1__ソリッド4_6" pos="0.0342947 -0.00761811 0.0209306" quat="1 0 0 0">
+                                                          <inertial pos="-0.00810932 0.0172198 -0.0151492" quat="-0.0663878065 0.376503604 -0.160456766 0.909995232" mass="0.05954472" diaginertia="1.43849305e-05 1.18732433e-05 5.36465818e-06" />
+                                                          <geom pos="-0.0674663 -0.154443 0.0804036" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______4_6" class="rakuda_visual" />
+                                                          <geom pos="-0.0674663 -0.154443 0.0804036" quat="1 0 0 0" mesh="col_XM430_W350_1______4_6" class="rakuda_collision" />
+                                                          <body name="xm430_w350_1__ソリッド5_6" pos="-0.00212132 0.0192849 -0.0208229" quat="1 0 0 0">
+                                                            <inertial pos="0.00291864 0.00103124 -0.0028333" quat="-0.0664226915 0.376698513 -0.160442423 0.909914548" mass="0.02915136" diaginertia="6.91254124e-06 5.18637106e-06 2.0808667e-06" />
+                                                            <geom pos="-0.0653449 -0.173728 0.101227" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______5_6" class="rakuda_visual" />
+                                                            <geom pos="-0.0653449 -0.173728 0.101227" quat="1 0 0 0" mesh="col_XM430_W350_1______5_6" class="rakuda_collision" />
+                                                            <body name="wrist_yaw_left" pos="0.0169352 -1.20922e-05 3.32232e-05" quat="1 0 0 0">
+                                                              <inertial pos="-0.00155085 -0.00053038 0.00145714" quat="0.92279181 0.0448667462 0.365530824 0.113267235" mass="0.001567755" diaginertia="6.98103907e-08 3.62728612e-08 3.62734381e-08" />
+                                                              <joint name="wrist_yaw_left_dof" range="-2.25701 1.93178" actuatorfrcrange="-1 1" axis="-0.707107 -0.241845 0.664463" armature="0.01" damping="0.5" />
+                                                              <geom pos="-0.0680312 -0.169226 0.117991" quat="0.996696 -0.0574289 -0.0196418 0.0539657" rgba="0.956863 0.956863 0.956863 1" mesh="vis_HN12_N101_1______1_6" class="rakuda_visual" />
+                                                              <geom pos="-0.0680312 -0.169226 0.117991" quat="0.996696 -0.0574289 -0.0196418 0.0539657" mesh="col_HN12_N101_1______1_6" class="rakuda_collision" />
+                                                              <body name="fr12_s102_1__ソリッド1" pos="-0.0010253 -0.000350675 0.000963471" quat="0.996696 -0.0574289 -0.0196418 0.0539657">
+                                                                <inertial pos="0.00197148 0.000674287 -0.00185259" quat="0.529915944 0.756797745 0.313475458 -0.219498069" mass="0.00560979" diaginertia="1.44074941e-06 1.12405017e-06 4.32570316e-07" />
+                                                                <geom pos="-0.0812548 -0.173366 0.10023" quat="1 0 0 0" rgba="0.0196078 0.0196078 0.0196078 1" mesh="vis_fr12_s102_1______1" class="rakuda_visual" />
+                                                                <geom pos="-0.0812548 -0.173366 0.10023" quat="1 0 0 0" mesh="col_fr12_s102_1______1" class="rakuda_collision" />
+                                                                <body name="xm430_w350_1__ソリッド5_8" pos="0.0137886 0.0153702 0.0074755" quat="1 0 0 0">
+                                                                  <inertial pos="0.00631571 0.00343608 -0.0220251" quat="0.153159347 0.69041751 0.596337756 0.379798838" mass="0.02915136" diaginertia="6.91254829e-06 5.1863628e-06 2.08086791e-06" />
+                                                                  <geom pos="-0.0950434 -0.188736 0.0927543" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______5_8" class="rakuda_visual" />
+                                                                  <geom pos="-0.0950434 -0.188736 0.0927543" quat="1 0 0 0" mesh="col_XM430_W350_1______5_8" class="rakuda_collision" />
+                                                                  <body name="wrist_pitch_left" pos="0.0148492 0.0136413 -0.0273919" quat="1 0 0 0">
+                                                                    <inertial pos="1.77348e-08 -0.00206089 -0.000749963" quat="0.696364855 0.122784318 -0.122784318 0.696364855" mass="0.001567755" diaginertia="6.98104349e-08 3.627288e-08 3.62733751e-08" />
+                                                                    <joint name="wrist_pitch_left_dof" range="-1.69893 1.96627" actuatorfrcrange="-1 1" axis="0 -0.939693 -0.34202" armature="0.01" damping="0.5" />
+                                                                    <geom pos="0.0781334 -0.207752 0.134915" quat="0.896259 6.75248e-08 0.416782 0.151696" rgba="0.956863 0.956863 0.956863 1" mesh="vis_HN12_N101_1______1_8" class="rakuda_visual" />
+                                                                    <geom pos="0.0781334 -0.207752 0.134915" quat="0.896259 6.75248e-08 0.416782 0.151696" mesh="col_HN12_N101_1______1_8" class="rakuda_collision" />
+                                                                    <body name="fr12_h104_1__ソリッド1_3" pos="0 -0.00136255 -0.000495929" quat="0.896259 6.75248e-08 0.416782 0.151696">
+                                                                      <inertial pos="0.0222765 -0.020932 0.00195805" quat="0.567043423 0.80981712 0.123303445 -0.0863379862" mass="0.011649447" diaginertia="5.02568909e-06 3.50233722e-06 2.73688669e-06" />
+                                                                      <geom pos="-0.109893 -0.201014 0.120642" quat="1 0 0 0" rgba="0.0196078 0.0196078 0.0196078 1" mesh="vis_fr12_h104_1______1_3" class="rakuda_visual" />
+                                                                      <geom pos="-0.109893 -0.201014 0.120642" quat="1 0 0 0" mesh="col_fr12_h104_1______1_3" class="rakuda_collision" />
+                                                                      <body name="hn12_i101_1__ソリッド1_3" pos="0 -0.0357083 -0.0129968" quat="1 0 0 0">
+                                                                        <inertial pos="-4.16334e-17 0.00214181 0.000779555" quat="0.696364084 0.122788693 -0.122788693 0.696364084" mass="0.0014627547" diaginertia="7.15403617e-08 4.325373e-08 4.32539183e-08" />
+                                                                        <geom pos="-0.109893 -0.165306 0.133639" quat="1 0 0 0" rgba="0.898039 0.898039 0.898039 1" mesh="vis_HN12_I101_1______1_3" class="rakuda_visual" />
+                                                                        <geom pos="-0.109893 -0.165306 0.133639" quat="1 0 0 0" mesh="col_HN12_I101_1______1_3" class="rakuda_collision" />
+                                                                        <body name="igus_jfm_1113_05_1__1_2" pos="0 0.00187939 0.00068404" quat="1 0 0 0">
+                                                                          <inertial pos="9.71445e-17 0.00158018 0.000575139" quat="0.696364322 0.122787339 -0.122787339 0.696364322" mass="0.0008358039" diaginertia="3.86461409e-08 2.1134547e-08 2.11345591e-08" />
+                                                                          <geom pos="-0.109893 -0.167186 0.132955" quat="1 0 0 0" rgba="0.858824 0.823529 0.705882 1" mesh="vis_igus_JFM_1113_05_1__1_2" class="rakuda_visual" />
+                                                                          <geom pos="-0.109893 -0.167186 0.132955" quat="1 0 0 0" mesh="col_igus_JFM_1113_05_1__1_2" class="rakuda_collision" />
+                                                                        </body>
+                                                                      </body>
+                                                                      <body name="xm430_w350_1__ソリッド3_10" pos="0.028 -0.0178542 -0.00649838" quat="1 0 0 0">
+                                                                        <inertial pos="0.00453739 -0.00467206 0.0128364" quat="0.984800732 0.173646754 -0.00372720654 -0.000657206374" mass="0.021624948" diaginertia="5.72966705e-06 4.43302521e-06 1.53997174e-06" />
+                                                                        <geom pos="-0.137893 -0.18316 0.127141" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______3_10" class="rakuda_visual" />
+                                                                        <geom pos="-0.137893 -0.18316 0.127141" mesh="col_XM430_W350_1______3_10" class="rakuda_collision" />
+                                                                        <body name="xm430_w350_1__ソリッド4_10" pos="0.0085 -0.00760046 -0.0112798" quat="1 0 0 0">
+                                                                          <inertial pos="0.00849645 0.00350827 0.022523" quat="0.984807587 0.173648651 0.000395900949 6.9808221e-05" mass="0.05954472" diaginertia="1.43849308e-05 1.18732394e-05 5.36466175e-06" />
+                                                                          <geom pos="-0.146393 -0.17556 0.13842" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______4_10" class="rakuda_visual" />
+                                                                          <geom pos="-0.146393 -0.17556 0.13842" mesh="col_XM430_W350_1______4_10" class="rakuda_collision" />
+                                                                          <body name="xm430_w350_1__ソリッド5_10" pos="0.017 0.00349622 0.0225561" quat="1 0 0 0">
+                                                                            <inertial pos="0.00419582 -2.33377e-05 6.41198e-05" quat="0.984807735 0.173648179 0.000186120688 3.28180998e-05" mass="0.02915136" diaginertia="6.91254069e-06 5.18636512e-06 2.08086779e-06" />
+                                                                            <geom pos="-0.163393 -0.179056 0.115864" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______5_10" class="rakuda_visual" />
+                                                                            <geom pos="-0.163393 -0.179056 0.115864" mesh="col_XM430_W350_1______5_10" class="rakuda_collision" />
+                                                                            <body name="gripper_left_dof" pos="0.01195 0.00410424 -0.0112763" quat="0.122785 -0.696364 0.122791 -0.696364">
+                                                                              <inertial pos="0 0 0" quat="1 0 0 0" mass="2.7e-06" diaginertia="1.08e-10 1.08e-10 1.08e-10" />
+                                                                              <site name="gripper_left" pos="0 0 0" quat="1 0 0 0" size="0.005" group="4" />
+                                                                            </body>
+                                                                          </body>
+                                                                        </body>
+                                                                      </body>
+                                                                    </body>
+                                                                  </body>
+                                                                  <body name="xm430_w350_1__ソリッド4_8" pos="0.00636396 -0.0004902 -0.0235055" quat="1 0 0 0">
+                                                                    <inertial pos="2.49142e-05 -0.0079822 -0.0029318" quat="0.15328497 0.690498937 0.596305612 0.379650566" mass="0.05954472" diaginertia="1.43849334e-05 1.18732709e-05 5.36465467e-06" />
+                                                                    <geom pos="-0.101407 -0.188246 0.11626" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______4_8" class="rakuda_visual" />
+                                                                    <geom pos="-0.101407 -0.188246 0.11626" quat="1 0 0 0" mesh="col_XM430_W350_1______4_8" class="rakuda_collision" />
+                                                                    <body name="xm430_w350_1__ソリッド3_8" pos="-0.00636396 -0.023472 0.014784" quat="1 0 0 0">
+                                                                      <inertial pos="0.00519002 0.00337204 -0.0208505" quat="0.150787743 0.688903413 0.59694107 0.382539545" mass="0.021624948" diaginertia="5.72967295e-06 4.43302015e-06 1.5399709e-06" />
+                                                                      <geom pos="-0.0950434 -0.164774 0.101476" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______3_8" class="rakuda_visual" />
+                                                                      <geom pos="-0.0950434 -0.164774 0.101476" quat="1 0 0 0" mesh="col_XM430_W350_1______3_8" class="rakuda_collision" />
+                                                                    </body>
+                                                                  </body>
+                                                                </body>
+                                                              </body>
+                                                            </body>
+                                                            <body name="x430_thrust_washer_1__part_1_3" pos="0.0144957 -0.000846457 0.00232562" quat="1 0 0 0">
+                                                              <inertial pos="0.0012732 -0.00106938 0.00293811" quat="0.535139305 0.76425949 0.294819078 -0.206434174" mass="0.007138962" diaginertia="1.80161838e-06 1.2431472e-06 6.36365822e-07" />
+                                                              <geom pos="-0.0798406 -0.172882 0.0989009" quat="1 0 0 0" rgba="0.615686 0.811765 0.929412 1" mesh="vis_x430_thrust_washer_1__Part_1_3" class="rakuda_visual" />
+                                                              <geom pos="-0.0798406 -0.172882 0.0989009" quat="1 0 0 0" mesh="col_x430_thrust_washer_1__Part_1_3" class="rakuda_collision" />
+                                                            </body>
+                                                          </body>
+                                                          <body name="rakuda_r3__upper_arm_cover_inside_r_1__ソリッド1_1" pos="-0.0203293 0.0167856 -0.0373467" quat="1 0 0 0">
+                                                            <inertial pos="0.000366579 0.0153266 0.00898089" quat="0.927198494 -0.236001337 0.0473064611 -0.28699899" mass="0.018123318" diaginertia="4.89327434e-06 4.67310865e-06 1.88806191e-06" />
+                                                            <geom pos="-0.0471369 -0.171229 0.11775" rgba="1 1 0 1" mesh="vis_rakuda_r3__upper_arm_cover_inside_R_1______1_1" class="rakuda_visual" />
+                                                            <geom pos="-0.0471369 -0.171229 0.11775" quat="1 0 0 0" mesh="col_rakuda_r3__upper_arm_cover_inside_R_1______1_1" class="rakuda_collision" />
+                                                          </body>
+                                                        </body>
+                                                        <body name="xm430_w350_1__ソリッド2_6" pos="0.030547 0.000735382 0.0301414" quat="1 0 0 0">
+                                                          <inertial pos="0.000609476 -0.000197818 0.0005435" quat="0.527406034 0.75321468 -0.321990976 0.225460268" mass="0.000104652" diaginertia="5.01857092e-10 4.28000171e-10 1.23340377e-10" />
+                                                          <geom pos="-0.0637539 -0.162761 0.0710931" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______2_6" class="rakuda_visual" />
+                                                          <geom pos="-0.0637539 -0.162761 0.0710931" mesh="col_XM430_W350_1______2_6" class="rakuda_collision" />
+                                                        </body>
+                                                      </body>
+                                                    </body>
+                                                  </body>
+                                                  <body name="xm430_w350_1__ソリッド4_3" pos="0.02 -0.00422517 -0.0132438" quat="1 0 0 0">
+                                                    <inertial pos="3.5234e-05 -0.00799072 -0.00290839" quat="0.405742657 0.579460874 0.405416564 0.578995165" mass="0.05954472" diaginertia="1.43849269e-05 1.1873254e-05 5.36465117e-06" />
+                                                    <geom pos="-0.024 -0.165875 0.054797" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______4_3" class="rakuda_visual" />
+                                                    <geom pos="-0.024 -0.165875 0.054797" quat="1 0 0 0" mesh="col_XM430_W350_1______4_3" class="rakuda_collision" />
+                                                    <body name="xm430_w350_1__ソリッド3_3" pos="-0.02 -0.0189617 0.00480444" quat="1 0 0 0">
+                                                      <inertial pos="0.0183398 3.85835e-05 -0.0116919" quat="0.404042265 0.577031359 0.407112252 0.581415749" mass="0.021624948" diaginertia="5.72968576e-06 4.43303028e-06 1.53996955e-06" />
+                                                      <geom pos="-0.004 -0.146138 0.0502747" quat="1 0 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______3_3" class="rakuda_visual" />
+                                                      <geom pos="-0.004 -0.146138 0.0502747" quat="1 0 0 0" mesh="col_XM430_W350_1______3_3" class="rakuda_collision" />
+                                                      <body name="xm430_w350_1__ソリッド2_3" pos="0.04145 -0.0025807 -0.0126453" quat="1 0 0 0">
+                                                        <inertial pos="0.000839942 2.06622e-05 7.52044e-06" quat="0.984807805 0.173647884 0 0" mass="0.000104652" diaginertia="5.018193e-10 4.2803928e-10 1.2334041e-10" />
+                                                        <geom pos="-0.04555 -0.14351 0.0629371" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM430_W350_1______2_3" class="rakuda_visual" />
+                                                        <geom pos="-0.04555 -0.14351 0.0629371" mesh="col_XM430_W350_1______2_3" class="rakuda_collision" />
+                                                      </body>
+                                                    </body>
+                                                    <body name="rakuda_r3__arm_cover_elbow_r1_1__ソリッド1" pos="-0.02325 -0.00508539 0.00666249" quat="1 0 0 0">
+                                                      <inertial pos="0.0262421 -2.19884e-05 -0.0174824" quat="0.411282443 0.575192796 0.399840307 0.583204706" mass="0.05256198" diaginertia="3.32414137e-05 3.1086677e-05 1.43493963e-05" />
+                                                      <geom pos="-0.00075 -0.16079 0.0481345" quat="1 0 0 0" rgba="1 1 0 1" mesh="vis_rakuda_r3__arm_cover_elbow_r1_1______1" class="rakuda_visual" />
+                                                      <geom pos="-0.00075 -0.16079 0.0481345" quat="1 0 0 0" mesh="col_rakuda_r3__arm_cover_elbow_r1_1______1" class="rakuda_collision" />
+                                                    </body>
+                                                  </body>
+                                                </body>
+                                              </body>
+                                            </body>
+                                            <body name="x430_thrust_washer_1__part_1_1" pos="0.012 0.00273616 -0.00751754" quat="1 0 0 0">
+                                              <inertial pos="0.00311118 -0.000448252 0.00123156" quat="0.395509499 0.564846724 -0.593261102 0.415405439" mass="0.007138962" diaginertia="1.80161884e-06 1.24314627e-06 6.36366288e-07" />
+                                              <geom pos="-0.012 -0.150534 0.0375008" quat="1 0 0 0" rgba="0.615686 0.811765 0.929412 1" mesh="vis_x430_thrust_washer_1__Part_1_1" class="rakuda_visual" />
+                                              <geom pos="-0.012 -0.150534 0.0375008" quat="1 0 0 0" mesh="col_x430_thrust_washer_1__Part_1_1" class="rakuda_collision" />
+                                            </body>
+                                          </body>
+                                          <body name="rakuda_r3__upper_arm_cover_inside_l_1__ソリッド1" pos="0 0.00410424 -0.0112763" quat="1 0 0 0">
+                                            <inertial pos="0.00252002 -0.0171047 -0.00409554" quat="0.712286133 0.607693066 0.305216365 0.17378312" mass="0.018123291" diaginertia="4.89328019e-06 4.67311117e-06 1.88806165e-06" />
+                                            <geom pos="0.02325 -0.154289 0.024428" quat="1 0 0 0" rgba="1 1 0 1" mesh="vis_rakuda_r3__upper_arm_cover_inside_L_1______1" class="rakuda_visual" />
+                                            <geom pos="0.02325 -0.154289 0.024428" quat="1 0 0 0" mesh="col_rakuda_r3__upper_arm_cover_inside_L_1______1" class="rakuda_collision" />
+                                          </body>
+                                        </body>
+                                      </body>
+                                    </body>
+                                    <body name="rakuda_r3__arm_cover_upperarm_side_1__ソリッド1" pos="-0.0025 0.0124907 0.0146559" quat="1 0 0 0">
+                                      <inertial pos="-0.008 -0.0119914 -0.00141357" quat="0.897829919 0.440342409 0 0" mass="0.06986088" diaginertia="5.987142e-05 5.71233305e-05 3.16208095e-05" />
+                                      <geom pos="-0.008 -0.141392 -0.0365907" quat="1 0 0 0" rgba="1 1 0 1" mesh="vis_rakuda_r3__arm_cover_upperarm_side_1______1" class="rakuda_visual" />
+                                      <geom pos="-0.008 -0.141392 -0.0365907" mesh="col_rakuda_r3__arm_cover_upperarm_side_1______1" class="rakuda_collision" />
+                                    </body>
+                                  </body>
+                                  <body name="rakuda29_joint_upper_arm_r1_1__ソリッド1" pos="-0.0064 0.0268797 -0.03438" quat="1 0 0 0">
+                                    <inertial pos="0.00343342 -0.00924123 -0.0140813" quat="0.984727512 0.173633821 -0.0125740559 -0.00221714266" mass="0.014964129" diaginertia="3.24851633e-06 1.99517789e-06 1.32618608e-06" />
+                                    <geom pos="-0.022 -0.15048 -0.00212003" rgba="1 0.968627 0.72549 1" mesh="vis_rakuda29_joint_upper_arm_r1_1______1" class="rakuda_visual" />
+                                    <geom pos="-0.022 -0.15048 -0.00212003" mesh="col_rakuda29_joint_upper_arm_r1_1______1" class="rakuda_collision" />
+                                  </body>
+                                </body>
+                              </body>
+                              <body name="hn13_i101_1__ソリッド1" pos="-0.0085 0.032 -0.008" quat="1 0 0 0">
+                                <inertial pos="0.00270614 0 2.08167e-17" quat="1 0 0 0" mass="0.003170475" diaginertia="2.6524206e-07 1.5600141e-07 1.5600141e-07" />
+                                <geom pos="0.0245 -0.1236 -0.0365" rgba="0.956863 0.956863 0.956863 1" mesh="vis_HN13_I101_1______1" class="rakuda_visual" />
+                                <geom pos="0.0245 -0.1236 -0.0365" mesh="col_HN13_I101_1______1" class="rakuda_collision" />
+                              </body>
+                              <body name="rakuda_r3__shoulder_hinge_cover_1__ソリッド1_1__1_" pos="-0.0105 0.016 0" quat="1 0 0 0">
+                                <inertial pos="0 0 0" quat="1 0 0 0" mass="2.7e-06" diaginertia="1.08e-10 1.08e-10 1.08e-10" />
+                              </body>
+                              <body name="rakuda_r3__shoulder_hinge_cover_1__ソリッド1" pos="0.0425 0.016 0" quat="1 0 0 0">
+                                <inertial pos="0.00276299 0.00543175 -0.008" quat="0.707105086 0.707105086 0.00154840615 0.00154840615" mass="0.019116864" diaginertia="8.04368248e-06 6.144363e-06 2.17952732e-06" />
+                                <geom pos="-0.0265 -0.1076 -0.0445" quat="1 0 0 0" mesh="vis_rakuda_r3__shoulder_hinge_cover_1______1" class="rakuda_visual" />
+                                <geom pos="-0.0265 -0.1076 -0.0445" quat="1 0 0 0" mesh="col_rakuda_r3__shoulder_hinge_cover_1______1" class="rakuda_collision" />
+                              </body>
+                            </body>
+                          </body>
+                        </body>
+                        <body name="rakuda_r3__x540_thrust_axk1160_1__ソリッド1" pos="0.0135 0.0115 0.026">
+                          <inertial pos="-0.0135 -0.00109164 -0.00575005" quat="0.486286716 0.513347085 0.486286716 0.513347085" mass="0.014810148" diaginertia="5.54974648e-06 3.25125452e-06 2.4490971e-06" />
+                          <geom pos="-0.0135 -0.079 -0.071" quat="1 0 0 0" rgba="1 0.968627 0.72549 1" mesh="vis_rakuda_r3__x540_thrust_AXK1160_1______1" class="rakuda_visual" />
+                          <geom pos="-0.0135 -0.079 -0.071" quat="1 0 0 0" mesh="col_rakuda_r3__x540_thrust_AXK1160_1______1" class="rakuda_collision" />
+                          <body name="rakuda34_r2__spacer_axk1160_waist_ring_r1_1__ソリッド1" pos="-0.0135 0.0022 -0.0105" quat="1 0 0 0">
+                            <inertial pos="-3.16824e-18 0.000875 0" quat="0.707106781 0 0 0.707106781" mass="0.0007065765" diaginertia="1.3899924e-07 6.967998e-08 6.967998e-08" />
+                            <geom pos="0 -0.08115 -0.0605" quat="1 0 0 0" rgba="0 0 0 1" mesh="vis_rakuda34_r2__spacer_AXK1160_waist_ring_r1_1______1" class="rakuda_visual" />
+                            <geom pos="0 -0.08115 -0.0605" quat="1 0 0 0" mesh="col_rakuda34_r2__spacer_AXK1160_waist_ring_r1_1______1" class="rakuda_collision" />
+                          </body>
+                          <body name="axk1106_1___axk1106_1" pos="-0.0135 0.0022 -0.0105">
+                            <inertial pos="-1.98747e-17 0.00072 0" quat="0.707106781 0 0 0.707106781" mass="0.004125816" diaginertia="1.6037325e-06 8.026479e-07 8.026479e-07" />
+                            <geom pos="0 -0.08138 -0.0605" quat="1 0 0 0" rgba="0.74902 0.74902 0.74902 1" mesh="vis_AXK1106_1___AXK1106_1" class="rakuda_visual" />
+                            <geom pos="0 -0.08138 -0.0605" quat="1 0 0 0" mesh="col_AXK1106_1___AXK1106_1" class="rakuda_collision" />
+                          </body>
+                        </body>
+                      </body>
+                      <body name="rakuda_r3__chest_cover_r1_1__ソリッド1" pos="-0.00325 0.0025 -0.0165">
+                        <inertial pos="0.0167499 0.00603898 0.00671886" quat="0.537700538 0.459216232 0.537697552 0.459216644" mass="0.03481623" diaginertia="2.06046922e-05 1.59903518e-05 1.316736e-05" />
+                        <geom pos="0.01675 -0.049 -0.0545" quat="1 0 0 0" mesh="vis_rakuda_r3__chest_cover_r1_1______1" class="rakuda_visual" />
+                        <geom pos="0.01675 -0.049 -0.0545" quat="1 0 0 0" mesh="col_rakuda_r3__chest_cover_r1_1______1" class="rakuda_collision" />
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+              <body name="rakuda_r3__waist_cover_hip_1__ソリッド1" pos="-0.02925 0.01 0.0185">
+                <inertial pos="-0.00377657 -0.00999962 -0.00540183" quat="0.999954331 -2.06180946e-05 -0.00955695331 -9.14822913e-07" mass="0.022994847" diaginertia="6.53001353e-06 4.86980101e-06 1.84758427e-06" />
+                <geom pos="0.04475 -0.01 -0.008" rgba="0.866667 0.486275 0.0588235 1" mesh="vis_rakuda_r3__waist_cover_hip_1______1" class="rakuda_visual" />
+                <geom pos="0.04475 -0.01 -0.008" mesh="col_rakuda_r3__waist_cover_hip_1______1" class="rakuda_collision" />
+                <body name="rakuda_r3__base_cable_guide_d435usb_r1_1__ソリッド1" pos="-0.00725 -0.01625 0.01" quat="1 0 0 0">
+                  <inertial pos="-0.00414997 0.00625 0.0025973" quat="0.707106001 0.707106001 -0.00105069559 0.00105069559" mass="0.008610273" diaginertia="7.65730002e-07 5.50382298e-07 3.050703e-07" />
+                  <geom pos="0.052 0.00625 -0.018" quat="1 0 0 0" rgba="0.866667 0.486275 0.0588235 1" mesh="vis_rakuda_r3__base_cable_guide_d435usb_r1_1______1" class="rakuda_visual" />
+                  <geom pos="0.052 0.00625 -0.018" quat="1 0 0 0" mesh="col_rakuda_r3__base_cable_guide_d435usb_r1_1______1" class="rakuda_collision" />
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+        <body name="axk1106_1___axk1106" pos="0 0 -0.0261">
+          <inertial pos="-1.1355e-18 -4.88456e-19 0.00072" quat="0.5 0.5 -0.5 0.5" mass="0.004125816" diaginertia="1.6037325e-06 8.026479e-07 8.026479e-07" />
+          <geom pos="0 0 0.02582" quat="1 0 0 0" rgba="0.74902 0.74902 0.74902 1" mesh="vis_AXK1106_1___AXK1106" class="rakuda_visual" />
+          <geom pos="0 0 0.02582" quat="1 0 0 0" mesh="col_AXK1106_1___AXK1106" class="rakuda_collision" />
+        </body>
+      </body>
+      <body name="_ゴム足Φ24x10_c_30_rk_24_black_1__none__1_" pos="-0.0123935 -0.0283965 0.0895783">
+        <inertial pos="0 0 0" quat="1 0 0 0" mass="2.7e-06" diaginertia="1.08e-10 1.08e-10 1.08e-10" />
+      </body>
+    </body>
+  </worldbody>
+  <contact>
+    <exclude body1="rakuda2_r3_waist_base_1__ソリッド1" body2="torso_yaw" />
+    <exclude body1="torso_yaw" body2="axk1106_1___axk1106" />
+    <exclude body1="xm540_w270_1__ソリッド2_3" body2="axk1106_1___axk1106" />
+  </contact>
+  <actuator>
+    <position name="torso_yaw_dof" joint="torso_yaw_dof" kp="36.5" dampratio="1" forcerange="-7.3 7.3" ctrlrange="-3.14159265 3.14159265" />
+    <position name="head_yaw_dof" joint="head_yaw_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-1.81055 1.33104" />
+    <position name="head_pitch_dof" joint="head_pitch_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-1.50009 0.594303" />
+    <position name="shoulder_pitch_right_dof" joint="shoulder_pitch_right_dof" kp="36.5" dampratio="1" forcerange="-7.3 7.3" ctrlrange="-3.14159265 3.14159265" />
+    <position name="shoulder_roll_right_dof" joint="shoulder_roll_right_dof" kp="36.5" dampratio="1" forcerange="-7.3 7.3" ctrlrange="-3.36135 0.478376" />
+    <position name="elbow_yaw_right_dof" joint="elbow_yaw_right_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-3.45569 2.82749" />
+    <position name="elbow_pitch_right_dof" joint="elbow_pitch_right_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-2.79253 0" />
+    <position name="wrist_yaw_right_dof" joint="wrist_yaw_right_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-0.891121 3.29767" />
+    <position name="wrist_pitch_right_dof" joint="wrist_pitch_right_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-2.48005 1.41204" />
+    <position name="shoulder_pitch_left_dof" joint="shoulder_pitch_left_dof" kp="36.5" dampratio="1" forcerange="-7.3 7.3" ctrlrange="-3.14159265 3.14159265" />
+    <position name="shoulder_roll_left_dof" joint="shoulder_roll_left_dof" kp="36.5" dampratio="1" forcerange="-7.3 7.3" ctrlrange="-0.392932 3.44679" />
+    <position name="elbow_yaw_left_dof" joint="elbow_yaw_left_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-2.42791 3.85528" />
+    <position name="elbow_pitch_left_dof" joint="elbow_pitch_left_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-0.746788 2.30754" />
+    <position name="wrist_yaw_left_dof" joint="wrist_yaw_left_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-2.25701 1.93178" />
+    <position name="wrist_pitch_left_dof" joint="wrist_pitch_left_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-1.69893 1.96627" />
+  </actuator>
+</mujoco>

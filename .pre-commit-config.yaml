@@ -7,6 +7,11 @@ repos:
       - id: check-yaml
         args: [--unsafe]
       - id: check-added-large-files
+        # The packaged Rakuda model is 2.8 MB: a single MJCF with the convex
+        # hulls inlined, so that `pip install robopy` alone is enough to put the
+        # robot in a RoboVerse scene (a wheel cannot reach models/).
+        # See docs/robots/rakuda_roboverse.md.
+        args: [--maxkb=3000]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.9.7

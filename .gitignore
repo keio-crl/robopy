@@ -24,3 +24,8 @@ data/
 
 # Robot config
 .robopy/
+
+# A RoboVerse checkout sat beside robopy, and the asset cache MetaSim creates in
+# the working directory. See docs/robots/rakuda_roboverse.md.
+/RoboVerse
+/roboverse_data/

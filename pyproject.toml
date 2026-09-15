@@ -39,6 +39,17 @@ kinematics = [
     "qpsolvers>=4.3.2",
     "quadprog>=0.1.12",
 ]
+# Re-exporting the CAD model to MJCF.  Only needed to *regenerate* the model:
+# the exported MJCF is committed, so simulating the robot needs whatever the
+# simulator itself brings.
+sim = ["mujoco>=3.2"]
+# Everything needed to put the Rakuda into a RoboVerse scene and step it.
+# MetaSim finds robopy's content pack through the entry point below, so this
+# extra exists only to pull the simulator in; `pip install robopy` alone is
+# enough when MetaSim and MuJoCo are already in the environment.
+roboverse = [
+    "roboverse-metasim[mujoco]>=1.0.0b0",
+]
 
 [dependency-groups]
 dev = [
@@ -74,6 +85,16 @@ audio = ["pyaudio>=0.2.14"]
 
 [project.scripts]
 robopy-viewer = "robopy.viewer.__main__:main"
+robopy-rakuda-mjcf = "robopy.sim.mjcf_export:main"
+
+# MetaSim (RoboVerse) discovers content packs through this entry point group and
+# gives them precedence over its own bundled pack.  Declaring it means that
+# installing robopy is all it takes for `get_robot("rakuda")` and the
+# `rakuda.*` tasks to resolve -- the RoboVerse checkout needs no edits.
+# MetaSim appends the role to this root, i.e. it imports
+# `robopy.roboverse.robots`, `robopy.roboverse.tasks`, and so on.
+[project.entry-points."metasim.packages"]
+robopy = "robopy.roboverse"
 
 [build-system]
 requires = ["uv_build>=0.8.12,<0.9.0"]
