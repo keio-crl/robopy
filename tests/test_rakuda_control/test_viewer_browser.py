@@ -170,6 +170,17 @@ class TestMeshPlacement:
             page.close()
 
 
+def _bend_the_elbows(page) -> None:  # type: ignore[no-untyped-def]
+    """Leave the singular start pose: at q = 0 the arms hang fully extended."""
+    for joint, deg in (("elbow_pitch_left_dof", 45), ("elbow_pitch_right_dof", -45)):
+        field = page.locator(f".joint[data-joint={joint}] input.num")
+        field.fill(str(deg))
+        field.press("Enter")
+    page.locator(".tab[data-tab=ee]").click()
+    page.locator("#ee-capture-all").click()
+    page.wait_for_timeout(200)
+
+
 class TestCanvasSizing:
     """The canvas needs its CSS size set, not only its backing store."""
 
@@ -232,16 +243,7 @@ class TestTargetBars:
     ) -> None:
         page, errors = _open(browser, server.url, mesh_delay_s=0.0)
         try:
-            # Bend the elbows first: at q = 0 the arms hang fully extended, on
-            # the edge of the workspace, where a Cartesian jog has nowhere to
-            # go (the page's own help says so).
-            for joint, deg in (("elbow_pitch_left_dof", 45), ("elbow_pitch_right_dof", -45)):
-                field = page.locator(f".joint[data-joint={joint}] input.num")
-                field.fill(str(deg))
-                field.press("Enter")
-            page.locator(".tab[data-tab=ee]").click()
-            page.locator("#ee-capture-all").click()
-
+            _bend_the_elbows(page)
             bar = page.locator(".side[data-side=left] input[data-bar=x]")
             start = float(bar.input_value())
             before = page.evaluate("() => window.__robopy_state.ee.left.current.p")
@@ -258,6 +260,66 @@ class TestTargetBars:
             assert page.evaluate(
                 "() => window.__robopy_state.ee.left.target.p[0]"
             ) == pytest.approx((start + 60) / 1000, abs=1e-6)
+            assert errors == []
+        finally:
+            page.close()
+
+
+class TestDraggingTheHand:
+    """The handle on a target can be grabbed in the 3D view and dragged."""
+
+    def _drag(self, page, start, dx, dy) -> None:  # type: ignore[no-untyped-def]
+        page.mouse.move(start["x"], start["y"])
+        page.mouse.down()
+        for step in range(1, 6):
+            page.mouse.move(start["x"] + step * dx / 5, start["y"] + step * dy / 5)
+            page.wait_for_timeout(80)
+        page.mouse.up()
+
+    def test_dragging_the_handle_moves_that_hand(self, server: ViewerServer, browser) -> None:
+        page, errors = _open(browser, server.url, mesh_delay_s=0.0)
+        try:
+            _bend_the_elbows(page)
+            handle = page.evaluate("() => window.__robopy_state.handleScreen('left')")
+            assert handle is not None
+            page.mouse.move(handle["x"], handle["y"])
+            cursor = "() => document.querySelector('#viewport canvas').style.cursor"
+            assert page.evaluate(cursor) == "grab"
+
+            before = page.evaluate("() => window.__robopy_state.ee.left.current.p")
+            # Where the other hand's handle sits on screen only moves if the
+            # camera does: the press must drag, not orbit underneath.
+            right_before = page.evaluate("() => window.__robopy_state.handleScreen('right')")
+            self._drag(page, handle, 50, 0)
+            page.wait_for_function(
+                "(b) => { const p = window.__robopy_state.ee.left.current.p;"
+                " return Math.hypot(p[0]-b[0], p[1]-b[1], p[2]-b[2]) > 0.02; }",
+                arg=before,
+                timeout=15_000,
+            )
+            right_after = page.evaluate("() => window.__robopy_state.handleScreen('right')")
+            assert abs(right_after["x"] - right_before["x"]) < 1.0
+            assert abs(right_after["y"] - right_before["y"]) < 1.0
+            assert errors == []
+        finally:
+            page.close()
+
+    def test_dragging_anywhere_else_still_orbits_the_view(
+        self, server: ViewerServer, browser
+    ) -> None:
+        page, errors = _open(browser, server.url, mesh_delay_s=0.0)
+        try:
+            _bend_the_elbows(page)
+            before = page.evaluate("() => window.__robopy_state.ee.left.current.p")
+            handle_before = page.evaluate("() => window.__robopy_state.handleScreen('left')")
+            self._drag(page, {"x": 120.0, "y": 700.0}, 120, 0)
+            page.wait_for_timeout(500)
+            handle_after = page.evaluate("() => window.__robopy_state.handleScreen('left')")
+            after = page.evaluate("() => window.__robopy_state.ee.left.current.p")
+            # The camera turned (the handle is elsewhere on screen) and nothing
+            # was commanded (the hand is where it was).
+            assert abs(handle_after["x"] - handle_before["x"]) > 5.0
+            assert after == before
             assert errors == []
         finally:
             page.close()

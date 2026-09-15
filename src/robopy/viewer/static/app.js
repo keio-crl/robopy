@@ -18,6 +18,7 @@ const state = {
   meshes: [],                  // THREE.Object3D per geometry
   tcpFrames: {},               // side -> AxesHelper (current)
   targetFrames: {},            // side -> AxesHelper (target)
+  handles: {},                 // side -> draggable sphere sitting on the target
   ee: {                        // side -> {enabled, target:{p:[3], q:[4]} | null, current:{p,q}|null}
     left: { enabled: true, target: null, current: null },
     right: { enabled: true, target: null, current: null },
@@ -58,6 +59,8 @@ const worldAxes = new THREE.AxesHelper(0.15);
 scene.add(worldAxes);
 const frameGroup = new THREE.Group();          // TCP + target triads (toggleable)
 scene.add(frameGroup);
+const handleGroup = new THREE.Group();         // the grab handles; always shown, they are the affordance
+scene.add(handleGroup);
 
 function resize() {
   const w = viewport.clientWidth, h = viewport.clientHeight;
@@ -524,6 +527,11 @@ function jogTarget(side, key, dir) {
 }
 function updateTargetFrame(side) {
   const t = state.ee[side].target, triad = state.targetFrames[side];
+  const handle = state.handles[side];
+  if (handle && t) {
+    handle.position.set(...t.p);
+    handle.visible = state.ee[side].enabled;
+  }
   if (!t || !triad) return;
   triad.position.set(...t.p);
   triad.quaternion.set(...t.q);
@@ -645,6 +653,146 @@ async function animateTo(target, durationMs) {
   });
 }
 
+// ------------------------------------------------------------------ dragging a hand in the 3D view
+// Grabbing the hand is the same edit as typing into the target boxes: the
+// handle sits on the target pose, and dragging it writes that target and asks
+// the solver for a pose that reaches it. Motion follows the pointer on the
+// plane through the target that faces the camera; orbit the view to move along
+// the remaining axis, or grab with Shift held to keep x and y and slide along
+// world Z. Only the position is dragged -- the orientation stays whatever the
+// target already had, which is what the boxes and the bars edit.
+const raycaster = new THREE.Raycaster();
+const pointerNdc = new THREE.Vector2();
+const dragPlane = new THREE.Plane();
+const drag = { side: null, pointerId: null, vertical: false, offset: new THREE.Vector3(), origin: new THREE.Vector3() };
+
+function makeHandle(side) {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.018, 24, 16),
+    new THREE.MeshStandardMaterial({
+      color: side === 'left' ? 0x6fa8ff : 0xff9c6b,
+      roughness: 0.35,
+      transparent: true,
+      opacity: 0.6,
+      // Drawn over everything: a handle swallowed by the gripper mesh is one
+      // nobody can find, and the triads are drawn this way too.
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  mesh.userData.side = side;
+  mesh.renderOrder = 11;
+  mesh.visible = false;
+  handleGroup.add(mesh);
+  return mesh;
+}
+
+function pointerRay(event) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointerNdc.set(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -((event.clientY - rect.top) / rect.height) * 2 + 1,
+  );
+  raycaster.setFromCamera(pointerNdc, camera);
+  return raycaster;
+}
+function handleUnder(event) {
+  const hits = pointerRay(event).intersectObjects(handleGroup.children, false);
+  const hit = hits.find((h) => h.object.visible);
+  return hit ? hit.object.userData.side : null;
+}
+function planePoint(event, out) {
+  return pointerRay(event).ray.intersectPlane(dragPlane, out) ? out : null;
+}
+
+// Client coordinates of a handle, for debugging and the browser test: the same
+// projection the renderer uses, so the test clicks where the user would.
+state.handleScreen = (side) => {
+  const handle = state.handles[side];
+  if (!handle || !handle.visible) return null;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const ndc = handle.position.clone().project(camera);
+  return {
+    x: rect.left + ((ndc.x + 1) / 2) * rect.width,
+    y: rect.top + ((-ndc.y + 1) / 2) * rect.height,
+  };
+};
+
+function startDrag(event) {
+  if (event.button !== undefined && event.button !== 0) return;
+  if (!state.model?.ik) return;
+  const side = handleUnder(event);
+  if (side === null || !state.ee[side].enabled) return;
+  ensureTarget(side);
+  const target = state.ee[side].target;
+  if (!target) return;
+
+  // Stop the event before OrbitControls sees it, otherwise the same press
+  // starts an orbit underneath the drag.
+  event.stopPropagation();
+  event.preventDefault();
+  controls.enabled = false;
+
+  const origin = new THREE.Vector3(...target.p);
+  const forward = camera.getWorldDirection(new THREE.Vector3()).negate();
+  drag.vertical = !!event.shiftKey;      // fixed for the whole drag: a plane swapped mid-drag jumps
+  let normal = forward;
+  if (drag.vertical) {
+    // A plane holding the world Z axis and facing the camera as squarely as it
+    // can; looking straight down there is no such plane, so keep the free one.
+    const flat = new THREE.Vector3(forward.x, forward.y, 0);
+    if (flat.lengthSq() > 1e-6) normal = flat.normalize();
+  }
+  dragPlane.setFromNormalAndCoplanarPoint(normal, origin);
+  const grabbed = planePoint(event, new THREE.Vector3());
+  drag.offset.copy(grabbed ? grabbed.sub(origin) : new THREE.Vector3());
+  drag.side = side;
+  drag.pointerId = event.pointerId;
+  drag.origin = origin;
+  renderer.domElement.setPointerCapture?.(event.pointerId);
+  renderer.domElement.style.cursor = 'grabbing';
+  showTab('ee');                          // so the numbers being edited are in view
+}
+
+function moveDrag(event) {
+  if (drag.side === null) {
+    if (event.target === renderer.domElement) {
+      const side = handleUnder(event);
+      renderer.domElement.style.cursor = side === null ? '' : 'grab';
+    }
+    return;
+  }
+  if (drag.pointerId !== null && event.pointerId !== drag.pointerId) return;
+  const point = planePoint(event, new THREE.Vector3());
+  if (!point) return;
+  point.sub(drag.offset);
+  if (drag.vertical) { point.x = drag.origin.x; point.y = drag.origin.y; }
+  state.ee[drag.side].target.p = [point.x, point.y, point.z];
+  writeTargetInputs(drag.side);
+  updateTargetFrame(drag.side);
+  maybeLiveSolve({ animate: false, iterations: 150 });
+}
+
+function endDrag(event) {
+  if (drag.side === null) return;
+  if (drag.pointerId !== null && event && event.pointerId !== drag.pointerId) return;
+  if (drag.pointerId !== null) renderer.domElement.releasePointerCapture?.(drag.pointerId);
+  drag.side = null;
+  drag.pointerId = null;
+  controls.enabled = true;
+  renderer.domElement.style.cursor = '';
+  // Once on release with the full budget, whatever "solve on every jog" says:
+  // letting go of a hand somewhere is a request to put it there.
+  solveIK({ animate: false });
+}
+
+// Capture on the container: at the canvas itself OrbitControls' own listener
+// runs first, and stopping propagation there would be too late.
+viewport.addEventListener('pointerdown', startDrag, true);
+window.addEventListener('pointermove', moveDrag);
+window.addEventListener('pointerup', endDrag);
+window.addEventListener('pointercancel', endDrag);
+
 // ------------------------------------------------------------------ info + tabs
 function buildInfo(model) {
   const dl = $('#info-list');
@@ -660,10 +808,11 @@ function buildInfo(model) {
   dl.innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
   $('#info-warnings').innerHTML = model.warnings.map((w) => `<li>${w}</li>`).join('') || '<li class="dim">none</li>';
 }
-document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => {
-  document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x === t));
-  document.querySelectorAll('.tab-body').forEach((b) => b.classList.toggle('active', b.id === `tab-${t.dataset.tab}`));
-}));
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === name));
+  document.querySelectorAll('.tab-body').forEach((b) => b.classList.toggle('active', b.id === `tab-${name}`));
+}
+document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => showTab(t.dataset.tab)));
 
 // ------------------------------------------------------------------ boot
 (async function boot() {
@@ -674,6 +823,8 @@ document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () 
     for (const side of Object.keys(model.tcp_frames)) {
       state.tcpFrames[side] = makeTriad(0.06, 1); frameGroup.add(state.tcpFrames[side]);
       state.targetFrames[side] = makeTriad(0.09, 0.55); frameGroup.add(state.targetFrames[side]);
+      // No solver, no drag: moving a target nothing follows would be a lie.
+      if (model.ik) state.handles[side] = makeHandle(side);
     }
     buildJointsPanel(model);
     buildEEPanel(model);
