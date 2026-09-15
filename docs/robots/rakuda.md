@@ -268,17 +268,24 @@ UFactory Studio の「モデルだけを動かして確認する」に相当す�
 ```bash
 uv sync --extra kinematics
 
-# 引数なし: 合成モデル（Rakudaのトポロジ、幾何は架空）で即起動
+# 引数なし: リポジトリ同梱の実モデル（models/rakuda）で起動。
+#   `git lfs pull` 済みなら視覚メッシュ、未取得なら凸包（<collision>）描画に自動フォールバック
 uv run robopy-viewer
+uv run robopy-viewer --geometry collision   # 凸包を明示的に描く
 
-# 実モデル（Rakuda-2_simulation_ready.zip を展開した <models> を指定）
-uv run robopy-viewer --urdf <models>/assembly_2/urdf/assembly_2.urdf --package-dir <models> \
-    --soft-limit torso_yaw_dof=-1.57,1.57 \
-    --soft-limit shoulder_pitch_left_dof=-3.14,3.14 --soft-limit shoulder_pitch_right_dof=-3.14,3.14
+# 合成モデル（Rakudaのトポロジ、幾何は架空）
+uv run robopy-viewer --synthetic
+
+# 別の場所にあるURDFを指定
+uv run robopy-viewer --urdf <path>/assembly_2.urdf --package-dir <models> \
+    --soft-limit torso_yaw_dof=-1.57,1.57
 
 # .robopy/rakuda/config.yaml の control.model（URDF・ソフト制限・TCP・関節グループ）を使う
 uv run robopy-viewer --config
 ```
+
+引数なし起動時の continuous 関節のソフト制限（±1.57 / ±3.14 rad）は**未計測の仮値**で、ソルバを構築する
+ためだけのものです。実測値は `.robopy/rakuda/config.yaml` に書いて `--config` で使ってください。
 
 `http://127.0.0.1:8765` を開きます（`--port`, `--host`, `--no-browser`, `--no-ik` あり）。
 
@@ -293,7 +300,7 @@ uv run robopy-viewer --config
 - **運動学は全てサーバ側**（`WholeBodyModel` / `DualArmIK`）。ページはFK/IKの結果を描くだけなので、
   表示と制御スタックの解が食い違いません。Pinocchio/Pinkが必要（`kinematics` extra）。
 - 3D描画は three.js を**同梱**（`src/robopy/viewer/static/vendor/`、MIT）。オフラインの実験室でも動きます。
-- 実モデルの視覚メッシュ（`assembly_2.urdf`、53 MB / 137個）はサーバから配信。初回ロードに数秒かかります。
+- 実モデルの視覚メッシュ（53 MB / 137個）があればサーバから配信し、初回ロードに数秒かかります。なければ凸包（2.9 MB）を描画します。
 - TCPは `gripper_*_dof` からのオフセット**ゼロ**で置かれ、Infoタブにその旨の警告が出ます（実測が必要）。
 - continuous関節にソフト制限を与えない場合、スライダ範囲は表示用の ±π、IKは「幾何学的検討のみ」と表示。
 - **姿勢モード（orientation）**: Rakudaの手首は2軸（yaw・pitch）で球面手首ではないため、
@@ -358,6 +365,55 @@ multi-turn位置は `[-pi, pi]` へ折り返しません。`zero_count` は
 `control.allow_hardware_current_output` は既定で `false` です。上記が測定され
 `validated: true` になるまで、バイラテラルモードは `configure()` で拒否されます。
 
+### モデルの配置（`models/rakuda/`）
+
+実モデル `Rakuda-2_simulation_ready.zip` はアーカイブ内のレイアウトのまま `models/rakuda/assembly_2/` に
+コミットしてあります（`package://assembly_2/...` は `--package-dir models/rakuda` で解決）。
+Python パッケージの外（リポジトリ直下）に置いてあるので wheel は肥大化しません。
+
+| 内容 | 管理 | 用途 |
+| --- | --- | --- |
+| `urdf/*.urdf`（3種）、`collision_meshes/`（凸包137個、2.9 MB） | 通常の git | 運動学・IK・衝突判定・凸包表示。**clone だけで動く** |
+| `meshes/`（視覚メッシュ137個、53 MB） | **Git LFS**（`.gitattributes` で設定済み） | ビューアの見た目のみ |
+
+**視覚メッシュはまだリポジトリに入っていません。** この実装を行った環境からは GitHub の LFS
+サーバ（`lfs.github.com`）への接続が egress ポリシーで拒否されるため、LFS オブジェクトを
+アップロードできませんでした。追加は一度だけ、LFS を使える手元のマシンで行います（`.gitattributes`
+の規則があるので `git add` 時に自動で LFS ポインタになります。詳細は `models/rakuda/README.md`）:
+
+```bash
+git lfs install
+unzip -j Rakuda-2_simulation_ready.zip 'assembly_2/meshes/*.stl' -d models/rakuda/assembly_2/meshes/
+git add models/rakuda/assembly_2/meshes
+git lfs ls-files | wc -l        # 137 と出れば LFS 管理になっている
+git commit -m "models(rakuda): add visual meshes via Git LFS" && git push
+```
+
+追加後のクローンでは次で取得します（任意。なくても凸包で表示できます）:
+
+```bash
+git lfs install && git lfs pull
+```
+
+`robopy.models.find_rakuda_model()` は視覚メッシュの状態を `visual_mesh_status` で
+`PRESENT`（実体あり）/ `LFS_POINTERS`（`git lfs pull` 前）/ `ABSENT`（未追加）と区別します。
+どちらの不在でもビューアは同じ URDF の `<collision>`（通常 git の凸包）を描画し、Info タブと起動ログに
+理由と対処が出ます（`--geometry visual|collision|auto` で明示もできます）。
+注意: `assembly_2_convex_collision.urdf` は `<visual>` に元の視覚メッシュ、`<collision>` に凸包を
+持つので、「凸包 URDF を読めば凸包が表示される」わけではありません。
+コードからは次のように参照します。
+
+```python
+from robopy.models import find_rakuda_model
+
+m = find_rakuda_model()            # None なら models/ が見つからない（wheel インストール等）
+m.convex_collision_urdf, m.visual_urdf, m.package_dir, m.visual_mesh_status
+m.visual_mesh_hint()               # 不在時の対処を 1 行で返す（PRESENT なら None）
+```
+
+探索順は環境変数 `ROBOPY_MODELS_DIR` → 引数 → パッケージ位置／カレントディレクトリから上位に `models/` を探す、
+です。wheel でインストールした環境では `ROBOPY_MODELS_DIR` でチェックアウトの `models/` を指してください。
+
 ### 実モデル（`Rakuda-2_simulation_ready.zip`）の監査結果
 
 `assembly_2/urdf/assembly_2_convex_collision.urdf` を `python -m robopy.kinematics.urdf_audit` で
@@ -368,7 +424,7 @@ multi-turn位置は `[-pi, pi]` へ折り返しません。`zero_count` は
 | ルートリンク | `root` |
 | リンク／関節 | 153 / 152（fixed=137, revolute=12, continuous=3） |
 | 可動自由度 | 15 = 胴体1 + 左腕6 + 右腕6 + 頭部2 |
-| メッシュ | 274参照、`--package-dir <展開先>` で全て解決 |
+| メッシュ | 274参照。`--package-dir <展開先>` で全て解決（視覚メッシュ未追加のチェックアウトでは `meshes/` の137参照が未解決になる） |
 | 総質量 | **0.0020693 kg → 幾何専用。動力学モデルとして採用不可** |
 | `effort` / `velocity` | revolute 12関節すべて `1 / 1` のプレースホルダ |
 | continuous関節 | `torso_yaw_dof`, `shoulder_pitch_left_dof`, `shoulder_pitch_right_dof`（範囲なし） |
@@ -400,7 +456,7 @@ multi-turn位置は `[-pi, pi]` へ折り返しません。`zero_count` は
 中立姿勢で20 mm以内のペアは、ベアリング・ワッシャ・カバー等の恒久的な機構的近接（全ペアで36組）です。
 `WholeBodyModel.pairs_closer_than()` で列挙し、理由つきで除外に記録してください。
 
-設定の雛形: `examples/config/rakuda_control.example.yaml`（未測定値はすべて `null`）。
+設定の雛形: `examples/config/rakuda_control.example.yaml`（`urdf_path` は同梱モデルを指し、未測定値はすべて `null`）。
 
 ### モデルの監査
 

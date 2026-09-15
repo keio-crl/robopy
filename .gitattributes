@@ -1,0 +1,6 @@
+# Rakuda visual meshes (53 MB of decorative STL) live in Git LFS. The URDFs and
+# the convex collision meshes are ordinary git files, so a plain clone can run
+# the kinematics, the solver and the collision-geometry viewer without LFS.
+# Fetch the visual meshes with:  git lfs install && git lfs pull
+models/rakuda/assembly_2/meshes/*.stl filter=lfs diff=lfs merge=lfs -text
+models/rakuda/assembly_2/meshes/*.STL filter=lfs diff=lfs merge=lfs -text

@@ -23,6 +23,7 @@ from numpy.typing import NDArray
 from robopy.kinematics.transforms import urdf_transform
 from robopy.kinematics.urdf_audit import audit_urdf, resolve_package_path
 from robopy.kinematics.urdf_model import WholeBodyModel
+from robopy.models import is_lfs_pointer
 
 __all__ = ["ModelBundle", "VisualGeometry", "matrix_to_pose"]
 
@@ -121,7 +122,8 @@ def _parse_shape(
     if element.tag == "mesh":
         uri = element.get("filename", "")
         resolved = resolve_package_path(uri, search) if uri else None
-        if resolved is None:
+        if resolved is None or is_lfs_pointer(resolved):
+            # A Git LFS pointer is not geometry; ModelBundle.load reports it.
             return None
         scale = _floats(element.get("scale"), scale)  # type: ignore[assignment]
         return {"type": "mesh"}, resolved, f"/mesh/{mesh_count}", scale
@@ -140,7 +142,20 @@ def _parse_shape(
     return None
 
 
-def _parse_visuals(urdf_path: Path, package_dirs: Sequence[Path]) -> List[VisualGeometry]:
+def _parse_visuals(
+    urdf_path: Path,
+    package_dirs: Sequence[Path],
+    *,
+    tag: str = "visual",
+) -> List[VisualGeometry]:
+    """Collect the renderable shapes under every ``<link>/<tag>`` element.
+
+    ``tag`` is ``"visual"`` normally, or ``"collision"`` to draw the collision
+    geometry instead -- the Rakuda export's convex URDF keeps the original
+    (Git LFS) meshes under ``<visual>`` and puts the plain-git convex hulls
+    under ``<collision>``, so a clone without LFS content can only be drawn
+    from its collision elements.
+    """
     root = ET.parse(urdf_path).getroot()
     materials: Dict[str, Tuple[float, float, float, float]] = {}
     for material_def in root.findall("material"):
@@ -160,7 +175,7 @@ def _parse_visuals(urdf_path: Path, package_dirs: Sequence[Path]) -> List[Visual
     mesh_count = 0
     for link in root.findall("link"):
         link_name = link.get("name", "")
-        for index, visual in enumerate(link.findall("visual")):
+        for index, visual in enumerate(link.findall(tag)):
             geometry = visual.find("geometry")
             if geometry is None or len(geometry) == 0:
                 continue
@@ -199,6 +214,50 @@ def _parse_visuals(urdf_path: Path, package_dirs: Sequence[Path]) -> List[Visual
     return geometries
 
 
+def _unavailable_meshes(
+    urdf_path: Path,
+    package_dirs: Sequence[Path],
+    *,
+    tag: str = "visual",
+) -> Tuple[List[Path], List[str]]:
+    """Meshes referenced under ``<link>/<tag>`` that cannot be drawn.
+
+    Returns ``(pointers, absent)``: files that resolve to Git LFS pointers, and
+    URIs that do not resolve to any file at all.
+    """
+    root = ET.parse(urdf_path).getroot()
+    search = [
+        *package_dirs,
+        urdf_path.parent,
+        urdf_path.parent.parent,
+        urdf_path.parent.parent.parent,
+    ]
+    pointers: List[Path] = []
+    absent: List[str] = []
+    for element in root.iter(tag):
+        for mesh in element.iter("mesh"):
+            uri = mesh.get("filename")
+            if not uri:
+                continue
+            resolved = resolve_package_path(uri, search)
+            if resolved is None:
+                if uri not in absent:
+                    absent.append(uri)
+            elif is_lfs_pointer(resolved) and resolved not in pointers:
+                pointers.append(resolved)
+    return pointers, absent
+
+
+def _lfs_pointer_meshes(
+    urdf_path: Path,
+    package_dirs: Sequence[Path],
+    *,
+    tag: str = "visual",
+) -> List[Path]:
+    """Meshes referenced under ``<link>/<tag>`` that resolve to Git LFS pointers."""
+    return _unavailable_meshes(urdf_path, package_dirs, tag=tag)[0]
+
+
 @dataclass
 class ModelBundle:
     """A loaded model plus the derived data the page consumes.
@@ -211,6 +270,8 @@ class ModelBundle:
         soft_limits: Soft limits applied to the model, for display.
         tcp_frames: ``{"left": frame, "right": frame}`` when TCPs are defined.
         warnings: Audit warnings, shown in the page's Info tab.
+        geometry_source: Which URDF elements the shapes came from, ``"visual"``
+            or ``"collision"``.
     """
 
     model: WholeBodyModel
@@ -220,6 +281,7 @@ class ModelBundle:
     soft_limits: Dict[str, Tuple[float, float]] = field(default_factory=dict)
     tcp_frames: Dict[str, str] = field(default_factory=dict)
     warnings: List[str] = field(default_factory=list)
+    geometry_source: str = "visual"
 
     @classmethod
     def load(
@@ -230,10 +292,16 @@ class ModelBundle:
         soft_limits: Mapping[str, Tuple[float, float]] | None = None,
         tcp_offsets: Mapping[str, Tuple[str, NDArray[np.float64]]] | None = None,
         default_continuous_limit_rad: float = math.pi,
+        geometry_source: str = "auto",
     ) -> "ModelBundle":
         """Load a URDF and prepare it for the viewer.
 
         Args:
+            geometry_source: ``"visual"`` draws ``<visual>`` elements,
+                ``"collision"`` draws ``<collision>`` elements, and ``"auto"``
+                draws the visual geometry when its meshes are present and falls
+                back to the collision geometry when they are Git LFS pointers
+                (or when the file has no visual meshes at all).
             urdf_path: The URDF file.
             package_dirs: Directories that resolve ``package://`` URIs.
             soft_limits: ``{joint: (lower, upper)}`` measured limits.
@@ -284,14 +352,58 @@ class ModelBundle:
                     f"+/-{default_continuous_limit_rad:.2f} rad as a display range only."
                 )
 
+        if geometry_source not in ("auto", "visual", "collision"):
+            raise ValueError("geometry_source must be 'auto', 'visual' or 'collision'.")
+        source = geometry_source
+        pointers, absent = _unavailable_meshes(path, dirs, tag="visual")
+        if source == "auto":
+            visual = _parse_visuals(path, dirs, tag="visual")
+            if visual:
+                source, geometries = "visual", visual
+            else:
+                source, geometries = "collision", _parse_visuals(path, dirs, tag="collision")
+                if pointers:
+                    warnings.append(
+                        f"{len(pointers)} visual mesh(es) are Git LFS pointers, so the collision "
+                        "geometry (convex hulls) is drawn instead. Run `git lfs install && git "
+                        "lfs pull` for the full meshes."
+                    )
+                if absent:
+                    warnings.append(
+                        f"{len(absent)} visual mesh file(s) are missing (e.g. {absent[0]}), so "
+                        "the collision geometry (convex hulls) is drawn instead. Place the "
+                        "assembly_2/meshes/*.stl files from Rakuda-2_simulation_ready.zip under "
+                        "models/rakuda/assembly_2/meshes/ (see models/rakuda/README.md)."
+                    )
+        else:
+            geometries = _parse_visuals(path, dirs, tag=source)
+            if source == "visual" and pointers:
+                warnings.append(
+                    f"{len(pointers)} visual mesh(es) are Git LFS pointers, not geometry, and are "
+                    "not drawn. Run `git lfs install && git lfs pull`, or draw the collision "
+                    "geometry (geometry_source='collision')."
+                )
+            if source == "visual" and absent:
+                warnings.append(
+                    f"{len(absent)} visual mesh file(s) are missing (e.g. {absent[0]}) and are "
+                    "not drawn. Copy them from Rakuda-2_simulation_ready.zip, or draw the "
+                    "collision geometry (geometry_source='collision')."
+                )
+        if not geometries:
+            warnings.append(
+                f"No renderable {source} geometry was found in {path.name}; the page will show "
+                "frames only."
+            )
+
         return cls(
             model=model,
             urdf_path=path,
-            geometries=_parse_visuals(path, dirs),
+            geometries=geometries,
             joint_order=tuple(model.movable_joint_names),
             soft_limits=applied,
             tcp_frames=tcp_frames,
             warnings=warnings,
+            geometry_source=source,
         )
 
     @property
@@ -340,6 +452,7 @@ class ModelBundle:
             ],
             "tcp_frames": dict(self.tcp_frames),
             "warnings": list(self.warnings),
+            "geometry_source": self.geometry_source,
         }
 
     def positions_to_q(self, positions: Mapping[str, float]) -> NDArray[np.float64]:

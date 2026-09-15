@@ -8,12 +8,13 @@
 # `validated: true` next to it. `allow_hardware_current_output` stays false
 # until every coupled joint's calibration is measured and validated.
 #
-# The model referenced here is the CAD export `Rakuda-2_simulation_ready.zip`.
-# Extract it so that `<models>/assembly_2/urdf/...` exists, then point
-# `urdf_path` at the convex-collision variant and `package_dirs` at `<models>`.
+# The model is committed under models/rakuda/ (the CAD export
+# `Rakuda-2_simulation_ready.zip`, layout preserved). URDFs and convex collision
+# meshes are plain git files; the 53 MB of visual meshes are Git LFS
+# (`git lfs install && git lfs pull`). Paths below are relative to the repo root.
 #
-#   python -m robopy.kinematics.urdf_audit <models>/assembly_2/urdf/assembly_2_convex_collision.urdf \
-#       --package-dir <models>
+#   python -m robopy.kinematics.urdf_audit \
+#       models/rakuda/assembly_2/urdf/assembly_2_convex_collision.urdf --package-dir models/rakuda
 #
 # What the audit of that file says (docs/robots/assets/rakuda_urdf_audit.json):
 #   - 153 links, 152 joints: fixed=137, revolute=12, continuous=3, 15 movable DOF
@@ -48,8 +49,8 @@ control:
   allow_hardware_current_output: false
 
   model:
-    urdf_path: null               # <models>/assembly_2/urdf/assembly_2_convex_collision.urdf
-    package_dirs: []              # [<models>]
+    urdf_path: models/rakuda/assembly_2/urdf/assembly_2_convex_collision.urdf
+    package_dirs: [models/rakuda]
     torso_joint: torso_yaw_dof
     left_arm_joints:              # shoulder -> wrist, as in the URDF
       - shoulder_pitch_left_dof

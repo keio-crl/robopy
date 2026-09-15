@@ -19,7 +19,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             "end-effector targets and watch the 3D model -- no hardware involved."
         ),
     )
-    parser.add_argument("--urdf", type=Path, help="URDF to load (default: the synthetic fixture)")
+    parser.add_argument(
+        "--urdf",
+        type=Path,
+        help=(
+            "URDF to load. Default: the Rakuda model committed under models/rakuda; the "
+            "synthetic fixture if no model directory is found."
+        ),
+    )
+    parser.add_argument(
+        "--synthetic",
+        action="store_true",
+        help="serve the synthetic fixture even when the committed Rakuda model is present",
+    )
     parser.add_argument(
         "--package-dir",
         type=Path,
@@ -39,6 +51,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=[],
         metavar="JOINT=LOWER,UPPER",
         help="soft limit in radians for a continuous joint (repeatable)",
+    )
+    parser.add_argument(
+        "--geometry",
+        choices=["auto", "visual", "collision"],
+        default="auto",
+        help=(
+            "which URDF elements to draw: visual meshes, collision geometry (the convex hulls), "
+            "or auto -- visual when its meshes are present, collision when they are LFS pointers"
+        ),
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
@@ -92,18 +113,38 @@ def main(argv: Sequence[str] | None = None) -> int:
         }
 
     tmpdir = None
+    if urdf is None and not args.synthetic:
+        from robopy.models import find_rakuda_model
+
+        rakuda = find_rakuda_model()
+        if rakuda is not None:
+            # The convex URDF carries both the visual meshes (Git LFS, optional)
+            # and the convex hulls (plain git); ModelBundle picks whichever is present.
+            urdf = rakuda.convex_collision_urdf
+            package_dirs = package_dirs or [rakuda.package_dir]
+            print(f"Serving the committed Rakuda model: {urdf}")
+            hint = rakuda.visual_mesh_hint()
+            if hint:
+                print(f"  {hint}")
+            if not soft_limits:
+                # The three continuous joints have no URDF range. These bounds are
+                # NOT measured on the machine; they only let the solver build.
+                # Measured values belong in .robopy/rakuda/config.yaml (--config).
+                soft_limits = {
+                    "torso_yaw_dof": (-1.57, 1.57),
+                    "shoulder_pitch_left_dof": (-3.14, 3.14),
+                    "shoulder_pitch_right_dof": (-3.14, 3.14),
+                }
+                print(
+                    "  Soft limits for the continuous joints are provisional (not measured); "
+                    "pass --soft-limit or use --config for the real ranges."
+                )
     if urdf is None:
         from robopy.kinematics.synthetic_dual_arm import write_synthetic_dual_arm_urdf
 
         tmpdir = tempfile.TemporaryDirectory()
         urdf = write_synthetic_dual_arm_urdf(Path(tmpdir.name) / "synthetic_dual_arm.urdf")
-        print(
-            "No --urdf given: serving the synthetic fixture (Rakuda's topology, not its geometry)."
-        )
-        print(
-            "Pass --urdf <models>/assembly_2/urdf/assembly_2.urdf --package-dir <models> "
-            "for the real model."
-        )
+        print("Serving the synthetic fixture (Rakuda's topology, not its geometry).")
         soft_limits = {
             "torso_yaw_dof": (-1.5, 1.5),
             "shoulder_pitch_left_dof": (-2.0, 2.0),
@@ -113,7 +154,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         bundle = ModelBundle.load(
-            urdf, package_dirs=package_dirs, soft_limits=soft_limits, tcp_offsets=tcp_offsets
+            urdf,
+            package_dirs=package_dirs,
+            soft_limits=soft_limits,
+            tcp_offsets=tcp_offsets,
+            geometry_source=args.geometry,
         )
     except Exception as exc:  # noqa: BLE001 - report and exit with a clear message
         print(f"Could not load {urdf}: {exc}", file=sys.stderr)

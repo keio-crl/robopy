@@ -510,7 +510,7 @@ function buildInfo(model) {
   const dl = $('#info-list');
   const rows = [
     ['URDF', model.urdf], ['nq / nv', `${model.nq} / ${model.nv}`], ['joints', `${model.joints.length} movable`],
-    ['shapes', `${model.geometries.length} (${model.geometries.filter((g) => g.shape.type === 'mesh').length} meshes)`],
+    ['shapes', `${model.geometries.length} (${model.geometries.filter((g) => g.shape.type === 'mesh').length} meshes, drawn from <${model.geometry_source}>)`],
     ['TCP frames', JSON.stringify(model.tcp_frames)],
     ['IK', model.ik ? `groups: ${JSON.stringify(model.ik.groups)}` : 'not available'],
   ];

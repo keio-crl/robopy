@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>assembly_2</name>
+  <version>0.1.0</version>
+  <description>Rakuda-2 URDF package exported from Onshape and post-processed for visualization/collision use.</description>
+  <maintainer email="maintainer@example.com">Rakuda-2 maintainer</maintainer>
+  <license>Proprietary</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher_gui</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>rviz</exec_depend>
+  <exec_depend>urdf</exec_depend>
+</package>

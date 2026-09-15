@@ -479,8 +479,8 @@ def serve(
     print(f"robopy viewer: {server.url}")
     print(f"  model : {bundle.urdf_path}")
     print(
-        f"  shapes: {len(bundle.geometries)} ({len(bundle.meshes)} meshes)   "
-        f"joints: {len(bundle.joint_order)}"
+        f"  shapes: {len(bundle.geometries)} ({len(bundle.meshes)} meshes, drawn from "
+        f"<{bundle.geometry_source}>)   joints: {len(bundle.joint_order)}"
     )
     print(f"  IK    : {'available' if ik is not None else 'not available'}")
     print("  SIMULATION ONLY -- nothing here talks to a motor. Ctrl+C to stop.")
