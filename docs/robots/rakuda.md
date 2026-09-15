@@ -356,6 +356,90 @@ Python APIも同じ既定動作です。例えば右腕のみなら
 実機の状態をこのページに**ミラー表示**する機能は未実装です（サーボループのスナップショットを
 `/api/fk` 相当の入力にすれば実現できますが、初回では対象外）。
 
+## :material-virtual-reality: VR テレオペ（Meta Quest） {: #vr }
+
+ヘッドセットの向きで `head_yaw` / `head_pitch` を、左右のコントローラで左右の腕を操作し、頭部カメラの画像を
+ヘッドセット内に投影します。ヘッドセット側にアプリは不要で、Quest のブラウザで WebXR ページを開くだけです。
+モジュールは `robopy.vr`、コマンドは `robopy-vr` です（API は [VR テレオペ API](../api/vr.md)）。
+
+```bash
+# 実機なし（モデルとソルバのみ、カメラはテストパターン）
+uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem
+
+# 頭部カメラを OpenCV デバイスから配信
+uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem --camera opencv:0
+
+# 実機（.robopy/rakuda/config.yaml の control.mode: cartesian_teleop が必要。ロボットが動きます）
+uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem --config --hardware
+```
+
+Quest のブラウザで `https://<PCのIP>:8766/vr` を開き、**Enter VR** を押します。
+
+### セキュアコンテキスト（HTTPS）
+
+WebXR は https か localhost でしか動きません。方法は 2 つあります。
+
+1. 自己署名証明書で HTTPS 配信（`--cert/--key`）。Quest のブラウザで一度警告を受け入れます。
+   ```bash
+   openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 -subj "/CN=robopy"
+   ```
+2. `adb reverse tcp:8766 tcp:8766` で Quest の `localhost:8766` を PC に転送し、`http://localhost:8766/vr` を開く
+   （ブラウザは localhost をセキュア扱いします。TLS 不要）。
+
+### 操作
+
+| 入力 | 動作 |
+| --- | --- |
+| ヘッドセットの向き | 頭部の yaw / pitch（roll は 2 軸首では再現できないので無視） |
+| グリップ（握り） | **クラッチ**。握っている間だけ、そのコントローラの相対移動・回転が同じ側の手先目標に加算される |
+| トリガ | グリッパ（`--gripper SIDE=MOTOR:OPEN,CLOSED` で開閉角を与えたときのみ） |
+| 両スティック同時クリック | リセンター（いま向いている方向をロボットの正面 +X にする） |
+| A / X | カメラ画像を頭に追従させる／空間に固定する |
+| B / Y | ロボットのツイン表示の切替 |
+
+腕は**相対**マッピングです。絶対マッピングは操作者の肩とロボットの肩が一致していないと成り立たないので、
+クラッチを離して自分の腕を戻し、また握って続ける、という操作になります。目標の移動速度・角速度は
+スルーリミットで抑えられます（`--max-hand-speed`）。手先の向き追従は `--no-orientation` で切れます。
+Rakuda の手首は 2 軸なので、向きを保った並進は届かないことが多く、その場合ソルバは重み付きの妥協解に
+落ちます（Info 表示の残差を見てください）。
+
+### モデルから導出するもの（推定しないもの）
+
+- **頭部関節の符号**: URDF の軸方向から求めます。実機エクスポートでは `head_yaw_dof` の軸はワールド −Z で、
+  正の角度で**右**を向きます（ヘッドセットの左回りが負の関節角）。`head_pitch_dof` は正で上向きです。
+- **胴体 yaw の補償**: 頭は胴体の上に載っており、胴体 yaw は腕 IK の変数です。操作者の頭の向きは
+  **ベース座標系**での向きとして扱い、頭部 yaw の指令は `信号 + k × (torso_yaw − 基準)` で補償します。
+  `k` は「胴体 1 rad あたりカメラ方位を保つのに必要な頭部 yaw 変化」をモデルの FK から有限差分で求めた値で、
+  実機エクスポートでは両軸が同じ向き（ワールド −Z）なので `k = −1`、すなわち **指令 = −torso_yaw + 信号** です。
+  `--no-torso-compensation` で切れます。
+- **正面を向く中立姿勢**: 実機エクスポートの URDF ゼロは頭が右に約 22° 回っており、カメラは約 6° 上を
+  向いています。`HeadJointMapping.from_model()` が `head_camera_link` の光軸（自動判定で z 軸）が
+  ベース +X を水平に向く関節角（yaw −0.381 rad、pitch −0.104 rad）を解き、これをヘッドセットの
+  リセンター姿勢に対応させます。
+- **グリッパの開閉角**: URDF ではグリッパ関節は fixed で、開閉角は測定値です。与えなければトリガは何もしません。
+- **カメラの画角**: `--camera-fov` の既定 69° は D435 カラーの公称値で、このカメラの校正値ではありません。
+
+### 安全側の設計
+
+- 操作者の WebSocket が切れる／無応答になると、両クラッチを解放し腕をホールドします（`teleop_timeout_s`）。
+- 目標には有効期限（`--target-ttl`、既定 0.25 s）があり、ストリームが止まれば新しい動作は出ません。
+- 同時に操作できるのは 1 人だけです。2 本目の接続は拒否されます。
+- コントローラのトラッキングが外れた瞬間にクラッチを解放します（測っていない姿勢で動き続けない）。
+- 実機モードでは `RakudaControlSystem` の Cartesian モードを使い、頭・グリッパは `set_direct_targets()`
+  で IK の対象外関節としてのみ指令します（IK が扱う関節に直接指令すると `ValueError`）。
+
+### 実機なしで確認する
+
+```bash
+uv run --extra kinematics python examples/robot/rakuda_vr_teleop.py      # スクリプト操作者
+uv run --extra kinematics robopy-vr --open-browser                          # デスクトップでプレビュー
+```
+
+ページの **Desktop preview** はウィンドウのカメラの向きを頭部姿勢として送るので、ヘッドセットなしで
+頭部追従とツイン描画を確認できます。シミュレーションの初期姿勢は肘を 0.8 rad 曲げた姿勢です
+（実機エクスポートのゼロ姿勢は腕が伸び切り右肘が可動域端にあるため、そこからはソルバの一歩も取れません。
+`--start-pose JOINT=RAD` で変更可）。
+
 ## :material-ruler: 単位と校正
 
 ### 電流定数の表記

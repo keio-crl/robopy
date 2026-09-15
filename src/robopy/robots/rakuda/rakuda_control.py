@@ -18,6 +18,7 @@ import logging
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 import numpy as np
+from numpy.typing import NDArray
 
 from robopy.config.robot_config.rakuda_config import (
     RAKUDA_GRIPPER_MOTOR_NAMES,
@@ -272,6 +273,8 @@ class RakudaControlSystem:
         self._target: DualArmTarget | None = None
         self._last_ik_result: Any = None
         self._ik_targets: Dict[str, float] = {}
+        self._direct_targets: Dict[str, float] = {}
+        self._direct_expiry_ns: int | None = None
         self._cycle = 0
 
         if self._mode is ControlMode.BILATERAL_JOINT:
@@ -554,6 +557,63 @@ class RakudaControlSystem:
             raise RuntimeError(f"A Cartesian target is meaningless in {self._mode.value} mode.")
         self._target = target
 
+    def set_direct_targets(self, targets_rad: Mapping[str, float], *, ttl_s: float = 0.25) -> None:
+        """Position targets for follower motors the arm IK does not drive.
+
+        The head joints and the grippers are commanded this way (by the VR
+        teleoperation, for instance) while the arms follow the Cartesian target.
+        The targets expire after ``ttl_s`` so a stalled producer stops moving
+        the head rather than freezing a stale command in place.
+
+        Args:
+            targets_rad: ``{follower_motor_name: radians}``.
+            ttl_s: How long the targets stay valid.
+
+        Raises:
+            RuntimeError: Outside Cartesian teleoperation.
+            ValueError: For a motor the servo does not own, a motor whose URDF
+                joint the IK drives, or a non-finite target.
+        """
+        if self._mode is not ControlMode.CARTESIAN_TELEOP:
+            raise RuntimeError(
+                f"Direct targets are only used in {ControlMode.CARTESIAN_TELEOP.value} mode."
+            )
+        if ttl_s <= 0.0:
+            raise ValueError("ttl_s must be positive.")
+        active = set(self._ik.active_joints) if self._ik is not None else set()
+        clean: Dict[str, float] = {}
+        for motor, angle in targets_rad.items():
+            if motor not in self._follower.motor_names:
+                raise ValueError(f"'{motor}' is not a follower motor.")
+            urdf_joint = self._follower.joint_map[motor].urdf_joint
+            if urdf_joint in active:
+                raise ValueError(
+                    f"'{motor}' drives URDF joint '{urdf_joint}', which belongs to the arm IK; "
+                    "it cannot also be commanded directly."
+                )
+            if not np.isfinite(angle):
+                raise ValueError(f"'{motor}': non-finite target.")
+            clean[motor] = float(angle)
+        self._direct_targets = clean
+        self._direct_expiry_ns = monotonic_ns() + int(ttl_s * 1e9)
+
+    def follower_positions_urdf(self) -> Dict[str, float]:
+        """Latest follower positions keyed by URDF joint (reads the bus if needed)."""
+        state = self._follower.latest_state()
+        if state is None:
+            state = self._follower.read_state()
+        return self._state_in_urdf_joints(state).positions_dict()
+
+    def hand_pose(self, side: str) -> NDArray[np.float64]:
+        """``(4, 4)`` pose of the ``left``/``right`` TCP at the latest follower state."""
+        if self._model is None:
+            raise RuntimeError("No kinematic model: hand poses need cartesian_teleop mode.")
+        if side not in ("left", "right"):
+            raise ValueError("side must be 'left' or 'right'.")
+        positions = {name: 0.0 for name in self._model.movable_joint_names}
+        positions.update(self.follower_positions_urdf())
+        return self._model.frame_pose(self._model.q_from_positions(positions), f"{side}_tcp")
+
     def prepare_running(self) -> None:
         """Enter ``RUNNING`` and take the command lease for each bus.
 
@@ -618,31 +678,40 @@ class RakudaControlSystem:
         )
 
     def _step_cartesian(self, states: Mapping[str, JointState], dt: float) -> None:
+        motor_targets: Dict[str, float] = {}
+        generation = states["follower"].mode_generation
         target = self._target
-        if target is None or target.is_expired():
-            # No fresh target: hold the last valid joint targets rather than
-            # issuing new motion from a stale one.
-            return
-        result = self._ik.solve_step(self._state_in_urdf_joints(states["follower"]), target, dt)
-        self._last_ik_result = result
-        self._loop.publish_log(
-            {
-                "cycle": self._cycle,
-                "ik_status": result.status.value,
-                "compute_time_s": result.compute_time_s,
-                "min_collision_distance_m": result.min_collision_distance_m,
-            }
-        )
-        if not result.is_commandable:
-            # An invalid result is never issued as new motion; the servo keeps
-            # its previous goal and the diagnosis is logged.
-            logger.warning("IK produced no command: %s (%s)", result.status.value, result.message)
-            return
-        self._ik_targets = dict(result.joint_targets_rad)
-        motor_targets = self._urdf_targets_to_motors(result.joint_targets_rad)
-        self._follower.command_positions_rad(
-            motor_targets, generation=result.generation, issued_ns=monotonic_ns()
-        )
+        if target is not None and not target.is_expired():
+            result = self._ik.solve_step(self._state_in_urdf_joints(states["follower"]), target, dt)
+            self._last_ik_result = result
+            self._loop.publish_log(
+                {
+                    "cycle": self._cycle,
+                    "ik_status": result.status.value,
+                    "compute_time_s": result.compute_time_s,
+                    "min_collision_distance_m": result.min_collision_distance_m,
+                }
+            )
+            if result.is_commandable:
+                self._ik_targets = dict(result.joint_targets_rad)
+                motor_targets.update(self._urdf_targets_to_motors(result.joint_targets_rad))
+                generation = result.generation
+            else:
+                # An invalid result is never issued as new motion; the servo
+                # keeps its previous goal and the diagnosis is logged.
+                logger.warning(
+                    "IK produced no command: %s (%s)", result.status.value, result.message
+                )
+        # No fresh Cartesian target: the arms hold their last valid joint
+        # targets rather than moving on a stale one.  The head and grippers
+        # are independent of that and follow their own (also expiring) targets.
+        if self._direct_targets and self._direct_expiry_ns is not None:
+            if monotonic_ns() <= self._direct_expiry_ns:
+                motor_targets.update(self._direct_targets)
+        if motor_targets:
+            self._follower.command_positions_rad(
+                motor_targets, generation=generation, issued_ns=monotonic_ns()
+            )
 
     def _state_in_urdf_joints(self, state: JointState) -> JointState:
         """Re-key a measured snapshot from motor names to URDF joint names.

@@ -74,6 +74,7 @@ audio = ["pyaudio>=0.2.14"]
 
 [project.scripts]
 robopy-viewer = "robopy.viewer.__main__:main"
+robopy-vr = "robopy.vr.__main__:main"
 
 [build-system]
 requires = ["uv_build>=0.8.12,<0.9.0"]
