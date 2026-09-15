@@ -95,6 +95,13 @@ class SimXArmFollower(XArmArm):
             "GELLO sim_xarm only supports joint-space commands. Use command_joint_state() instead."
         )
 
+    def command_cartesian_absolute_aa(
+        self, pos_aa: NDArray[np.float32], gripper: float | None = None
+    ) -> None:
+        raise NotImplementedError(
+            "GELLO sim_xarm only supports joint-space commands. Use command_joint_state() instead."
+        )
+
     def command_cartesian_relative(
         self, delta: NDArray[np.float32], gripper: float | None = None
     ) -> None:
