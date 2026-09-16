@@ -124,8 +124,8 @@ class RakudaPushCubeEnv(BaseTaskEnv):
         goal[:, 2] = MOUNT.work_surface_z
         return start, goal
 
-    def _get_initial_states(self) -> list[dict]:
-        start, goal = self._sample_layout()
+    def _get_initial_states(self, generator: torch.Generator | None = None) -> list[dict]:
+        start, goal = self._sample_layout(generator)
         self._goal = goal
         robot = self.scenario.robots[0]
         upright = torch.tensor([1.0, 0.0, 0.0, 0.0])
@@ -197,9 +197,16 @@ class RakudaPushCubeEnv(BaseTaskEnv):
         return (self._cube_to_goal(states) < GOAL_RADIUS_M) & self.cube_on_table(states)
 
     def reset(self, states=None, env_ids=None, seed=None):
-        """Resample the cube start and goal, then reset as usual."""
+        """Resample the cube start and goal, then reset as usual.
+
+        The seed reaches the layout, not just the handler: without it every reset
+        puts the cube somewhere new and a "reproducible" run is not.
+        """
         if states is None:
-            self._initial_states = self._get_initial_states()
+            generator = None
+            if seed is not None:
+                generator = torch.Generator().manual_seed(int(seed))
+            self._initial_states = self._get_initial_states(generator)
         return super().reset(states, env_ids, seed)
 
     @property

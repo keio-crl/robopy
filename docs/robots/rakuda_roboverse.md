@@ -219,7 +219,7 @@ python -m robopy.sim.mjcf_export -o out.xml --gripper panda_longer_finger
 | `rakuda.reach` | 右手を目標点へ |
 | `rakuda.bimanual_reach` | 両手をそれぞれの目標点へ |
 | `rakuda.push_cube` | テーブル上のキューブを目標領域まで押す |
-| `rakuda.lift_cube` | キューブを掴んで持ち上げる（`rakuda_gripper` を使用） |
+| `rakuda.lift_block` | ブロックを掴んで持ち上げる（`rakuda_gripper` を使用）。別名 `rakuda.lift_cube`。[専用ページ](rakuda_lift_block.md) |
 
 3つとも、ロボットは擬似台（`rakuda_mount`）の上に立ちます。`push_cube` はさらに
 作業面 `z = 0.75` のテーブルを正面に置き、キューブは実測した到達領域

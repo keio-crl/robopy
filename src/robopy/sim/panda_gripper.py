@@ -160,6 +160,17 @@ class PandaGripperOptions:
             :data:`GRIP_FORCE_N`.
         gain: Position gain; see :data:`GRIP_GAIN`.
         friction: Sliding friction on the finger pads.
+        contact_solref: MuJoCo contact time constant and damping for the pads.
+        contact_solimp: MuJoCo contact impedance for the pads.  Together with
+            ``contact_solref`` these make the pads much less squashy than
+            MuJoCo's default, which is what stops a gripped object sinking into
+            them and sliding free.
+        pad_inner_y_m: Where the gripping face sits, taken from the finger mesh:
+            its inner surface is 3.9 mm off the centreline at the tip.
+        pad_thickness_m: Thickness of the pad box.
+        pad_half_width_m: Half the finger's width; it is 21 mm across.
+        pad_half_length_m: Half the length of finger that actually grips.
+        pad_centre_z_m: Where that length is centred along the finger.
     """
 
     stroke_m: float = FINGER_STROKE_M
@@ -169,6 +180,13 @@ class PandaGripperOptions:
     grip_force_n: float = GRIP_FORCE_N
     gain: float = GRIP_GAIN
     friction: Tuple[float, float, float] = FINGER_FRICTION
+    contact_solref: Tuple[float, float] = (0.004, 1.0)
+    contact_solimp: Tuple[float, float, float] = (0.98, 0.999, 0.0005)
+    pad_inner_y_m: float = 0.0039
+    pad_thickness_m: float = 0.005
+    pad_half_width_m: float = 0.0105
+    pad_half_length_m: float = 0.040
+    pad_centre_z_m: float = 0.055
 
 
 def find_gripper_meshes(models_dir: Path) -> Dict[str, Path]:
@@ -316,6 +334,41 @@ def attach_panda_fingers(
                     "rgba": "0.9 0.9 0.9 1",
                 },
             )
+            # A flat pad to grip with, sitting just in front of the mesh.
+            #
+            # The finger's own inner face is not flat: measured off the mesh, it
+            # tapers from 7.2 mm off the centreline at the base to 3.9 mm at the
+            # tip. Gripping with that pinches an object between two converging
+            # surfaces, which wedges it *out* of the jaw. That is why a block the
+            # friction cone says is held by a hundred times its weight still slid
+            # free the moment the arm lifted, and why sweeping grasp depth,
+            # squeeze and lift speed never fixed it -- the geometry was the
+            # problem, not the tuning.
+            #
+            # So the gripping surface is an explicit box, the way MuJoCo
+            # Menagerie models this same gripper. The mesh stays for the finger
+            # body and for looks.
+            pad_half_y = options.pad_thickness_m / 2.0
+            ET.SubElement(
+                finger,
+                "geom",
+                {
+                    "name": f"{name}_pad",
+                    "class": "rakuda_collision",
+                    "type": "box",
+                    "size": (
+                        f"{options.pad_half_width_m:.6g} {pad_half_y:.6g} "
+                        f"{options.pad_half_length_m:.6g}"
+                    ),
+                    "pos": (
+                        f"0 {sign * (options.pad_inner_y_m + pad_half_y):.6g} "
+                        f"{options.pad_centre_z_m:.6g}"
+                    ),
+                    "friction": " ".join(f"{v:g}" for v in options.friction),
+                    "solref": f"{options.contact_solref[0]:g} {options.contact_solref[1]:g}",
+                    "solimp": " ".join(f"{v:g}" for v in options.contact_solimp),
+                },
+            )
             ET.SubElement(
                 finger,
                 "geom",
@@ -324,6 +377,13 @@ def attach_panda_fingers(
                     "mesh": "panda_finger_collision",
                     "quat": quat,
                     "friction": " ".join(f"{v:g}" for v in options.friction),
+                    # Stiffer than MuJoCo's default contact, which lets a
+                    # squeezed object sink 4 mm into each pad -- soft enough
+                    # that a gripped block slides out from between the fingers
+                    # while the arm lifts, even though the friction cone says it
+                    # should hold a hundred times its weight.
+                    "solref": f"{options.contact_solref[0]:g} {options.contact_solref[1]:g}",
+                    "solimp": " ".join(f"{v:g}" for v in options.contact_solimp),
                 },
             )
 

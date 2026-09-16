@@ -48,6 +48,7 @@ from typing import Dict, Tuple
 
 __all__ = [
     "DEFAULT_WORK_SURFACE_Z",
+    "GRASP_OFFSET_ABOVE_MOUNT",
     "HAND_FLOOR_ABOVE_MOUNT",
     "PLATE_CENTRE_XY",
     "PLATE_SIZE_XY",
@@ -78,6 +79,34 @@ PLATE_SIZE_XY: Tuple[float, float] = (0.300, 0.300)
 
 #: Work surface height for the bundled tasks: an ordinary desk.
 DEFAULT_WORK_SURFACE_Z: float = 0.75
+
+#: Offset to use when the task has to *grasp* rather than touch.
+#:
+#: :data:`WORK_OFFSET_ABOVE_MOUNT` maximises how often a hand can get to a
+#: surface, which is what reaching and pushing need.  Closing a gripper on
+#: something on that surface is a different requirement: the hand has to arrive
+#: pointing *down* at it, and that depends on where the object sits relative to
+#: the shoulders.  Reaching out at shoulder height, the hand points forward.
+#:
+#: Sampling the arm and counting configurations that both reach a surface in
+#: front of the robot and point the fingers down at it (world ``z < -0.7``):
+#:
+#: =========  ==================  =====================
+#: offset     reachable in front  of those, pointing down
+#: =========  ==================  =====================
+#: 0.10       9660                952
+#: **0.15**   9735                **408**
+#: 0.20       8983                111
+#: 0.25       7343                15
+#: 0.30       4917                0
+#: 0.34       2746                **0**
+#: =========  ==================  =====================
+#:
+#: At the reaching offset a top-down grasp is not merely hard, it is impossible.
+#: 0.15 leaves plenty of downward grasps and still keeps the surface clear of
+#: :data:`HAND_FLOOR_ABOVE_MOUNT`, which the palm must respect even when the
+#: fingers reach 42 mm past it.
+GRASP_OFFSET_ABOVE_MOUNT: float = 0.15
 
 #: Gap left between the pedestal's top and the robot's base plate.
 #:

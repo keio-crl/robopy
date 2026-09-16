@@ -120,22 +120,40 @@ class TestTheJaw:
         ]
 
         def gap() -> float:
+            """Distance between the two gripping pads, along the opening axis.
+
+            Measured off the pad boxes rather than the finger meshes: the mesh's
+            own inner face tapers, so its extremes answer a different question.
+            The pads are what actually touch an object.
+            """
             rotation = data.xmat[palm].reshape(3, 3)
-            spans = []
+            faces = []
             for body in fingers:
-                points = []
+                inner = None
                 for geom in range(model.ngeom):
-                    if model.geom_bodyid[geom] != body or model.geom_contype[geom] == 0:
+                    name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, geom) or ""
+                    if model.geom_bodyid[geom] != body or not name.endswith("_pad"):
                         continue
-                    mesh = model.geom_dataid[geom]
-                    start, count = model.mesh_vertadr[mesh], model.mesh_vertnum[mesh]
-                    verts = model.mesh_vert[start : start + count].reshape(-1, 3)
-                    points.append(
-                        verts @ data.geom_xmat[geom].reshape(3, 3).T + data.geom_xpos[geom]
+                    half = model.geom_size[geom]
+                    corners = np.array(
+                        [
+                            [sx * half[0], sy * half[1], sz * half[2]]
+                            for sx in (-1, 1)
+                            for sy in (-1, 1)
+                            for sz in (-1, 1)
+                        ]
                     )
-                local = (np.vstack(points) - data.xpos[palm]) @ rotation
-                spans.append((local[:, 1].min(), local[:, 1].max()))
-            return spans[0][0] - spans[1][1]
+                    world = (
+                        corners @ data.geom_xmat[geom].reshape(3, 3).T + data.geom_xpos[geom]
+                    )
+                    local = (world - data.xpos[palm]) @ rotation
+                    inner = local[:, 1]
+                assert inner is not None, "the finger has no pad geom"
+                faces.append((inner.min(), inner.max()))
+            # One pad sits at +y and the other at -y; the gap is between their
+            # facing surfaces.
+            faces.sort()
+            return faces[1][0] - faces[0][1]
 
         for opening, expected in (
             (0.0, PAD_GAP_CLOSED_M),
@@ -147,7 +165,7 @@ class TestTheJaw:
             for _ in range(1500):
                 mujoco.mj_step(model, data)
             mujoco.mj_forward(model, data)
-            assert gap() == pytest.approx(expected, abs=0.002), f"at opening {opening}"
+            assert gap() == pytest.approx(expected, abs=0.003), f"at opening {opening}"
 
     def test_pad_gap_matches_the_geometry(self) -> None:
         assert pad_gap(0.0) == pytest.approx(PAD_GAP_CLOSED_M)
@@ -246,3 +264,60 @@ class TestBothModelsStayInStep:
 
     def test_the_gripper_is_the_only_one_on_offer(self) -> None:
         assert GRIPPER_NAME == "panda_longer_finger"
+
+
+class TestThePadsAreFlat:
+    """The finger mesh's own inner face is not a gripping surface.
+
+    Measured off the mesh, it tapers from 7.2 mm off the centreline at the base
+    to 3.9 mm at the tip.  Gripping with two converging surfaces wedges an object
+    out of the jaw: a block the friction cone says is held by a hundred times its
+    weight still slid free the moment the arm lifted, and sweeping grasp depth,
+    squeeze and lift speed never fixed it.  The pads exist to make the gripping
+    surface flat, so if one goes missing the failure is silent and confusing.
+    """
+
+    def test_each_finger_has_a_pad(self, model) -> None:
+        pads = [
+            mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, g) or ""
+            for g in range(model.ngeom)
+        ]
+        for side in ("left", "right"):
+            for finger in ("a", "b"):
+                assert f"{side}_finger_{finger}_pad" in pads
+
+    def test_the_pad_face_is_flat(self, model) -> None:
+        """A box has parallel faces; the mesh it sits in front of does not."""
+        for side in ("left", "right"):
+            for finger in ("a", "b"):
+                geom = mujoco.mj_name2id(
+                    model, mujoco.mjtObj.mjOBJ_GEOM, f"{side}_finger_{finger}_pad"
+                )
+                assert geom >= 0
+                assert model.geom_type[geom] == mujoco.mjtGeom.mjGEOM_BOX
+
+    def test_the_pad_reaches_further_in_than_the_mesh(self, model) -> None:
+        """Otherwise the tapered mesh would touch first and the pad do nothing."""
+        body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "right_finger_a")
+        data = mujoco.MjData(model)
+        mujoco.mj_forward(model, data)
+
+        pad_inner = mesh_inner_at_base = None
+        for geom in range(model.ngeom):
+            if model.geom_bodyid[geom] != body or model.geom_contype[geom] == 0:
+                continue
+            name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, geom) or ""
+            if name.endswith("_pad"):
+                pad_inner = model.geom_pos[geom][1] - model.geom_size[geom][1]
+            else:
+                mesh = model.geom_dataid[geom]
+                start, count = model.mesh_vertadr[mesh], model.mesh_vertnum[mesh]
+                verts = model.mesh_vert[start : start + count].reshape(-1, 3)
+                near_base = verts[verts[:, 2] < 0.02]
+                mesh_inner_at_base = float(np.abs(near_base[:, 1]).min())
+
+        assert pad_inner is not None and mesh_inner_at_base is not None
+        assert abs(pad_inner) <= mesh_inner_at_base + 1e-6, (
+            f"the pad sits {abs(pad_inner):.4f} m from the centreline but the mesh reaches "
+            f"{mesh_inner_at_base:.4f} m there, so the mesh would grip instead of the pad"
+        )

@@ -7,12 +7,26 @@ gripper geometry at all.  :mod:`robopy.sim.panda_gripper` says what that does
 and does not mean; the short version is that success here says something about
 the task and very little about the real machine.
 
-The cube is 30 mm, which the jaw can hold: its pads sit 8 mm apart closed and
-88 mm apart open, so anything from 8 mm up to about 80 mm is graspable in
-principle.  Measured on this model, a 30 mm cube held in the proximal two
-thirds of the fingers stays put through a 0.9 rad wrist swing, and one held near
-the tips works loose -- so the reward encourages closing *on* the cube rather
-than merely touching it.
+Why the object is a tall block and not a cube
+--------------------------------------------
+The borrowed fingers are 101 mm long, and this arm can only grasp top-down (it
+cannot point the fingers sideways at something in front of it).  Those two facts
+decide the object's shape between them.
+
+To close on something the pads have to straddle it, and to do that without
+driving the fingertips through the table the palm has to sit at least 101 mm
+above the surface.  A 30 mm cube's centre is 15 mm up, so it would be gripped
+86 mm along the fingers -- right at the tips, where a grasp works loose as soon
+as the arm moves.  Grip 35 to 50 mm along, where it holds, and the fingertips
+are 40 mm below the tabletop.
+
+So the object is 100 mm tall: its centre sits high enough that gripping it at
+mid-height puts the pads in the part of the fingers that actually holds, while
+the tips still clear the table.  It is 40 mm across, comfortably inside the
+jaw's 8 to 88 mm range and wide enough not to topple when the fingers touch it.
+
+A shorter object is not a harder version of this task, it is an impossible one,
+and that is a property of the borrowed hand rather than of the Rakuda.
 """
 
 from __future__ import annotations
@@ -25,20 +39,28 @@ from metasim.scenario.simulator_params import SimParamCfg
 from metasim.task.base import BaseTaskEnv
 from metasim.task.registry import register_task
 
+from robopy.roboverse.mount import GRASP_OFFSET_ABOVE_MOUNT
+
 from ._common import OBJECT_ZONE, RakudaMount, hand_position
 
 __all__ = ["RakudaLiftCubeEnv"]
 
 ROBOT = "rakuda_gripper"
 PEDESTAL = "rakuda_mount"
-MOUNT = RakudaMount()
+#: The robot's stand.  A lower surface than the reaching tasks use, because a
+#: gripper has to arrive pointing *down* at what it grasps and this arm can only
+#: do that well below its shoulders -- at the reaching offset it cannot do it at
+#: all.  See :data:`~robopy.roboverse.mount.GRASP_OFFSET_ABOVE_MOUNT`.
+MOUNT = RakudaMount(offset=GRASP_OFFSET_ABOVE_MOUNT)
 
 TABLE_DEPTH = 0.34
 TABLE_WIDTH = 0.60
 
-#: Cube edge. Comfortably inside the jaw's 8 to 88 mm range, and small enough
-#: that the fingers reach round it rather than pushing it over.
-CUBE_SIZE = 0.03
+#: Footprint of the block, and its height.  See the module docstring: the height
+#: is what makes it graspable at all, and the width is a compromise between
+#: fitting the jaw and standing up while the fingers close around it.
+BLOCK_WIDTH = 0.04
+BLOCK_HEIGHT = 0.10
 
 #: How far above the table the cube has to be raised to count as lifted.
 LIFT_HEIGHT_M = 0.06
@@ -48,9 +70,9 @@ LIFT_HEIGHT_M = 0.06
 HAND_HOLD_RADIUS_M = 0.09
 
 
-@register_task("rakuda.lift_cube")
+@register_task("rakuda.lift_block", "rakuda.lift_cube")
 class RakudaLiftCubeEnv(BaseTaskEnv):
-    """Close the right hand on the cube and lift it clear of the table.
+    """Close the right hand on the block and lift it clear of the table.
 
     Success needs the cube both raised by :data:`LIFT_HEIGHT_M` *and* still
     within :data:`HAND_HOLD_RADIUS_M` of the hand.  Either alone is easy to get
@@ -67,7 +89,7 @@ class RakudaLiftCubeEnv(BaseTaskEnv):
             MOUNT.table("table", depth=TABLE_DEPTH, width=TABLE_WIDTH),
             PrimitiveCubeCfg(
                 name="cube",
-                size=(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE),
+                size=(BLOCK_WIDTH, BLOCK_WIDTH, BLOCK_HEIGHT),
                 mass=0.03,
                 color=(0.20, 0.70, 0.35),
                 physics=PhysicStateType.RIGIDBODY,
@@ -93,13 +115,13 @@ class RakudaLiftCubeEnv(BaseTaskEnv):
             [
                 OBJECT_ZONE["x"][0] + unit[:, 0] * (OBJECT_ZONE["x"][1] - OBJECT_ZONE["x"][0]),
                 OBJECT_ZONE["y"][0] + unit[:, 1] * (OBJECT_ZONE["y"][1] - OBJECT_ZONE["y"][0]),
-                torch.full((self.num_envs,), MOUNT.work_surface_z + CUBE_SIZE / 2.0),
+                torch.full((self.num_envs,), MOUNT.work_surface_z + BLOCK_HEIGHT / 2.0),
             ],
             dim=-1,
         )
 
-    def _get_initial_states(self) -> list[dict]:
-        start = self._sample_layout()
+    def _get_initial_states(self, generator: torch.Generator | None = None) -> list[dict]:
+        start = self._sample_layout(generator)
         self._start_z = start[:, 2].clone()
         robot = self.scenario.robots[0]
         upright = torch.tensor([1.0, 0.0, 0.0, 0.0])
@@ -165,9 +187,19 @@ class RakudaLiftCubeEnv(BaseTaskEnv):
         return (self.lift(states) > LIFT_HEIGHT_M) & self.in_hand(states)
 
     def reset(self, states=None, env_ids=None, seed=None):
-        """Resample where the cube sits, then reset as usual."""
+        """Resample where the block sits, then reset as usual.
+
+        The seed has to reach the layout, not just the handler.  ``BaseTaskEnv``
+        forwards it to ``handler.set_seed`` and then replays
+        ``self._initial_states``, so a task that samples its own layout has to
+        seed that sampling itself or ``reset(seed=N)`` quietly returns a
+        different scene every time.
+        """
         if states is None:
-            self._initial_states = self._get_initial_states()
+            generator = None
+            if seed is not None:
+                generator = torch.Generator().manual_seed(int(seed))
+            self._initial_states = self._get_initial_states(generator)
         return super().reset(states, env_ids, seed)
 
     @property

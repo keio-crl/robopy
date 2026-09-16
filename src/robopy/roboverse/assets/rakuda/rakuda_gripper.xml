@@ -640,13 +640,15 @@
                                                                               <inertial pos="0 0 0.03" mass="0.02" diaginertia="2e-5 2e-5 2e-6" />
                                                                               <joint name="right_finger_a_joint" type="slide" axis="0 1 0" range="0 0.04" damping="5" armature="0.001" />
                                                                               <geom class="rakuda_visual" mesh="panda_finger_visual" quat="1 0 0 0" rgba="0.9 0.9 0.9 1" />
-                                                                              <geom class="rakuda_collision" mesh="panda_finger_collision" quat="1 0 0 0" friction="1.5 0.02 0.001" />
+                                                                              <geom name="right_finger_a_pad" class="rakuda_collision" type="box" size="0.0105 0.0025 0.04" pos="0 0.0064 0.055" friction="1.5 0.02 0.001" solref="0.004 1" solimp="0.98 0.999 0.0005" />
+                                                                              <geom class="rakuda_collision" mesh="panda_finger_collision" quat="1 0 0 0" friction="1.5 0.02 0.001" solref="0.004 1" solimp="0.98 0.999 0.0005" />
                                                                             </body>
                                                                             <body name="right_finger_b" pos="0 0 0.005">
                                                                               <inertial pos="0 0 0.03" mass="0.02" diaginertia="2e-5 2e-5 2e-6" />
                                                                               <joint name="right_finger_b_joint" type="slide" axis="0 -1 0" range="0 0.04" damping="5" armature="0.001" />
                                                                               <geom class="rakuda_visual" mesh="panda_finger_visual" quat="0 0 0 1" rgba="0.9 0.9 0.9 1" />
-                                                                              <geom class="rakuda_collision" mesh="panda_finger_collision" quat="0 0 0 1" friction="1.5 0.02 0.001" />
+                                                                              <geom name="right_finger_b_pad" class="rakuda_collision" type="box" size="0.0105 0.0025 0.04" pos="0 -0.0064 0.055" friction="1.5 0.02 0.001" solref="0.004 1" solimp="0.98 0.999 0.0005" />
+                                                                              <geom class="rakuda_collision" mesh="panda_finger_collision" quat="0 0 0 1" friction="1.5 0.02 0.001" solref="0.004 1" solimp="0.98 0.999 0.0005" />
                                                                             </body>
                                                                           </body>
                                                                         </body>
@@ -920,13 +922,15 @@
                                                                                   <inertial pos="0 0 0.03" mass="0.02" diaginertia="2e-5 2e-5 2e-6" />
                                                                                   <joint name="left_finger_a_joint" type="slide" axis="0 1 0" range="0 0.04" damping="5" armature="0.001" />
                                                                                   <geom class="rakuda_visual" mesh="panda_finger_visual" quat="1 0 0 0" rgba="0.9 0.9 0.9 1" />
-                                                                                  <geom class="rakuda_collision" mesh="panda_finger_collision" quat="1 0 0 0" friction="1.5 0.02 0.001" />
+                                                                                  <geom name="left_finger_a_pad" class="rakuda_collision" type="box" size="0.0105 0.0025 0.04" pos="0 0.0064 0.055" friction="1.5 0.02 0.001" solref="0.004 1" solimp="0.98 0.999 0.0005" />
+                                                                                  <geom class="rakuda_collision" mesh="panda_finger_collision" quat="1 0 0 0" friction="1.5 0.02 0.001" solref="0.004 1" solimp="0.98 0.999 0.0005" />
                                                                                 </body>
                                                                                 <body name="left_finger_b" pos="0 0 0.005">
                                                                                   <inertial pos="0 0 0.03" mass="0.02" diaginertia="2e-5 2e-5 2e-6" />
                                                                                   <joint name="left_finger_b_joint" type="slide" axis="0 -1 0" range="0 0.04" damping="5" armature="0.001" />
                                                                                   <geom class="rakuda_visual" mesh="panda_finger_visual" quat="0 0 0 1" rgba="0.9 0.9 0.9 1" />
-                                                                                  <geom class="rakuda_collision" mesh="panda_finger_collision" quat="0 0 0 1" friction="1.5 0.02 0.001" />
+                                                                                  <geom name="left_finger_b_pad" class="rakuda_collision" type="box" size="0.0105 0.0025 0.04" pos="0 -0.0064 0.055" friction="1.5 0.02 0.001" solref="0.004 1" solimp="0.98 0.999 0.0005" />
+                                                                                  <geom class="rakuda_collision" mesh="panda_finger_collision" quat="0 0 0 1" friction="1.5 0.02 0.001" solref="0.004 1" solimp="0.98 0.999 0.0005" />
                                                                                 </body>
                                                                               </body>
                                                                             </body>
