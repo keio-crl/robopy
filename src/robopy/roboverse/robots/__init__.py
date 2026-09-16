@@ -14,9 +14,21 @@ from .rakuda_cfg import (
     RAKUDA_TORSO_JOINT,
     RakudaCfg,
 )
+from .rakuda_gripper_cfg import (
+    RAKUDA_FINGER_JOINTS,
+    RAKUDA_GRIPPER_JOINTS,
+    RakudaGripperCfg,
+    gripper_targets,
+    pad_gap,
+)
 
 __all__ = [
     "RAKUDA_ARM_JOINTS",
+    "RAKUDA_FINGER_JOINTS",
+    "RAKUDA_GRIPPER_JOINTS",
+    "RakudaGripperCfg",
+    "gripper_targets",
+    "pad_gap",
     "RAKUDA_HEAD_JOINTS",
     "RAKUDA_SERVO_BY_JOINT",
     "RAKUDA_STAND_HEIGHT_M",

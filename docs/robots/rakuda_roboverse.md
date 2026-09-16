@@ -32,7 +32,7 @@ python examples/robot/rakuda_roboverse.py --demo task --task rakuda.push_cube --
 
 | 事実 | 影響 |
 | --- | --- |
-| **グリッパは関節ではない** | CAD エクスポートは `gripper_left_dof` / `gripper_right_dof` を **fixed** フレームとして持っています。名前に `_dof` と付いていますが自由度ではありません。したがって **シミュレータ上で把持はできません**。駆動関節は 15 個です。 |
+| **グリッパは関節ではない** | CAD エクスポートは `gripper_left_dof` / `gripper_right_dof` を **fixed** フレームとして持っています。名前に `_dof` と付いていますが自由度ではありません。既定の `rakuda`（15 関節）では**把持できません**。把持が要るときは `rakuda_gripper`（19 関節、後述）を使いますが、その手は**借り物**です。 |
 | **自分が取り付けられている面には手が届かない** | 肩は台座面から 0.41 m、腕長は約 0.30 m。手先は取り付け面から **0.112 m** より下に行けません。机に直接載せると机上の物すべての上を素通りします。→ 擬似台に載せて解決（後述）。 |
 | **前方リーチは約 0.37 m** | 台座が `x = 0.178` まで占有するので、作業面はそれより先に置きます。 |
 | **質量は仮定を含む** | CAD の質量値は実は体積（後述）。密度を掛けて質量にしています。相対的な分布は CAD 由来、絶対値は仮定です。 |
@@ -107,7 +107,9 @@ python -m robopy.sim.mjcf_export
 | ファイル | 管理 | 内容 |
 | --- | --- | --- |
 | `models/rakuda/assembly_2/mjcf/rakuda.xml` | git（79 KB） | STL を参照。視覚メッシュ（Git LFS）があれば綺麗に描画される |
+| `models/rakuda/assembly_2/mjcf/rakuda_gripper.xml` | git | 同上 + 借り物のグリッパ |
 | `src/robopy/roboverse/assets/rakuda/rakuda.xml` | git（2.8 MB） | 形状を XML に埋め込んだ自己完結版。**wheel に同梱される**ので `pip install` だけで動く |
+| `src/robopy/roboverse/assets/rakuda/rakuda_gripper.xml` | git | 同上 + 借り物のグリッパ |
 
 `RakudaCfg` は次の順で選びます。
 
@@ -147,6 +149,69 @@ CAD エクスポートをそのまま MuJoCo に読ませると壊れます。�
   ビューアと同じ規約で**モータ可動域 ±π** を与えています。これは
   「モータが許す範囲」であって「機体が実際に止まる位置の測定値」ではありません。
 
+## :material-hand-back-right: グリッパ付き `rakuda_gripper`
+
+Rakuda の CAD は**グリッパを形状のない fixed フレームとして出力**しているため、実機のグリッパ形状は
+このリポジトリにありません。把持タスクを組むために、uvCalvin の `panda_longer_finger` から**指だけ**を
+借りて両腕に取り付けた別ロボットを用意しています。
+
+```python
+robot = get_robot("rakuda_gripper")   # 19 関節（15 + 指 2 本 × 2 腕）
+get_robot("rakuda")                   # 15 関節のまま。変更していません
+```
+
+### これは実機の Rakuda ではありません
+
+- 指の形・ストローク・把持力のいずれも実機と一致しません。**実機転移は期待できません。**
+- さらに `gripper_*_dof` から実際の把持点までの TCP オフセットは
+  `examples/config/rakuda_control.example.yaml` で**未測定**（`validated: false`）なので、
+  「どこに付けるか」自体が仮定です。
+- ライセンスは Apache 2.0。メッシュは `models/gripper_panda/` に原本のまま同梱しています。
+
+### 何を借りて、何を借りなかったか
+
+| | 採用 | 理由 |
+| --- | --- | --- |
+| 指メッシュ `longer_finger_v2` | ✅ | CALVIN と同一。21 × 26 × **96 mm** |
+| ストローク 0〜0.04 m / 指 | ✅ | CALVIN の `gripper_joint_limits`。指形状がこの範囲を前提に作られている |
+| `panda_hand` 本体 | ❌ | **0.81 kg・幅 204 mm**。Rakuda の前腕は 0.126 kg、手首リンクは 65 mm 幅で、運搬リンクの 6.4 倍・手首の 3 倍になり破綻します |
+| 指の質量 0.1 kg | ❌ | 同じ理由で 0.02 kg に変更。**これは選択であって測定値ではありません** |
+
+### 挟める寸法（実測）
+
+| 指令 | パッド間隔 |
+| --- | --- |
+| 全閉 | **8 mm** |
+| 全開 | **88 mm** |
+
+全閉でも 8 mm 残るので、**8 mm より薄いものは掴めません**。また物体は指の**手前 2/3**に
+挟む必要があります（30 mm キューブを 35〜50 mm の位置で保持すれば手首を 0.9 rad 振っても
+落ちませんが、65 mm の位置だと先端から抜けます）。
+
+### 1 腕 1 モータ
+
+実機の `l_arm_grip` / `r_arm_grip` は XM430-W350 **1 個**なので、2 本の指は MuJoCo の
+equality 拘束で連結してあります。アクチュエータは MetaSim が**関節名で引く**ため各指に
+1 個ずつ置いていますが、物理的には 1 自由度です。両方をまとめて動かすには:
+
+```python
+from robopy.roboverse.robots import gripper_targets
+targets.update(gripper_targets(0.0, "right"))   # 右手を閉じる
+```
+
+把持力は導出できませんでした。実機は電流 raw 128（= 0.344 A、XM430 で約 0.61 N·m）に
+制限されていますが、サーボトルクからジョー力への換算には機構のレバー比が必要で、
+その機構はモデル化されていません（指は直動ジョイントで動いています）。20 N は
+**もっともらしい値であって導出値ではありません**。ゲイン 800 は実測で決めました
+（80 ではどの深さでも落とし、300 では 35 mm のみ保持、800 で 35/50 mm とも保持）。
+
+### 再生成
+
+```bash
+python -m robopy.sim.mjcf_export                                  # 4 モデルすべて
+python -m robopy.sim.mjcf_export -o out.xml --gripper panda_longer_finger
+```
+
 ## :material-run: タスク
 
 | 名前 | 内容 |
@@ -154,6 +219,7 @@ CAD エクスポートをそのまま MuJoCo に読ませると壊れます。�
 | `rakuda.reach` | 右手を目標点へ |
 | `rakuda.bimanual_reach` | 両手をそれぞれの目標点へ |
 | `rakuda.push_cube` | テーブル上のキューブを目標領域まで押す |
+| `rakuda.lift_cube` | キューブを掴んで持ち上げる（`rakuda_gripper` を使用） |
 
 3つとも、ロボットは擬似台（`rakuda_mount`）の上に立ちます。`push_cube` はさらに
 作業面 `z = 0.75` のテーブルを正面に置き、キューブは実測した到達領域
@@ -176,8 +242,9 @@ states, reward, terminated, timeout, _ = env.step(action)
 テストには「実際にキューブに手が届くか」を関節空間の探索で確かめるものも含まれています
 （擬似台が無ければ解が存在しません）。
 
-把持を伴うタスクを作るには、まず**モデルにグリッパ関節を足す**必要があります。
-タスクを書き足すだけでは足りません。
+把持を伴うタスクは `rakuda_gripper` の上に組んでください。`rakuda.lift_cube` がその例です
+（成功判定は「キューブが 6 cm 上がっている」かつ「まだ手の中にある」の両方 — 片方だけだと
+腕で弾き飛ばしただけでも成功になってしまいます）。
 
 ## :material-cog-outline: 自己衝突の設定
 

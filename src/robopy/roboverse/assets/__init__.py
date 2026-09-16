@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Tuple
 
 __all__ = [
+    "PACKAGED_RAKUDA_GRIPPER_MJCF",
     "PACKAGED_RAKUDA_MJCF",
     "RAKUDA_MJCF_ENV_VAR",
     "resolve_rakuda_mjcf",
@@ -30,9 +31,19 @@ RAKUDA_MJCF_ENV_VAR = "ROBOPY_RAKUDA_MJCF"
 #: The self-contained model inside the wheel.
 PACKAGED_RAKUDA_MJCF: Path = Path(__file__).resolve().parent / "rakuda" / "rakuda.xml"
 
+#: The same robot with a borrowed hand on each arm; see
+#: :mod:`robopy.sim.panda_gripper` for what that is and is not.
+PACKAGED_RAKUDA_GRIPPER_MJCF: Path = (
+    Path(__file__).resolve().parent / "rakuda" / "rakuda_gripper.xml"
+)
 
-def resolve_rakuda_mjcf() -> Tuple[Path, str]:
+
+def resolve_rakuda_mjcf(variant: str = "plain") -> Tuple[Path, str]:
     """Return the best available Rakuda MJCF and where it came from.
+
+    Args:
+        variant: ``"plain"`` for the robot the CAD describes, or ``"gripper"``
+            for the one with borrowed fingers on both arms.
 
     Resolution order:
 
@@ -49,6 +60,11 @@ def resolve_rakuda_mjcf() -> Tuple[Path, str]:
         FileNotFoundError: If the override is set but does not exist, or if the
             packaged model is missing (a broken installation).
     """
+    if variant not in ("plain", "gripper"):
+        raise ValueError(f"variant must be 'plain' or 'gripper', not {variant!r}")
+    suffix = "" if variant == "plain" else "_gripper"
+    packaged = PACKAGED_RAKUDA_MJCF if variant == "plain" else PACKAGED_RAKUDA_GRIPPER_MJCF
+
     override = os.environ.get(RAKUDA_MJCF_ENV_VAR)
     if override:
         path = Path(override).expanduser()
@@ -60,15 +76,15 @@ def resolve_rakuda_mjcf() -> Tuple[Path, str]:
 
     model = find_rakuda_model()
     if model is not None:
-        checkout = model.package_dir / RAKUDA_PACKAGE_NAME / "mjcf" / "rakuda.xml"
+        checkout = model.package_dir / RAKUDA_PACKAGE_NAME / "mjcf" / f"rakuda{suffix}.xml"
         if checkout.is_file():
             which = "visual meshes" if model.visual_meshes_available else "convex hulls"
             return checkout, f"models/ checkout, drawing {which}"
 
-    if not PACKAGED_RAKUDA_MJCF.is_file():
+    if not packaged.is_file():
         raise FileNotFoundError(
-            f"robopy is installed without its packaged Rakuda model ({PACKAGED_RAKUDA_MJCF}). "
+            f"robopy is installed without its packaged Rakuda model ({packaged}). "
             "Reinstall robopy, or set "
             f"{RAKUDA_MJCF_ENV_VAR} to an MJCF exported with robopy.sim.mjcf_export."
         )
-    return PACKAGED_RAKUDA_MJCF, "robopy wheel, drawing convex hulls"
+    return packaged, "robopy wheel, drawing convex hulls"

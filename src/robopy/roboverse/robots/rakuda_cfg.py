@@ -128,7 +128,9 @@ def _actuators() -> Dict[str, BaseActuatorCfg]:
     return actuators
 
 
-def joint_limits_from_mjcf(mjcf_path: str | Path) -> Dict[str, Tuple[float, float]]:
+def joint_limits_from_mjcf(
+    mjcf_path: str | Path, joints: Tuple[str, ...] = RAKUDA_ACTUATED_JOINTS
+) -> Dict[str, Tuple[float, float]]:
     """Read the joint ranges straight out of the model file.
 
     They are not repeated here as literals on purpose.  The ranges come from the
@@ -138,19 +140,22 @@ def joint_limits_from_mjcf(mjcf_path: str | Path) -> Dict[str, Tuple[float, floa
 
     Args:
         mjcf_path: The model to read.
+        joints: Which joints to read, and the order to return them in.  The
+            gripper variant passes its finger joints as well.
 
     Returns:
-        Joint name -> ``(lower, upper)`` in radians, for the actuated joints.
+        Joint name -> ``(lower, upper)``, radians for the arm's hinges and
+        metres for the gripper's slides.
 
     Raises:
-        ValueError: If a joint in :data:`RAKUDA_ACTUATED_JOINTS` is missing from
-            the model or carries no range.
+        ValueError: If one of ``joints`` is missing from the model or carries no
+            range.
     """
     root = ElementTree.parse(Path(mjcf_path)).getroot()
     found: Dict[str, Tuple[float, float]] = {}
     for joint in root.iter("joint"):
         name = joint.get("name")
-        if name not in RAKUDA_ACTUATED_JOINTS:
+        if name not in joints:
             continue
         span = joint.get("range")
         if span is None:
@@ -158,10 +163,10 @@ def joint_limits_from_mjcf(mjcf_path: str | Path) -> Dict[str, Tuple[float, floa
         lower, upper = (float(value) for value in span.split())
         found[name] = (lower, upper)
 
-    missing = [joint for joint in RAKUDA_ACTUATED_JOINTS if joint not in found]
+    missing = [joint for joint in joints if joint not in found]
     if missing:
         raise ValueError(f"{mjcf_path} is missing the actuated joint(s) {missing}")
-    return {joint: found[joint] for joint in RAKUDA_ACTUATED_JOINTS}
+    return {joint: found[joint] for joint in joints}
 
 
 def home_pose(limits: Dict[str, Tuple[float, float]], margin_rad: float = 0.05) -> Dict[str, float]:

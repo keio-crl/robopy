@@ -90,13 +90,14 @@ import numpy as np
 
 from robopy.config.robot_config.rakuda_config import RAKUDA_MOTOR_TRAVEL_RAD
 from robopy.kinematics.transforms import urdf_transform
-from robopy.models import RAKUDA_PACKAGE_NAME, find_rakuda_model
+from robopy.models import RAKUDA_PACKAGE_NAME, find_models_dir, find_rakuda_model
 
 __all__ = [
     "MJCF_MODEL_NAME",
     "MjcfExportError",
     "MjcfExportReport",
     "RAKUDA_ACTUATED_JOINTS",
+    "GRIPPER_NAME",
     "RAKUDA_BASE_BODY",
     "RAKUDA_FRAME_SITES",
     "RakudaMjcfOptions",
@@ -109,6 +110,9 @@ MJCF_MODEL_NAME = "rakuda"
 
 #: Name given to the pedestal body that everything else hangs off.
 RAKUDA_BASE_BODY = "base"
+
+#: The one borrowed gripper this exporter knows how to fit.
+GRIPPER_NAME = "panda_longer_finger"
 
 #: MuJoCo's STL reader rejects a mesh with more triangles than this.
 _MAX_STL_FACES = 200_000
@@ -222,6 +226,11 @@ class RakudaMjcfOptions:
             ``visual_source="hull"``.
         visual_source: ``"mesh"`` draws the full visual STLs (53 MB, Git LFS);
             ``"hull"`` draws the convex hulls, which every checkout has.
+        gripper: ``"panda_longer_finger"`` bolts a borrowed hand onto each
+            gripper frame (see :mod:`robopy.sim.panda_gripper`), turning the
+            15-joint robot into a 17-actuator one that can close on things.
+            ``None``, the default, leaves the frames bare, which is what the CAD
+            export actually describes.
     """
 
     density_kg_m3: float = 2700.0
@@ -231,6 +240,7 @@ class RakudaMjcfOptions:
     joint_damping: float = 0.5
     embed_meshes: bool = False
     visual_source: str = "mesh"
+    gripper: str | None = None
 
 
 @dataclass
@@ -252,6 +262,8 @@ class MjcfExportReport:
     hulls_substituted_for_visual: List[str] = field(default_factory=list)
     continuous_joints_ranged: List[str] = field(default_factory=list)
     assembly_contacts_excluded: List[str] = field(default_factory=list)
+    gripper: str | None = None
+    gripper_actuators: List[str] = field(default_factory=list)
     servo_by_joint: Dict[str, str] = field(default_factory=dict)
 
     def summary(self) -> str:
@@ -265,6 +277,11 @@ class MjcfExportReport:
             f"({self.fixed_base_mass_kg:.3f} kg of it welded into the pedestal)",
             f"  {len(self.actuators)} position servos, {len(self.sites)} sites",
         ]
+        if self.gripper:
+            lines.append(
+                f"  gripper {self.gripper!r}: {len(self.gripper_actuators)} more actuators "
+                f"({', '.join(self.gripper_actuators)}) -- borrowed, not this machine's own"
+            )
         if self.assembly_contacts_excluded:
             lines.append(
                 "  contacts excluded as assembly interfaces: "
@@ -300,6 +317,30 @@ def _stl_face_count(path: Path) -> int:
     if len(header) < 84:
         return 0
     return int(struct.unpack_from("<I", header, 80)[0])
+
+
+def _read_obj(path: Path) -> Tuple[np.ndarray, np.ndarray]:
+    """Return ``(vertices, faces)`` of a Wavefront OBJ.
+
+    Only ``v`` and ``f`` are read: the borrowed gripper meshes are plain
+    triangle soup, and MuJoCo takes its materials from the MJCF rather than the
+    OBJ's ``mtllib``. Faces are triangulated by fanning, which is exact for the
+    quads these files contain.
+    """
+    vertices: List[Tuple[float, float, float]] = []
+    faces: List[Tuple[int, int, int]] = []
+    for line in path.read_text(errors="replace").splitlines():
+        if line.startswith("v "):
+            parts = line.split()
+            vertices.append((float(parts[1]), float(parts[2]), float(parts[3])))
+        elif line.startswith("f "):
+            corners = [int(token.split("/")[0]) for token in line.split()[1:]]
+            corners = [c - 1 if c > 0 else len(vertices) + c for c in corners]
+            for i in range(1, len(corners) - 1):
+                faces.append((corners[0], corners[i], corners[i + 1]))
+    if not vertices or not faces:
+        raise MjcfExportError(f"{path} has no usable geometry ({len(vertices)} verts)")
+    return np.asarray(vertices, dtype=float), np.asarray(faces, dtype=int)
 
 
 def _read_stl(path: Path) -> Tuple[np.ndarray, np.ndarray]:
@@ -835,7 +876,9 @@ def _embed_meshes(mjcf: ET.Element, assets: Dict[str, Path]) -> None:
         source = assets.get(name)
         if source is None:
             raise MjcfExportError(f"no source STL was recorded for mesh asset {name!r}")
-        vertices, faces = _read_stl(source)
+        vertices, faces = (
+            _read_obj(source) if source.suffix.lower() == ".obj" else _read_stl(source)
+        )
         mesh.attrib.pop("file", None)
         # An inlined mesh has no file, so it has no content type either. Dropping
         # the attribute is also what makes this export reproducible: whether
@@ -853,9 +896,12 @@ def _retarget_mesh_files(mjcf: ET.Element, assets: Dict[str, Path], output_dir: 
     if asset_root is None:
         raise MjcfExportError("the compiled model has no <asset>")
     for mesh in asset_root.findall("mesh"):
-        source = assets.get(mesh.get("name", ""))
+        name = mesh.get("name", "")
+        if name.startswith("panda_finger_"):
+            continue  # the gripper wrote its own path, already relative to here
+        source = assets.get(name)
         if source is None:
-            raise MjcfExportError(f"no source STL was recorded for mesh asset {mesh.get('name')!r}")
+            raise MjcfExportError(f"no source STL was recorded for mesh asset {name!r}")
         mesh.set("file", os.path.relpath(source, output_dir.resolve()))
 
 
@@ -966,11 +1012,6 @@ def export_rakuda_mjcf(
         if compiler is not None:
             compiler.attrib.pop("meshdir", None)
 
-        if options.embed_meshes:
-            _embed_meshes(mjcf, assets)
-        else:
-            _retarget_mesh_files(mjcf, assets, output_path.parent)
-
     _check_single_root(mjcf)
     report.assembly_contacts_excluded = _exclude_assembly_contacts(mjcf, compiled, mujoco)
     _pin_inertials(mjcf, compiled, mujoco)
@@ -978,6 +1019,14 @@ def export_rakuda_mjcf(
     _apply_joint_dynamics(mjcf, options)
     _add_sites(mjcf, root, report.sites)
     _add_actuators(mjcf, root, original_links, options, report)
+    _attach_gripper(mjcf, options, output_path, report)
+
+    # After the gripper, so its meshes are embedded or retargeted with the rest.
+    if options.embed_meshes:
+        _embed_meshes(mjcf, {**assets, **_GRIPPER_ASSET_SOURCES})
+    else:
+        _retarget_mesh_files(mjcf, assets, output_path.parent)
+
     _indent(mjcf)
 
     # No "--" anywhere in here: XML forbids it inside a comment, and while MuJoCo
@@ -1019,17 +1068,65 @@ def export_rakuda_mjcf(
     return report
 
 
+def _attach_gripper(
+    mjcf: ET.Element,
+    options: RakudaMjcfOptions,
+    output_path: Path,
+    report: MjcfExportReport,
+) -> None:
+    """Bolt on a borrowed hand, when one was asked for."""
+    if not options.gripper:
+        return
+    if options.gripper != "panda_longer_finger":
+        raise MjcfExportError(
+            f"unknown gripper {options.gripper!r}; the only one vendored is 'panda_longer_finger'"
+        )
+
+    from robopy.sim.panda_gripper import attach_panda_fingers, find_gripper_meshes
+
+    models = find_models_dir()
+    if models is None:
+        raise MjcfExportError(
+            "the gripper meshes live under models/gripper_panda, and no models/ directory "
+            "was found; set ROBOPY_MODELS_DIR"
+        )
+    meshes = find_gripper_meshes(models)
+    if options.embed_meshes:
+        files = {kind: str(path) for kind, path in meshes.items()}
+    else:
+        files = {
+            kind: os.path.relpath(path, output_path.parent.resolve())
+            for kind, path in meshes.items()
+        }
+    report.gripper = options.gripper
+    report.gripper_actuators = attach_panda_fingers(mjcf, meshes, files)
+    mjcf.set("model", f"{MJCF_MODEL_NAME}_gripper")
+    # The embedder looks its sources up by asset name.
+    _GRIPPER_ASSET_SOURCES.update({f"panda_finger_{kind}": path for kind, path in meshes.items()})
+
+
+#: Filled in by :func:`_attach_gripper` so the embedding pass can find the
+#: borrowed meshes, which do not come from the CAD export's own staging.
+_GRIPPER_ASSET_SOURCES: Dict[str, Path] = {}
+
+
 def _default_outputs() -> List[Tuple[Path, RakudaMjcfOptions]]:
     """The models the repository keeps checked in."""
-    from robopy.roboverse.assets import PACKAGED_RAKUDA_MJCF
+    from robopy.roboverse.assets import PACKAGED_RAKUDA_GRIPPER_MJCF, PACKAGED_RAKUDA_MJCF
 
     outputs: List[Tuple[Path, RakudaMjcfOptions]] = []
     model = find_rakuda_model()
     if model is not None:
-        outputs.append(
-            (model.package_dir / RAKUDA_PACKAGE_NAME / "mjcf" / "rakuda.xml", RakudaMjcfOptions())
-        )
+        mjcf_dir = model.package_dir / RAKUDA_PACKAGE_NAME / "mjcf"
+        outputs.append((mjcf_dir / "rakuda.xml", RakudaMjcfOptions()))
+        outputs.append((mjcf_dir / "rakuda_gripper.xml", RakudaMjcfOptions(gripper=GRIPPER_NAME)))
     outputs.append((PACKAGED_RAKUDA_MJCF, RakudaMjcfOptions(embed_meshes=True)))
+    outputs.append(
+        (
+            PACKAGED_RAKUDA_GRIPPER_MJCF,
+            RakudaMjcfOptions(embed_meshes=True, gripper=GRIPPER_NAME),
+        )
+    )
     return outputs
 
 
@@ -1049,6 +1146,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--embed-meshes", action="store_true", help="inline the geometry")
     parser.add_argument("--visual", choices=("mesh", "hull"), default="mesh")
+    parser.add_argument(
+        "--gripper",
+        choices=(GRIPPER_NAME,),
+        default=None,
+        help="bolt on a borrowed hand; see robopy.sim.panda_gripper",
+    )
     args = parser.parse_args(argv)
 
     if args.output is not None:
@@ -1059,6 +1162,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     density_kg_m3=args.density,
                     embed_meshes=args.embed_meshes,
                     visual_source=args.visual,
+                    gripper=args.gripper,
                 ),
             )
         ]

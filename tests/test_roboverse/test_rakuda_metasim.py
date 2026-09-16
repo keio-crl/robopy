@@ -37,7 +37,7 @@ from robopy.roboverse.tasks._common import (  # noqa: E402
 from robopy.sim.mjcf_export import RAKUDA_ACTUATED_JOINTS  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-TASK_NAMES = ("rakuda.reach", "rakuda.bimanual_reach", "rakuda.push_cube")
+TASK_NAMES = ("rakuda.reach", "rakuda.bimanual_reach", "rakuda.push_cube", "rakuda.lift_cube")
 
 
 class TestDiscovery:
@@ -312,18 +312,20 @@ class TestTheTasksRun:
         env = task_class(scenario=scenario, device="cpu")
         try:
             states, _ = env.reset(seed=0)
-            joints = env.handler.get_joint_names("rakuda", sort=True)
-            assert len(joints) == 15
+            robot = scenario.robots[0]
+            joints = env.handler.get_joint_names(robot.name, sort=True)
+            # 15 for the plain robot, 19 once a borrowed hand is on each arm.
+            assert len(joints) == robot.num_joints
 
             action = torch.zeros(1, len(joints))
             for i, joint in enumerate(joints):
-                low, high = scenario.robots[0].joint_limits[joint]
+                low, high = robot.joint_limits[joint]
                 action[0, i] = min(max(0.0, low + 0.05), high - 0.05)
 
             for _ in range(10):
                 states, reward, terminated, timeout, _ = env.step(action)
             assert torch.isfinite(reward).all()
-            assert torch.isfinite(states.robots["rakuda"].joint_pos).all()
+            assert torch.isfinite(states.robots[robot.name].joint_pos).all()
             assert not terminated.any(), "the task reports success before anything has moved"
         finally:
             env.close()
