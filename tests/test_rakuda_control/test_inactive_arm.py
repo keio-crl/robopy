@@ -148,11 +148,11 @@ def test_inactive_arm_collision_constraints_are_still_checked(dual_arm_ik, whole
 @pytest.mark.parametrize("side", ["left", "right"])
 @pytest.mark.parametrize("bent", [False, True])
 def test_committed_rakuda_urdf_single_arm_torso_motion(side, bent):
-    rakuda = find_rakuda_model(Path(__file__).resolve().parents[2] / "models")
+    rakuda = find_rakuda_model()
     if rakuda is None:
         pytest.skip("committed Rakuda model not present")
     model = WholeBodyModel.from_urdf(
-        rakuda.convex_collision_urdf, package_dirs=[rakuda.package_dir], geometry_only=True
+        rakuda.convex_collision_urdf, package_dirs=rakuda.package_dirs, geometry_only=True
     )
     for s in ("left", "right"):
         model.add_fixed_frame(f"{s}_tcp", f"gripper_{s}_dof", np.eye(4))

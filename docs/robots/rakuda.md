@@ -269,8 +269,8 @@ UFactory Studio の「モデルだけを動かして確認する」に相当す�
 ```bash
 uv sync --extra kinematics
 
-# 引数なし: リポジトリ同梱の実モデル（models/rakuda）で起動。
-#   `git lfs pull` 済みなら視覚メッシュ、未取得なら凸包（<collision>）描画に自動フォールバック
+# 引数なし: パッケージ同梱の実モデル（robopy/models/rakuda）で起動。
+#   視覚メッシュ（`robopy-models fetch` または `git lfs pull`）があればそれを、なければ凸包（<collision>）を描画
 uv run robopy-viewer
 uv run robopy-viewer --geometry collision   # 凸包を明示的に描く
 
@@ -370,6 +370,90 @@ Python APIも同じ既定動作です。例えば右腕のみなら
 実機の状態をこのページに**ミラー表示**する機能は未実装です（サーボループのスナップショットを
 `/api/fk` 相当の入力にすれば実現できますが、初回では対象外）。
 
+## :material-virtual-reality: VR テレオペ（Meta Quest） {: #vr }
+
+ヘッドセットの向きで `head_yaw` / `head_pitch` を、左右のコントローラで左右の腕を操作し、頭部カメラの画像を
+ヘッドセット内に投影します。ヘッドセット側にアプリは不要で、Quest のブラウザで WebXR ページを開くだけです。
+モジュールは `robopy.vr`、コマンドは `robopy-vr` です（API は [VR テレオペ API](../api/vr.md)）。
+
+```bash
+# 実機なし（モデルとソルバのみ、カメラはテストパターン）
+uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem
+
+# 頭部カメラを OpenCV デバイスから配信
+uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem --camera opencv:0
+
+# 実機（.robopy/rakuda/config.yaml の control.mode: cartesian_teleop が必要。ロボットが動きます）
+uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem --config --hardware
+```
+
+Quest のブラウザで `https://<PCのIP>:8766/vr` を開き、**Enter VR** を押します。
+
+### セキュアコンテキスト（HTTPS）
+
+WebXR は https か localhost でしか動きません。方法は 2 つあります。
+
+1. 自己署名証明書で HTTPS 配信（`--cert/--key`）。Quest のブラウザで一度警告を受け入れます。
+   ```bash
+   openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 -subj "/CN=robopy"
+   ```
+2. `adb reverse tcp:8766 tcp:8766` で Quest の `localhost:8766` を PC に転送し、`http://localhost:8766/vr` を開く
+   （ブラウザは localhost をセキュア扱いします。TLS 不要）。
+
+### 操作
+
+| 入力 | 動作 |
+| --- | --- |
+| ヘッドセットの向き | 頭部の yaw / pitch（roll は 2 軸首では再現できないので無視） |
+| グリップ（握り） | **クラッチ**。握っている間だけ、そのコントローラの相対移動・回転が同じ側の手先目標に加算される |
+| トリガ | グリッパ（`--gripper SIDE=MOTOR:OPEN,CLOSED` で開閉角を与えたときのみ） |
+| 両スティック同時クリック | リセンター（いま向いている方向をロボットの正面 +X にする） |
+| A / X | カメラ画像を頭に追従させる／空間に固定する |
+| B / Y | ロボットのツイン表示の切替 |
+
+腕は**相対**マッピングです。絶対マッピングは操作者の肩とロボットの肩が一致していないと成り立たないので、
+クラッチを離して自分の腕を戻し、また握って続ける、という操作になります。目標の移動速度・角速度は
+スルーリミットで抑えられます（`--max-hand-speed`）。手先の向き追従は `--no-orientation` で切れます。
+Rakuda の手首は 2 軸なので、向きを保った並進は届かないことが多く、その場合ソルバは重み付きの妥協解に
+落ちます（Info 表示の残差を見てください）。
+
+### モデルから導出するもの（推定しないもの）
+
+- **頭部関節の符号**: URDF の軸方向から求めます。実機エクスポートでは `head_yaw_dof` の軸はワールド −Z で、
+  正の角度で**右**を向きます（ヘッドセットの左回りが負の関節角）。`head_pitch_dof` は正で上向きです。
+- **胴体 yaw の補償**: 頭は胴体の上に載っており、胴体 yaw は腕 IK の変数です。操作者の頭の向きは
+  **ベース座標系**での向きとして扱い、頭部 yaw の指令は `信号 + k × (torso_yaw − 基準)` で補償します。
+  `k` は「胴体 1 rad あたりカメラ方位を保つのに必要な頭部 yaw 変化」をモデルの FK から有限差分で求めた値で、
+  実機エクスポートでは両軸が同じ向き（ワールド −Z）なので `k = −1`、すなわち **指令 = −torso_yaw + 信号** です。
+  `--no-torso-compensation` で切れます。
+- **正面を向く中立姿勢**: 実機エクスポートの URDF ゼロは頭が右に約 22° 回っており、カメラは約 6° 上を
+  向いています。`HeadJointMapping.from_model()` が `head_camera_link` の光軸（自動判定で z 軸）が
+  ベース +X を水平に向く関節角（yaw −0.381 rad、pitch −0.104 rad）を解き、これをヘッドセットの
+  リセンター姿勢に対応させます。
+- **グリッパの開閉角**: URDF ではグリッパ関節は fixed で、開閉角は測定値です。与えなければトリガは何もしません。
+- **カメラの画角**: `--camera-fov` の既定 69° は D435 カラーの公称値で、このカメラの校正値ではありません。
+
+### 安全側の設計
+
+- 操作者の WebSocket が切れる／無応答になると、両クラッチを解放し腕をホールドします（`teleop_timeout_s`）。
+- 目標には有効期限（`--target-ttl`、既定 0.25 s）があり、ストリームが止まれば新しい動作は出ません。
+- 同時に操作できるのは 1 人だけです。2 本目の接続は拒否されます。
+- コントローラのトラッキングが外れた瞬間にクラッチを解放します（測っていない姿勢で動き続けない）。
+- 実機モードでは `RakudaControlSystem` の Cartesian モードを使い、頭・グリッパは `set_direct_targets()`
+  で IK の対象外関節としてのみ指令します（IK が扱う関節に直接指令すると `ValueError`）。
+
+### 実機なしで確認する
+
+```bash
+uv run --extra kinematics python examples/robot/rakuda_vr_teleop.py      # スクリプト操作者
+uv run --extra kinematics robopy-vr --open-browser                          # デスクトップでプレビュー
+```
+
+ページの **Desktop preview** はウィンドウのカメラの向きを頭部姿勢として送るので、ヘッドセットなしで
+頭部追従とツイン描画を確認できます。シミュレーションの初期姿勢は肘を 0.8 rad 曲げた姿勢です
+（実機エクスポートのゼロ姿勢は腕が伸び切り右肘が可動域端にあるため、そこからはソルバの一歩も取れません。
+`--start-pose JOINT=RAD` で変更可）。
+
 ## :material-ruler: 単位と校正
 
 ### 電流定数の表記
@@ -414,54 +498,56 @@ multi-turn位置は `[-pi, pi]` へ折り返しません。`zero_count` は
 `control.allow_hardware_current_output` は既定で `false` です。上記が測定され
 `validated: true` になるまで、バイラテラルモードは `configure()` で拒否されます。
 
-### モデルの配置（`models/rakuda/`）
+### モデルの配置（`robopy/models/rakuda/`、パッケージ同梱）
 
-実モデル `Rakuda-2_simulation_ready.zip` はアーカイブ内のレイアウトのまま `models/rakuda/assembly_2/` に
-コミットしてあります（`package://assembly_2/...` は `--package-dir models/rakuda` で解決）。
-Python パッケージの外（リポジトリ直下）に置いてあるので wheel は肥大化しません。
+robopy はライブラリなので、動作に必要なものは `pip install robopy` で入るパッケージの中に入っています。
+`Rakuda-2_simulation_ready.zip` の展開レイアウトをそのまま `robopy/models/rakuda/assembly_2/` に
+パッケージデータとして同梱し、`robopy.models.find_rakuda_model()` が場所を返します（`git clone` は不要です）。
 
-| 内容 | 管理 | 用途 |
+| 内容 | wheel | 用途 |
 | --- | --- | --- |
-| `urdf/*.urdf`（3種）、`collision_meshes/`（凸包137個、2.9 MB） | 通常の git | 運動学・IK・衝突判定・凸包表示。**clone だけで動く** |
-| `meshes/`（視覚メッシュ137個、53 MB） | **Git LFS**（`.gitattributes` で設定済み） | ビューアの見た目のみ |
-
-**視覚メッシュはまだリポジトリに入っていません。** この実装を行った環境からは GitHub の LFS
-サーバ（`lfs.github.com`）への接続が egress ポリシーで拒否されるため、LFS オブジェクトを
-アップロードできませんでした。追加は一度だけ、LFS を使える手元のマシンで行います（`.gitattributes`
-の規則があるので `git add` 時に自動で LFS ポインタになります。詳細は `models/rakuda/README.md`）:
+| `urdf/*.urdf`（3種）、`collision_meshes/`（凸包137個、2.9 MB） | **同梱** | 運動学・IK・衝突判定・凸包表示。**pip install だけで動く** |
+| `meshes/`（視覚メッシュ137個、53 MB） | 含まない（リポジトリでは Git LFS） | ビューア／VR の見た目のみ。`robopy-models fetch` で取得 |
 
 ```bash
-git lfs install
-unzip -j Rakuda-2_simulation_ready.zip 'assembly_2/meshes/*.stl' -d models/rakuda/assembly_2/meshes/
-git add models/rakuda/assembly_2/meshes
-git lfs ls-files | wc -l        # 137 と出れば LFS 管理になっている
-git commit -m "models(rakuda): add visual meshes via Git LFS" && git push
+robopy-models status     # モデルの場所と視覚メッシュの有無
+robopy-models fetch      # 視覚メッシュをキャッシュ（~/.cache/robopy/models/rakuda/）に取得
 ```
 
-追加後のクローンでは次で取得します（任意。なくても凸包で表示できます）:
+`fetch` は GitHub Release `rakuda-visual-meshes-v1` に添付された `rakuda_visual_meshes.zip`（137 個の STL と
+SHA-256 の `MANIFEST.json`）を 1 リクエストで取得し、各ファイルが STL であること（LFS ポインタやエラーページ
+ではないこと）とチェックサム、URDF が参照する 137 個が揃っていることを確認してキャッシュに展開します。
+Git LFS の帯域クォータは消費しません。取得先は `ROBOPY_CACHE_DIR`（既定 `$XDG_CACHE_HOME/robopy`）で
+変えられ、`--tag` / `--url`（ミラーや研究室のファイルサーバ、`file://` も可）/ `--token`（非公開リポジトリは
+API 経由で解決）を指定できます。チェックアウトで開発している場合は `git lfs install && git lfs pull` でも
+同じ状態になります。
 
-```bash
-git lfs install && git lfs pull
-```
+アセットの作り方（CAD を再エクスポートしたときだけ）: LFS を pull したチェックアウトで
+`uv run python scripts/build_visual_mesh_asset.py` が zip とマニフェストを作ります。タグ
+`rakuda-visual-meshes-v*` を push すると GitHub Actions（`release-visual-meshes`）が同じものを Release に
+添付します。既定タグは `robopy.models.RAKUDA_VISUAL_MESH_RELEASE_TAG` で、URDF を更新したときに合わせて上げます。
 
-`robopy.models.find_rakuda_model()` は視覚メッシュの状態を `visual_mesh_status` で
-`PRESENT`（実体あり）/ `LFS_POINTERS`（`git lfs pull` 前）/ `ABSENT`（未追加）と区別します。
-どちらの不在でもビューアは同じ URDF の `<collision>`（通常 git の凸包）を描画し、Info タブと起動ログに
+`find_rakuda_model()` は視覚メッシュの状態を `visual_mesh_status` で
+`PRESENT`（実体あり）/ `LFS_POINTERS`（チェックアウトで `git lfs pull` 前）/ `ABSENT`（wheel で未取得）と
+区別します。どちらの不在でもビューアは同じ URDF の `<collision>`（同梱の凸包）を描画し、Info タブと起動ログに
 理由と対処が出ます（`--geometry visual|collision|auto` で明示もできます）。
 注意: `assembly_2_convex_collision.urdf` は `<visual>` に元の視覚メッシュ、`<collision>` に凸包を
 持つので、「凸包 URDF を読めば凸包が表示される」わけではありません。
 コードからは次のように参照します。
 
 ```python
-from robopy.models import find_rakuda_model
+from robopy.models import find_rakuda_model, fetch_visual_meshes
 
-m = find_rakuda_model()            # None なら models/ が見つからない（wheel インストール等）
-m.convex_collision_urdf, m.visual_urdf, m.package_dir, m.visual_mesh_status
+m = find_rakuda_model()            # None なら models データが見つからない（通常はあり得ない）
+m.convex_collision_urdf, m.package_dirs, m.visual_mesh_status
 m.visual_mesh_hint()               # 不在時の対処を 1 行で返す（PRESENT なら None）
+fetch_visual_meshes()              # 視覚メッシュをキャッシュへ（FetchReport を返す）
 ```
 
-探索順は環境変数 `ROBOPY_MODELS_DIR` → 引数 → パッケージ位置／カレントディレクトリから上位に `models/` を探す、
-です。wheel でインストールした環境では `ROBOPY_MODELS_DIR` でチェックアウトの `models/` を指してください。
+`package://assembly_2/...` の解決には `m.package_dirs`（キャッシュ → 同梱ディレクトリの順）を渡してください。
+探索順は環境変数 `ROBOPY_MODELS_DIR` → 引数 → パッケージデータで、別のモデルディレクトリを使いたいときだけ
+`ROBOPY_MODELS_DIR` を指定します。`.robopy/rakuda/config.yaml` の `control.model.urdf_path` を `null` に
+しておけば、制御系（Cartesian モード）も同梱モデルを使います。
 
 ### 実モデル（`Rakuda-2_simulation_ready.zip`）の監査結果
 

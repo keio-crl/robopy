@@ -87,6 +87,7 @@ class IKSetup:
         left_arm_joints: Sequence[str] | None = None,
         right_arm_joints: Sequence[str] | None = None,
         head_joints: Sequence[str] | None = None,
+        config_overrides: Mapping[str, Any] | None = None,
     ) -> None:
         """Build the solver, inferring joint groups from names when not given.
 
@@ -95,6 +96,10 @@ class IKSetup:
         for the Rakuda export and the synthetic fixture; anything else should
         pass the groups explicitly.  The groups used are recorded in
         :attr:`groups` and shown in the page so an inference is never silent.
+
+        ``config_overrides`` replaces fields of the solver configuration; the
+        VR server uses it to run the solver as a streaming controller (one step
+        per pose sample) instead of iterating a jog to convergence.
         """
         from robopy.kinematics.dual_arm_ik import DualArmIK, DualArmIKConfig  # noqa: PLC0415
 
@@ -114,6 +119,24 @@ class IKSetup:
 
         unbounded = bundle.model.unbounded_joints([torso, *left, *right])
         self.geometric_study_only = bool(unbounded)
+        settings: Dict[str, Any] = dict(
+            # The page iterates to convergence in one request; per-step
+            # bounds stay in place so the path is one the machine could take.
+            max_joint_step_rad=0.05,
+            compute_budget_s=5.0,
+            max_state_age_s=5.0,
+            # The viewer iterates to convergence in one request; there is no
+            # machine integrating these steps, so an acceleration window is
+            # meaningless here and only slows the approach to the answer.
+            max_joint_acceleration_rad_s2=None,
+            # A little more Tikhonov damping than the controller default: it
+            # penalises step size without biasing the equilibrium, which
+            # keeps a straight (singular) arm from wandering along its
+            # null space while a jog converges.
+            damping=1e-3,
+            require_soft_limits=not unbounded,
+        )
+        settings.update(config_overrides or {})
         self.solver = DualArmIK(
             bundle.model,
             left_frame=bundle.tcp_frames["left"],
@@ -122,23 +145,7 @@ class IKSetup:
             left_arm_joints=left,
             right_arm_joints=right,
             head_joints=head,
-            config=DualArmIKConfig(
-                # The page iterates to convergence in one request; per-step
-                # bounds stay in place so the path is one the machine could take.
-                max_joint_step_rad=0.05,
-                compute_budget_s=5.0,
-                max_state_age_s=5.0,
-                # The viewer iterates to convergence in one request; there is no
-                # machine integrating these steps, so an acceleration window is
-                # meaningless here and only slows the approach to the answer.
-                max_joint_acceleration_rad_s2=None,
-                # A little more Tikhonov damping than the controller default: it
-                # penalises step size without biasing the equilibrium, which
-                # keeps a straight (singular) arm from wandering along its
-                # null space while a jog converges.
-                damping=1e-3,
-                require_soft_limits=not unbounded,
-            ),
+            config=DualArmIKConfig(**settings),
         )
         self.groups: Dict[str, Any] = {
             "torso": torso,

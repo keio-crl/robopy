@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>robopy VR teleop</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%231c2027' stroke='%23ff9f43' stroke-width='2'/%3E%3Cpath d='M8 13h16v9H8z M11 17h3 M18 17h3' fill='none' stroke='%23ff9f43' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<script type="importmap">
+{
+  "imports": {
+    "three": "/static/vendor/three.module.min.js",
+    "three/addons/": "/static/vendor/addons/"
+  }
+}
+</script>
+<style>
+  #vr-bar { display:flex; gap:.6rem; align-items:center; padding:.4rem .8rem; flex-wrap:wrap; }
+  #vr-bar button.primary { background:#ff9f43; color:#1c2027; font-weight:600; }
+  #vr-bar button[disabled] { opacity:.45; }
+  #vr-status { font-family: ui-monospace, monospace; font-size:.8rem; white-space:pre; line-height:1.35;
+               padding:.5rem .8rem; border-top:1px solid #2a2f38; max-height:34vh; overflow:auto; }
+  #vr-status .ok { color:#7bd88f; } #vr-status .warn { color:#ffcf6b; } #vr-status .bad { color:#ff7b72; }
+  .badge.hw { background:#5a1e1e; color:#ffb4b4; }
+  main.vr { grid-template-columns: 1fr; }
+  #panel.vr { display:none; }
+  .hint { color:#9aa3b2; font-size:.8rem; }
+</style>
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">robopy <span class="dim">VR teleop</span></div>
+  <div id="robot-name" class="robot-name">connecting…</div>
+  <div id="backend-badge" class="badge sim" title="Where the commands go.">…</div>
+  <div class="spacer"></div>
+  <div id="stats" class="stats">—</div>
+</header>
+
+<div id="vr-bar">
+  <button id="enter-vr" class="primary" disabled title="Start an immersive WebXR session (needs a headset and a secure context)">Enter VR</button>
+  <button id="preview" title="Drive the head from this window's camera; no headset needed">Desktop preview</button>
+  <button id="recenter" title="Take the current headset direction as the robot's front (also: click both thumbsticks)">Re-centre</button>
+  <label><input type="checkbox" id="head-on" checked> head</label>
+  <label><input type="checkbox" id="arms-on" checked> arms</label>
+  <label><input type="checkbox" id="twin-on" checked> robot twin</label>
+  <label><input type="checkbox" id="cam-lock" checked> image follows head</label>
+  <label>scale <input id="pos-scale" type="number" class="num short" value="1.0" step="0.1" min="0.1" max="5"></label>
+  <span id="xr-support" class="hint"></span>
+</div>
+
+<main class="vr">
+  <div id="viewport">
+    <div id="overlay" class="overlay">connecting…</div>
+  </div>
+</main>
+<div id="vr-status">waiting for the server…</div>
+
+<script type="module" src="/vr/static/vr.js"></script>
+</body>
+</html>
