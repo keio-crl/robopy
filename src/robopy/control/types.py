@@ -22,6 +22,7 @@ __all__ = [
     "BilateralOutput",
     "ControlMode",
     "DualArmTarget",
+    "InactiveArmPolicy",
     "JointState",
     "LimitFlags",
     "ServoState",
@@ -74,6 +75,19 @@ class TorsoPolicy(Enum):
     FIXED = "fixed"
     MANUAL = "manual"
     OPTIMIZE = "optimize"
+
+
+class InactiveArmPolicy(Enum):
+    """Behaviour of an arm whose TCP target is disabled.
+
+    HOLD_JOINTS keeps its six joint angles at the measured values for this
+    step. Its TCP moves with the shared torso; no world-frame task is added.
+    HOLD_WORLD requests the legacy weighted world-frame TCP hold instead.
+    Neither policy disables motor torque or removes collision geometry.
+    """
+
+    HOLD_JOINTS = "hold_joints"
+    HOLD_WORLD = "hold_world"
 
 
 class ServoState(Enum):
@@ -240,9 +254,8 @@ class DualArmTarget:
         left_target: ``(4, 4)`` homogeneous transform of the left TCP target in
             the ``root`` frame, or ``None`` when the left task is not driven.
         right_target: Same for the right TCP.
-        left_enabled: Whether the left task should track ``left_target``.  When
-            ``False`` the solver uses a hold target instead (see
-            :class:`robopy.kinematics.dual_arm_ik.DualArmIK`).
+        left_enabled: Whether the left task should track ``left_target``. When
+            ``False``, ``inactive_arm_policy`` determines its behaviour.
         right_enabled: Same for the right task.
         torso_policy: How to treat the shared torso yaw joint.
         torso_velocity_rad_s: Commanded torso velocity, used only when
@@ -252,7 +265,11 @@ class DualArmTarget:
             consumer that sees an expired target must not issue new motion.
         rebaseline: Request that held (non-driven) TCP targets be re-captured
             from the current measured pose on this step.  Hold targets are
-            otherwise latched, never overwritten every cycle.
+            otherwise latched, never overwritten every cycle. Only used with
+            ``HOLD_WORLD``.
+        inactive_arm_policy: Defaults to ``HOLD_JOINTS``: a disabled arm's TCP
+            follows the torso without arm compensation. ``HOLD_WORLD`` opts
+            into the previous world-frame hold. Enabled arms are unaffected.
     """
 
     left_target: NDArray[np.float64] | None = None
@@ -264,8 +281,11 @@ class DualArmTarget:
     created_ns: int = field(default_factory=monotonic_ns)
     expiry_ns: int | None = None
     rebaseline: bool = False
+    inactive_arm_policy: InactiveArmPolicy = InactiveArmPolicy.HOLD_JOINTS
 
     def __post_init__(self) -> None:
+        if not isinstance(self.inactive_arm_policy, InactiveArmPolicy):
+            raise ValueError("inactive_arm_policy must be an InactiveArmPolicy.")
         for name in ("left_target", "right_target"):
             T = getattr(self, name)
             if T is not None and np.asarray(T).shape != (4, 4):

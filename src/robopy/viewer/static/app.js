@@ -425,7 +425,7 @@ function buildEEPanel(model) {
     box.dataset.side = side;
     box.innerHTML = `
       <header><span>${side} TCP <span class="dim">(${model.tcp_frames[side]})</span></span>
-        <label><input type="checkbox" class="ee-enable" checked> drive</label>
+        <label><input type="checkbox" class="ee-enable" checked> track TCP</label>
         <button class="ee-capture" title="Set the target to the current pose">capture</button></header>
       <div class="pose">
         <span class="h"></span><span class="h">current</span><span class="h">target</span>
@@ -439,8 +439,13 @@ function buildEEPanel(model) {
       </div>`;
     box.querySelector('.ee-enable').addEventListener('change', (e) => {
       state.ee[side].enabled = e.target.checked;
+      // The inactive TCP may have moved with the torso. Start from its
+      // current pose rather than pulling it back to a stale world target.
+      if (e.target.checked) captureTarget(side);
       box.querySelectorAll('.tgt input, .tgt button, input.bar').forEach((el) => { el.disabled = !e.target.checked; });
-      if (state.targetFrames[side]) state.targetFrames[side].visible = e.target.checked;
+      // Takes the triad *and* the drag handle with it: a hand nothing tracks
+      // must not be left with a grabbable target in the scene.
+      updateTargetFrame(side);
       maybeLiveSolve();
     });
     box.querySelector('.ee-capture').addEventListener('click', () => { captureTarget(side); });
@@ -556,6 +561,7 @@ $('#torso-policy').addEventListener('change', (e) => {
   maybeLiveSolve();
 });
 $('#ee-capture-all').onclick = () => { captureTarget('left'); captureTarget('right'); setIKStatus('targets set to the current poses', 'ok'); };
+$('#inactive-arm-policy').addEventListener('change', () => maybeLiveSolve());
 $('#ik-solve').onclick = () => solveIK();
 function maybeLiveSolve(opts) { if ($('#ik-live').checked) solveIK(opts); }
 
@@ -585,6 +591,7 @@ async function solveIK(opts = {}) {
     const body = {
       joints: state.joints, targets,
       torso_policy: $('#torso-policy').value,
+      inactive_arm_policy: $('#inactive-arm-policy').value,
       torso_velocity_rad_s: parseFloat($('#torso-velocity').value) || 0,
       orientation_weight: parseFloat($('#ori-mode').value),
       iterations, dt: 0.02,
@@ -594,8 +601,8 @@ async function solveIK(opts = {}) {
     const fmt = (m, r) => (m == null ? '—' : `${(m * 1000).toFixed(2)} mm / ${r == null ? '—' : (r * DEG).toFixed(2) + '°'}`);
     const lines = [
       `${res.status.toUpperCase()}${res.stalled ? ' (stalled)' : ''}  ${res.iterations} iter  ${res.timing_ms.toFixed(0)} ms`,
-      `left : ${targets.left ? fmt(e.left_position_m, e.left_orientation_rad) : `hold residual ${fmt(e.left_hold_m, null)}`}`,
-      `right: ${targets.right ? fmt(e.right_position_m, e.right_orientation_rad) : `hold residual ${fmt(e.right_hold_m, null)}`}`,
+      `left : ${targets.left ? fmt(e.left_position_m, e.left_orientation_rad) : (res.inactive_arm_policy === 'hold_joints' ? 'follows torso; arm joints held' : `hold residual ${fmt(e.left_hold_m, null)}`)}`,
+      `right: ${targets.right ? fmt(e.right_position_m, e.right_orientation_rad) : (res.inactive_arm_policy === 'hold_joints' ? 'follows torso; arm joints held' : `hold residual ${fmt(e.right_hold_m, null)}`)}`,
       `torso ω ${res.torso_velocity_rad_s.toFixed(3)} rad/s${res.active_limits.length ? `   limits: ${res.active_limits.join(', ')}` : ''}`,
       res.message ? `\n${res.message}` : '',
       res.stalled && res.status !== 'converged'
@@ -603,6 +610,7 @@ async function solveIK(opts = {}) {
           + (res.active_limits.some((l) => l.includes(':at_') || l.endsWith(':lower') || l.endsWith(':upper'))
             ? ' A joint is on its limit (see limits above).'
             : ' The target is probably outside the reachable workspace from this pose -- at q = 0 the arm is fully extended, so bend the elbow first (each elbow bends one way only; see its slider range).')
+          + ($('#torso-policy').value === 'fixed' ? ' The torso is fixed, so only this arm\'s six joints may move; torso: optimize lets the shared torso turn, which is what reaches further (the other arm keeps its joint angles and is carried with it).' : '')
           + (res.orientation_weight > 0 ? ' A two-axis wrist also cannot keep the full orientation while translating; orientation: free jogs position only.' : '')
         : '',
     ];

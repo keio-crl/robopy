@@ -14,6 +14,7 @@ pytest.importorskip("pink", reason="needs the 'kinematics' optional extra")
 
 from robopy.control.types import (  # noqa: E402
     DualArmTarget,
+    InactiveArmPolicy,
     JointState,
     TorsoPolicy,
     monotonic_ns,
@@ -119,9 +120,7 @@ class TestConvergence:
 
     def test_the_solver_only_commands_the_thirteen_active_joints(self, dual_arm_ik) -> None:
         assert dual_arm_ik.active_joints == (
-            (SYNTHETIC_TORSO_JOINT,)
-            + SYNTHETIC_ARM_JOINTS["left"]
-            + SYNTHETIC_ARM_JOINTS["right"]
+            (SYNTHETIC_TORSO_JOINT,) + SYNTHETIC_ARM_JOINTS["left"] + SYNTHETIC_ARM_JOINTS["right"]
         )
         assert len(dual_arm_ik.active_joints) == 13
 
@@ -171,9 +170,7 @@ class TestConvergence:
 class TestTorsoPolicies:
     def test_fixed_holds_the_torso_exactly(self, dual_arm_ik, whole_body_model) -> None:
         left, right, _ = _reachable_targets(whole_body_model)
-        target = DualArmTarget(
-            left_target=left, right_target=right, torso_policy=TorsoPolicy.FIXED
-        )
+        target = DualArmTarget(left_target=left, right_target=right, torso_policy=TorsoPolicy.FIXED)
         final, result = _run(dual_arm_ik, whole_body_model, target, steps=60)
         assert final[SYNTHETIC_TORSO_JOINT] == pytest.approx(0.0, abs=1e-12)
         assert result.torso_velocity_rad_s == pytest.approx(0.0, abs=1e-12)
@@ -246,6 +243,7 @@ class TestHolding:
 
         target = DualArmTarget(
             left_target=left,
+            inactive_arm_policy=InactiveArmPolicy.HOLD_WORLD,
             right_enabled=False,
             torso_policy=TorsoPolicy.OPTIMIZE,
         )
@@ -264,7 +262,10 @@ class TestHolding:
     ) -> None:
         left, _right, _ = _reachable_targets(whole_body_model)
         target = DualArmTarget(
-            left_target=left, right_enabled=False, torso_policy=TorsoPolicy.FIXED
+            left_target=left,
+            inactive_arm_policy=InactiveArmPolicy.HOLD_WORLD,
+            right_enabled=False,
+            torso_policy=TorsoPolicy.FIXED,
         )
         start = _zero(whole_body_model)
         dual_arm_ik.solve_step(_state(whole_body_model, start), target, DT)
@@ -276,28 +277,37 @@ class TestHolding:
         result = dual_arm_ik.solve_step(_state(whole_body_model, pushed), target, DT)
         assert result.right_hold_residual_m > 0.01
 
-    def test_rebaselining_recaptures_the_hold_target(
-        self, dual_arm_ik, whole_body_model
-    ) -> None:
+    def test_rebaselining_recaptures_the_hold_target(self, dual_arm_ik, whole_body_model) -> None:
         left, _right, _ = _reachable_targets(whole_body_model)
         start = _zero(whole_body_model)
         dual_arm_ik.solve_step(
             _state(whole_body_model, start),
-            DualArmTarget(left_target=left, right_enabled=False),
+            DualArmTarget(
+                left_target=left,
+                inactive_arm_policy=InactiveArmPolicy.HOLD_WORLD,
+                right_enabled=False,
+            ),
             DT,
         )
         pushed = dict(start)
         pushed["elbow_pitch_right_dof"] = 0.4
         result = dual_arm_ik.solve_step(
             _state(whole_body_model, pushed),
-            DualArmTarget(left_target=left, right_enabled=False, rebaseline=True),
+            DualArmTarget(
+                left_target=left,
+                inactive_arm_policy=InactiveArmPolicy.HOLD_WORLD,
+                right_enabled=False,
+                rebaseline=True,
+            ),
             DT,
         )
         assert result.right_hold_residual_m == pytest.approx(0.0, abs=1e-9)
 
     def test_reset_clears_the_hold_target(self, dual_arm_ik, whole_body_model) -> None:
         left, _right, _ = _reachable_targets(whole_body_model)
-        target = DualArmTarget(left_target=left, right_enabled=False)
+        target = DualArmTarget(
+            left_target=left, inactive_arm_policy=InactiveArmPolicy.HOLD_WORLD, right_enabled=False
+        )
         start = _zero(whole_body_model)
         dual_arm_ik.solve_step(_state(whole_body_model, start), target, DT)
         dual_arm_ik.reset()
@@ -312,9 +322,7 @@ class TestHolding:
 
 
 class TestConstraints:
-    def test_the_step_is_bounded_by_the_velocity_limit(
-        self, whole_body_model, dual_arm_ik
-    ) -> None:
+    def test_the_step_is_bounded_by_the_velocity_limit(self, whole_body_model, dual_arm_ik) -> None:
         far = np.eye(4)
         far[:3, 3] = [1.0, 0.6, 0.4]
         result = dual_arm_ik.solve_step(
@@ -477,9 +485,7 @@ class TestFailureModes:
         )
         assert result.status is DualArmIKStatus.SOLVER_ERROR
 
-    def test_exceeding_the_compute_budget_is_reported(
-        self, whole_body_model, dual_arm_ik
-    ) -> None:
+    def test_exceeding_the_compute_budget_is_reported(self, whole_body_model, dual_arm_ik) -> None:
         dual_arm_ik.config.compute_budget_s = 0.0
         result = dual_arm_ik.solve_step(
             _state(whole_body_model, _zero(whole_body_model)),

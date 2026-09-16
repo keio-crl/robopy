@@ -48,9 +48,12 @@ def resolve_rakuda_mjcf(variant: str = "plain") -> Tuple[Path, str]:
     Resolution order:
 
     1. ``$ROBOPY_RAKUDA_MJCF``, when set -- an explicit choice wins.
-    2. ``models/rakuda/assembly_2/mjcf/rakuda.xml`` in a repository checkout,
-       which references the real visual meshes when Git LFS has fetched them.
-    3. The self-contained model in this package, which always exists.
+    2. ``rakuda/assembly_2/mjcf/rakuda.xml`` in the models directory, but *only*
+       when the visual meshes it references are actually present.  They are
+       fetched on demand (``robopy-models fetch``) rather than shipped, so most
+       installations do not have them.
+    3. The self-contained model in this package, which always exists and draws
+       the convex hulls.
 
     Returns:
         ``(path, reason)``, where ``reason`` is a short phrase naming the
@@ -75,11 +78,16 @@ def resolve_rakuda_mjcf(variant: str = "plain") -> Tuple[Path, str]:
     from robopy.models import RAKUDA_PACKAGE_NAME, find_rakuda_model
 
     model = find_rakuda_model()
-    if model is not None:
+    if model is not None and model.visual_meshes_available:
+        # Only when the visual meshes are really there. That model references
+        # them by path, and they are the one part of the model directory the
+        # wheel leaves out (`robopy-models fetch` pulls them on demand), so
+        # handing it back without them yields a file MuJoCo cannot load. A
+        # clone without `git lfs pull` has the same problem, with LFS pointers
+        # standing in for geometry.
         checkout = model.package_dir / RAKUDA_PACKAGE_NAME / "mjcf" / f"rakuda{suffix}.xml"
         if checkout.is_file():
-            which = "visual meshes" if model.visual_meshes_available else "convex hulls"
-            return checkout, f"models/ checkout, drawing {which}"
+            return checkout, "models directory, drawing visual meshes"
 
     if not packaged.is_file():
         raise FileNotFoundError(

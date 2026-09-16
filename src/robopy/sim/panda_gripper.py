@@ -7,7 +7,8 @@ have a gripper per arm, driven by an XM430-W350 (``l_arm_grip`` / ``r_arm_grip``
 on the follower bus), but its shape is not in this repository.
 
 So a hand is borrowed: the two finger meshes from CALVIN's
-``panda_longer_finger``, vendored under ``models/gripper_panda/`` (Apache 2.0).
+``panda_longer_finger``, vendored beside the Rakuda model under
+``gripper_panda/`` (Apache 2.0).
 They are attached to the Rakuda's gripper frames as a one-actuator parallel jaw
 per arm, which is what the real bus has.
 
@@ -139,7 +140,7 @@ GRIPPER_ACTUATORS: Dict[str, Tuple[str, str]] = {
     "right": ("right_finger_a_joint", "right_finger_b_joint"),
 }
 
-#: Where the vendored meshes live, relative to the repository's ``models/``.
+#: Where the vendored meshes live, relative to the models directory.
 _MESH_DIR = "gripper_panda"
 _MESH_NAME = "longer_finger_v2.obj"
 

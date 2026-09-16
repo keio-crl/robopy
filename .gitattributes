@@ -1,6 +1,7 @@
-# Rakuda visual meshes (53 MB of decorative STL) live in Git LFS. The URDFs and
-# the convex collision meshes are ordinary git files, so a plain clone can run
-# the kinematics, the solver and the collision-geometry viewer without LFS.
-# Fetch the visual meshes with:  git lfs install && git lfs pull
-models/rakuda/assembly_2/meshes/*.stl filter=lfs diff=lfs merge=lfs -text
-models/rakuda/assembly_2/meshes/*.STL filter=lfs diff=lfs merge=lfs -text
+# Rakuda visual meshes (53 MB of decorative STL) live in Git LFS and are excluded
+# from the wheel. The URDFs and the convex collision meshes are ordinary git files
+# shipped as package data, so both a plain clone and `pip install robopy` can run
+# the kinematics, the solver and the collision-geometry viewer.
+# Fetch the visual meshes with `git lfs pull` (checkout) or `robopy-models fetch` (install).
+src/robopy/models/rakuda/assembly_2/meshes/*.stl filter=lfs diff=lfs merge=lfs -text
+src/robopy/models/rakuda/assembly_2/meshes/*.STL filter=lfs diff=lfs merge=lfs -text

@@ -1087,8 +1087,8 @@ def _attach_gripper(
     models = find_models_dir()
     if models is None:
         raise MjcfExportError(
-            "the gripper meshes live under models/gripper_panda, and no models/ directory "
-            "was found; set ROBOPY_MODELS_DIR"
+            "the gripper meshes live in the models directory, under gripper_panda/, and "
+            "none was found; set ROBOPY_MODELS_DIR"
         )
     meshes = find_gripper_meshes(models)
     if options.embed_meshes:
@@ -1137,7 +1137,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Export the Rakuda CAD model to MJCF.")
     parser.add_argument("-o", "--output", type=Path, default=None, help="write one model here")
     parser.add_argument("--urdf", type=Path, default=None, help="source URDF")
-    parser.add_argument("--package-dir", type=Path, default=None, help="models/rakuda")
+    parser.add_argument(
+        "--package-dir", type=Path, default=None, help="the rakuda/ model directory"
+    )
     parser.add_argument(
         "--density",
         type=float,

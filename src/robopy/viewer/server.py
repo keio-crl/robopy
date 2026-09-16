@@ -35,6 +35,7 @@ import numpy as np
 
 from robopy.control.types import (
     DualArmTarget,
+    InactiveArmPolicy,
     JointState,
     TorsoPolicy,
     monotonic_ns,
@@ -86,6 +87,7 @@ class IKSetup:
         left_arm_joints: Sequence[str] | None = None,
         right_arm_joints: Sequence[str] | None = None,
         head_joints: Sequence[str] | None = None,
+        config_overrides: Mapping[str, Any] | None = None,
     ) -> None:
         """Build the solver, inferring joint groups from names when not given.
 
@@ -94,6 +96,10 @@ class IKSetup:
         for the Rakuda export and the synthetic fixture; anything else should
         pass the groups explicitly.  The groups used are recorded in
         :attr:`groups` and shown in the page so an inference is never silent.
+
+        ``config_overrides`` replaces fields of the solver configuration; the
+        VR server uses it to run the solver as a streaming controller (one step
+        per pose sample) instead of iterating a jog to convergence.
         """
         from robopy.kinematics.dual_arm_ik import DualArmIK, DualArmIKConfig  # noqa: PLC0415
 
@@ -113,6 +119,24 @@ class IKSetup:
 
         unbounded = bundle.model.unbounded_joints([torso, *left, *right])
         self.geometric_study_only = bool(unbounded)
+        settings: Dict[str, Any] = dict(
+            # The page iterates to convergence in one request; per-step
+            # bounds stay in place so the path is one the machine could take.
+            max_joint_step_rad=0.05,
+            compute_budget_s=5.0,
+            max_state_age_s=5.0,
+            # The viewer iterates to convergence in one request; there is no
+            # machine integrating these steps, so an acceleration window is
+            # meaningless here and only slows the approach to the answer.
+            max_joint_acceleration_rad_s2=None,
+            # A little more Tikhonov damping than the controller default: it
+            # penalises step size without biasing the equilibrium, which
+            # keeps a straight (singular) arm from wandering along its
+            # null space while a jog converges.
+            damping=1e-3,
+            require_soft_limits=not unbounded,
+        )
+        settings.update(config_overrides or {})
         self.solver = DualArmIK(
             bundle.model,
             left_frame=bundle.tcp_frames["left"],
@@ -121,23 +145,7 @@ class IKSetup:
             left_arm_joints=left,
             right_arm_joints=right,
             head_joints=head,
-            config=DualArmIKConfig(
-                # The page iterates to convergence in one request; per-step
-                # bounds stay in place so the path is one the machine could take.
-                max_joint_step_rad=0.05,
-                compute_budget_s=5.0,
-                max_state_age_s=5.0,
-                # The viewer iterates to convergence in one request; there is no
-                # machine integrating these steps, so an acceleration window is
-                # meaningless here and only slows the approach to the answer.
-                max_joint_acceleration_rad_s2=None,
-                # A little more Tikhonov damping than the controller default: it
-                # penalises step size without biasing the equilibrium, which
-                # keeps a straight (singular) arm from wandering along its
-                # null space while a jog converges.
-                damping=1e-3,
-                require_soft_limits=not unbounded,
-            ),
+            config=DualArmIKConfig(**settings),
         )
         self.groups: Dict[str, Any] = {
             "torso": torso,
@@ -162,6 +170,7 @@ class IKSetup:
         iterations: int = 200,
         dt: float = 0.02,
         orientation_weight: float | None = None,
+        inactive_arm_policy: str = "hold_joints",
     ) -> Dict[str, Any]:
         """Iterate the differential solver from ``positions`` until it converges.
 
@@ -170,6 +179,8 @@ class IKSetup:
             targets: ``{"left"|"right": {"p": [3], "q": [4]}}`` for the driven hands.
             torso_policy: ``fixed`` / ``manual`` / ``optimize``.
             torso_velocity_rad_s: Torso rate for the ``manual`` policy.
+            inactive_arm_policy: ``hold_joints`` lets an undriven TCP move with
+                the torso; ``hold_world`` requests the legacy world TCP hold.
             iterations: Iteration budget.
             dt: Per-iteration step time; with the step bounds this sets the
                 largest joint move per iteration.
@@ -207,6 +218,7 @@ class IKSetup:
             right_enabled=right is not None,
             torso_policy=policy,
             torso_velocity_rad_s=torso_velocity_rad_s if policy is TorsoPolicy.MANUAL else 0.0,
+            inactive_arm_policy=InactiveArmPolicy(inactive_arm_policy),
         )
 
         if orientation_weight is not None:
@@ -271,6 +283,7 @@ class IKSetup:
             "torso_velocity_rad_s": result.torso_velocity_rad_s,
             "stalled": stalled,
             "orientation_weight": self.solver.orientation_cost,
+            "inactive_arm_policy": target.inactive_arm_policy.value,
         }
 
     def _state(self, positions: Mapping[str, float]) -> JointState:
@@ -480,6 +493,7 @@ class ViewerServer(ThreadingHTTPServer):
                 joints,
                 targets,
                 torso_policy=str(body.get("torso_policy", "fixed")),
+                inactive_arm_policy=str(body.get("inactive_arm_policy", "hold_joints")),
                 torso_velocity_rad_s=float(body.get("torso_velocity_rad_s", 0.0)),
                 iterations=int(body.get("iterations", 200)),
                 dt=float(body.get("dt", 0.02)),

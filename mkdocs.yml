@@ -148,6 +148,7 @@ nav:
     - Robot: api/robots.md
     - SpaceMouse: api/spacemouse.md
     - Kinematics: api/kinematics.md
+    - VR teleop: api/vr.md
     - Sensor: api/sensors.md
     - Setting: api/config.md
     - Utils: api/utils.md

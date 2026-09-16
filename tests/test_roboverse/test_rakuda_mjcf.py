@@ -43,8 +43,10 @@ from robopy.sim.mjcf_export import (  # noqa: E402
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-rakuda = find_rakuda_model(REPO_ROOT / "models")
-pytestmark = pytest.mark.skipif(rakuda is None, reason="models/rakuda is not present")
+# The models directory lives inside the package now, so let the library
+# find it rather than guessing at a layout.
+rakuda = find_rakuda_model()
+pytestmark = pytest.mark.skipif(rakuda is None, reason="the Rakuda model is not present")
 
 #: Total material volume of the CAD export, in m^3.  Every ``<mass>`` in the
 #: export is a part volume (density 1), so this times the density is the mass.
@@ -333,3 +335,58 @@ class TestReExportIsStable:
             RakudaMjcfOptions(density_kg_m3=1350.0, embed_meshes=True),
         )
         assert report.total_mass_kg == pytest.approx(CAD_VOLUME_M3 * 1350.0, rel=1e-3)
+
+class TestWhichModelGetsResolved:
+    """Which of the two files :func:`resolve_rakuda_mjcf` hands back, and why.
+
+    The mesh-referencing model is the better-looking one, but it is only usable
+    when the visual meshes are actually on disk -- and they are the one part of
+    the model directory that is *not* shipped: the wheel excludes them and
+    ``robopy-models fetch`` pulls them on demand.  Handing it back without them
+    yields a path MuJoCo cannot open, which is a confusing way to fail, so the
+    self-contained model is used instead.
+    """
+
+    def test_it_refuses_the_mesh_model_when_the_meshes_are_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from robopy.roboverse import assets
+
+        class _NoMeshes:
+            package_dir = rakuda.package_dir
+            visual_meshes_available = False
+
+        monkeypatch.setattr("robopy.models.find_rakuda_model", lambda base=None: _NoMeshes())
+        monkeypatch.delenv("ROBOPY_RAKUDA_MJCF", raising=False)
+        for variant in ("plain", "gripper"):
+            path, why = assets.resolve_rakuda_mjcf(variant)
+            assert "roboverse/assets" in str(path), (
+                f"{variant}: handed back {path}, which references meshes that are not there"
+            )
+            assert "hull" in why
+
+    def test_it_uses_the_mesh_model_when_they_are_there(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from robopy.roboverse import assets
+
+        class _WithMeshes:
+            package_dir = rakuda.package_dir
+            visual_meshes_available = True
+
+        monkeypatch.setattr("robopy.models.find_rakuda_model", lambda base=None: _WithMeshes())
+        monkeypatch.delenv("ROBOPY_RAKUDA_MJCF", raising=False)
+        if not _checkout_mjcf().is_file():
+            pytest.skip("the mesh-referencing model has not been generated")
+        path, why = assets.resolve_rakuda_mjcf("plain")
+        assert path == _checkout_mjcf()
+        assert "visual meshes" in why
+
+    def test_the_override_still_wins(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+        from robopy.roboverse import assets
+
+        mine = tmp_path / "mine.xml"
+        mine.write_text("<mujoco/>")
+        monkeypatch.setenv("ROBOPY_RAKUDA_MJCF", str(mine))
+        path, why = assets.resolve_rakuda_mjcf("gripper")
+        assert path == mine and "ROBOPY_RAKUDA_MJCF" in why

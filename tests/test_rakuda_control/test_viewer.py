@@ -191,7 +191,8 @@ class TestEndpoints:
         assert result["status"] == "converged"
         assert result["commandable"] is True
         assert result["errors"]["left_position_m"] < 1e-3
-        assert result["errors"]["right_hold_m"] is not None  # right hand was held
+        assert result["errors"]["right_hold_m"] is None  # no world hold by default
+        assert result["inactive_arm_policy"] == "hold_joints"
         assert len(result["poses"]["geometries"]) == len(bundle.geometries)
         assert result["joints"]["head_yaw_dof"] == 0.0
 
@@ -207,6 +208,50 @@ class TestEndpoints:
 
     def test_ik_with_no_targets_is_a_bad_request(self, server: ViewerServer) -> None:
         status, _ = _call(server, "/api/ik", {"joints": {}, "targets": {}})
+        assert status == 400
+
+    @pytest.mark.parametrize("side", ["left", "right"])
+    @pytest.mark.parametrize("policy", ["hold_joints", "hold_world"])
+    def test_single_arm_policy_reaches_solver(self, server, bundle, side, policy):
+        other = "right" if side == "left" else "left"
+        start = {name: 0.0 for name in bundle.joint_order}
+        # Deliberately offset the active target so a manual solve iterates.
+        goal = start | {f"elbow_pitch_{side}_dof": -0.3}
+        pose = matrix_to_pose(bundle.model.frame_pose(bundle.positions_to_q(goal), f"{side}_tcp"))
+        status, result = _call(
+            server,
+            "/api/ik",
+            {
+                "joints": start,
+                "targets": {side: pose},
+                "torso_policy": "manual",
+                "torso_velocity_rad_s": 0.3,
+                "iterations": 20,
+                "inactive_arm_policy": policy,
+            },
+        )
+        assert status == 200 and result["commandable"]
+        assert result["inactive_arm_policy"] == policy
+        assert abs(result["joints"]["torso_yaw_dof"]) > 0.01
+        if policy == "hold_joints":
+            assert result["errors"][f"{other}_hold_m"] is None
+            for name in bundle.joint_order:
+                if other in name:
+                    assert result["joints"][name] == pytest.approx(start[name], abs=1e-12)
+        else:
+            assert result["errors"][f"{other}_hold_m"] is not None
+
+    def test_invalid_inactive_arm_policy_is_rejected(self, server, bundle):
+        pose = matrix_to_pose(bundle.model.frame_pose(bundle.positions_to_q({}), "right_tcp"))
+        status, _ = _call(
+            server,
+            "/api/ik",
+            {
+                "joints": {},
+                "targets": {"right": pose},
+                "inactive_arm_policy": "typo",
+            },
+        )
         assert status == 400
 
     def test_static_traversal_is_refused(self, server: ViewerServer) -> None:

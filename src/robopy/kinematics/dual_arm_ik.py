@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Sequence, Tuple
 import numpy as np
 from numpy.typing import NDArray
 
-from robopy.control.types import DualArmTarget, JointState, TorsoPolicy
+from robopy.control.types import DualArmTarget, InactiveArmPolicy, JointState, TorsoPolicy
 
 from .urdf_model import WholeBodyModel, require_pinocchio
 
@@ -357,6 +357,16 @@ class DualArmIK:
         )
 
         self._hold_targets: Dict[str, Any] = {"left": None, "right": None}
+        self._hold_tasks = {
+            side: self._pink.tasks.FrameTask(
+                frame,
+                position_cost=self._config.hold_position_cost,
+                orientation_cost=self._config.hold_orientation_cost,
+                lm_damping=self._config.lm_damping,
+                gain=self._config.gain,
+            )
+            for side, frame in (("left", left_frame), ("right", right_frame))
+        }
         self._previous_step: NDArray[np.float64] | None = None
         self._posture_q: NDArray[np.float64] | None = None
         self._has_collision = model.collision_model is not None
@@ -483,14 +493,14 @@ class DualArmIK:
 
         configuration = self._pink.Configuration(self._model.model, self._model.data, q)
 
-        self._update_task_targets(configuration, target)
+        hand_tasks = self._update_task_targets(configuration, target)
         self._posture_task.set_target(self._posture_q)
 
         # --- objective over the active tangent directions --------------------
         nv = self._model.nv
         H_full = np.zeros((nv, nv))
         c_full = np.zeros(nv)
-        for task in (self._left_task, self._right_task, self._posture_task):
+        for task in (*hand_tasks, self._posture_task):
             H_task, c_task = task.compute_qp_objective(configuration)
             H_full += H_task
             c_full += c_task
@@ -558,9 +568,15 @@ class DualArmIK:
             )
 
         try:
-            solution = self._qpsolvers.solve_qp(
-                P, c, G=G, h=h, lb=lb, ub=ub, solver=self._config.solver
-            )
+            if not free_slots:
+                # Both arms can be inactive with a fixed/manual torso. There
+                # is no optimisation variable, but known motion must still
+                # satisfy collision constraints and the path checks below.
+                solution = np.zeros(0) if h is None or np.all(h >= -1e-10) else None
+            else:
+                solution = self._qpsolvers.solve_qp(
+                    P, c, G=G, h=h, lb=lb, ub=ub, solver=self._config.solver
+                )
         except Exception as exc:  # noqa: BLE001 - backend exceptions vary
             return self._failure(
                 DualArmIKStatus.SOLVER_ERROR,
@@ -676,8 +692,10 @@ class DualArmIK:
             )
         return self._model.q_from_positions(known)
 
-    def _update_task_targets(self, configuration: Any, target: DualArmTarget) -> None:
+    def _update_task_targets(self, configuration: Any, target: DualArmTarget) -> List[Any]:
+        """Return only the Cartesian tasks requested by this target."""
         pin = self._pin
+        tasks: List[Any] = []
         for side, frame, task, enabled, wanted in (
             ("left", self._left_frame, self._left_task, target.left_enabled, target.left_target),
             (
@@ -693,13 +711,23 @@ class DualArmIK:
                 T = np.asarray(wanted, dtype=np.float64)
                 task.set_target(pin.SE3(T[:3, :3], T[:3, 3]))
                 self._hold_targets[side] = None
+                tasks.append(task)
+                continue
+            if target.inactive_arm_policy is InactiveArmPolicy.HOLD_JOINTS:
+                # Do not add even a zero-error frame task: its Jacobian would
+                # still oppose torso motion. Also discard any previous world
+                # hold so switching back captures the current TCP.
+                self._hold_targets[side] = None
                 continue
             # Not driven: latch a hold target once, and only re-capture it on an
             # explicit re-baseline. Overwriting it from the measurement every
             # cycle would make the hold drift with whatever error is present.
             if self._hold_targets[side] is None or target.rebaseline:
                 self._hold_targets[side] = configuration.get_transform_frame_to_world(frame).copy()
-            task.set_target(self._hold_targets[side])
+            hold_task = self._hold_tasks[side]
+            hold_task.set_target(self._hold_targets[side])
+            tasks.append(hold_task)
+        return tasks
 
     def _variable_layout(
         self, target: DualArmTarget, dt: float
@@ -708,6 +736,14 @@ class DualArmIK:
         n_active = len(self._active_joints)
         known = np.zeros(n_active)
         slots = list(range(n_active))
+        if target.inactive_arm_policy is InactiveArmPolicy.HOLD_JOINTS:
+            for enabled, joints in (
+                (target.left_enabled, self._left_joints),
+                (target.right_enabled, self._right_joints),
+            ):
+                if not enabled:
+                    for joint in joints:
+                        slots.remove(self._active_joints.index(joint))
         if target.torso_policy is TorsoPolicy.FIXED:
             slots.remove(self._torso_slot)
         elif target.torso_policy is TorsoPolicy.MANUAL:
@@ -754,6 +790,19 @@ class DualArmIK:
         ub_speed = np.minimum(v_max * dt, cfg.max_joint_step_rad)
 
         positions = self._model.positions_from_q(q)
+        # Removing an inactive arm from the variables must not remove its
+        # limits. A zero step cannot recover an already invalid held joint.
+        fixed_names = [
+            name
+            for slot, name in enumerate(self._active_joints)
+            if slot not in free_slots and known_step[slot] == 0.0
+        ]
+        fixed_lower, fixed_upper = self._model.position_limits(fixed_names)
+        for name, lo, hi in zip(fixed_names, fixed_lower, fixed_upper):
+            # A stationary joint may sit on a valid limit (Rakuda's elbows
+            # do at zero). The motion margin must not force it to move.
+            if not (lo <= positions[name] <= hi):
+                raise ValueError(f"Held joint '{name}' already violates the limits.")
         lower, upper = self._model.position_limits(names)
         current = np.asarray([positions[name] for name in names])
         lb_position = lower + cfg.position_limit_margin_rad - current
@@ -912,6 +961,10 @@ class DualArmIK:
             ("left", self._left_task, target.left_enabled),
             ("right", self._right_task, target.right_enabled),
         ):
+            if not enabled:
+                if target.inactive_arm_policy is InactiveArmPolicy.HOLD_JOINTS:
+                    continue
+                task = self._hold_tasks[side]
             error = task.compute_error(configuration)
             position = float(np.linalg.norm(error[:3]))
             orientation = float(np.linalg.norm(error[3:]))

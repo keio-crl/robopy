@@ -106,8 +106,8 @@ python -m robopy.sim.mjcf_export
 
 | ファイル | 管理 | 内容 |
 | --- | --- | --- |
-| `models/rakuda/assembly_2/mjcf/rakuda.xml` | git（79 KB） | STL を参照。視覚メッシュ（Git LFS）があれば綺麗に描画される |
-| `models/rakuda/assembly_2/mjcf/rakuda_gripper.xml` | git | 同上 + 借り物のグリッパ |
+| `src/robopy/models/rakuda/assembly_2/mjcf/rakuda.xml` | git（79 KB） | STL を参照。視覚メッシュ（Git LFS）があれば綺麗に描画される |
+| `src/robopy/models/rakuda/assembly_2/mjcf/rakuda_gripper.xml` | git | 同上 + 借り物のグリッパ |
 | `src/robopy/roboverse/assets/rakuda/rakuda.xml` | git（2.8 MB） | 形状を XML に埋め込んだ自己完結版。**wheel に同梱される**ので `pip install` だけで動く |
 | `src/robopy/roboverse/assets/rakuda/rakuda_gripper.xml` | git | 同上 + 借り物のグリッパ |
 
@@ -166,7 +166,7 @@ get_robot("rakuda")                   # 15 関節のまま。変更していま�
 - さらに `gripper_*_dof` から実際の把持点までの TCP オフセットは
   `examples/config/rakuda_control.example.yaml` で**未測定**（`validated: false`）なので、
   「どこに付けるか」自体が仮定です。
-- ライセンスは Apache 2.0。メッシュは `models/gripper_panda/` に原本のまま同梱しています。
+- ライセンスは Apache 2.0。メッシュは `src/robopy/models/gripper_panda/` に原本のまま同梱しています。
 
 ### 何を借りて、何を借りなかったか
 

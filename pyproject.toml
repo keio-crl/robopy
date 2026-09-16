@@ -85,6 +85,8 @@ audio = ["pyaudio>=0.2.14"]
 
 [project.scripts]
 robopy-viewer = "robopy.viewer.__main__:main"
+robopy-vr = "robopy.vr.__main__:main"
+robopy-models = "robopy.models:main"
 robopy-rakuda-mjcf = "robopy.sim.mjcf_export:main"
 
 # MetaSim (RoboVerse) discovers content packs through this entry point group and
@@ -102,6 +104,11 @@ build-backend = "uv_build"
 
 [tool.uv_build]
 package = true
+
+[tool.uv.build-backend]
+# The Rakuda visual meshes (53 MB, Git LFS) are fetched on demand with
+# `robopy-models fetch`; the URDFs and convex hulls ship in the wheel.
+wheel-exclude = ["robopy/models/rakuda/assembly_2/meshes/**"]
 
 [tool.mypy]
 python_version = "3.12"

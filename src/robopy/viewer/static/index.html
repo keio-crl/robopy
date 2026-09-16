@@ -60,14 +60,20 @@
       <div id="ik-unavailable" class="notice" hidden></div>
       <div id="ik-study" class="notice warn" hidden></div>
       <div class="toolbar">
-        <label>torso
+        <label title="optimize lets the solver turn the shared torso, which is what reaches past one arm's own workspace; fixed locks it, so only the six joints of the driven arm can move.">torso
           <select id="torso-policy">
+            <option value="optimize" selected>optimize</option>
             <option value="fixed">fixed</option>
             <option value="manual">manual</option>
-            <option value="optimize">optimize</option>
           </select>
         </label>
         <label id="torso-velocity-wrap" hidden>ω <input id="torso-velocity" type="number" value="0.1" step="0.05" class="num short"> rad/s</label>
+        <label>inactive arm
+          <select id="inactive-arm-policy">
+            <option value="hold_joints">follow torso (keep joints)</option>
+            <option value="hold_world">hold TCP in world</option>
+          </select>
+        </label>
         <label title="Rakuda's wrist has two axes, so keeping the full orientation while translating is often unreachable. 'free' jogs position only.">orientation
           <select id="ori-mode">
             <option value="0.15">soft</option>
@@ -83,6 +89,7 @@
         <label><input type="checkbox" id="ik-live" checked> solve on every jog</label>
         <button id="ee-capture-all" title="Set both targets to the current poses">capture both</button>
       </div>
+      <p class="help">For right-arm-only control, uncheck the left TCP's <b>track TCP</b> box (and vice versa). Check both to control both TCPs. Torso <b>optimize</b> (the default) lets the solver turn the shared torso, which is how a hand reaches past its own arm's workspace; the other arm keeps its joint angles and is carried along. <b>fixed</b> locks the torso, leaving one arm's six joints to do everything.</p>
       <div id="ee-sides"></div>
       <div id="ik-status" class="status">—</div>
     </section>
@@ -100,7 +107,7 @@
         <li><b>dragging a hand</b>: the coloured ball on each TCP <em>is</em> the target. Grab it in the 3D view -- click, or tap and hold -- and drag: the hand follows the pointer across the plane through the target that faces the camera, the solver runs while you drag (with <em>solve on every jog</em> ticked) and once more, at full budget, when you let go. Turn the view to reach the remaining axis, or grab with Shift held to keep x and y and slide along world Z. Only the position is dragged; the orientation stays as the boxes have it. Dragging anywhere else orbits the camera, as before.</li>
         <li><b>bars</b>: every joint angle and every end-effector target component has a bar. Dragging an end-effector bar re-solves the IK on each step (with <em>solve on every jog</em> ticked) and again on release, so you can sweep a coordinate and watch the arms follow. A bar's range for x/y/z is the arm unfolded from its shoulder -- an outer bound on where the hand could be, not a claim that every point on it is reachable.</li>
         <li>The grid is the floor the robot stands on: it is drawn at the bottom of the base, the geometry no joint moves. That is not the model origin -- in the Rakuda export the origin (the world triad) sits about 26 cm above the floor.</li>
-        <li>A disabled hand keeps a <em>hold</em> target captured when it was disabled; its residual is reported, it is not a lock.</li>
+        <li>An inactive hand defaults to <em>follow torso (keep joints)</em>: its six arm joints receive zero IK motion, while its world TCP can move with the torso. It still participates in collision checks. Choose <em>hold TCP in world</em> to request the previous weighted hold; only that mode reports a TCP hold residual. Re-enabling a hand captures its current pose before tracking resumes.</li>
         <li><b>orientation</b>: Rakuda's wrist has two axes (yaw, pitch), so a translation that keeps the hand's exact orientation is often not reachable; the solver then stops at a weighted compromise and reports <em>stalled</em>. <em>soft</em> favours position, <em>keep</em> weights both equally, <em>free</em> jogs position only.</li>
         <li><b>start pose</b>: at all-zero joint angles the arms hang fully extended, so the hands sit on the edge of the workspace and most Cartesian jogs that keep the height cannot be reached. Bend an elbow on the Joints tab first, as you would move a real arm to a home pose. Elbows bend one way only: in the Rakuda export <code>elbow_pitch_left_dof</code> bends positive and <code>elbow_pitch_right_dof</code> negative (the sliders show each range).</li>
       </ul>

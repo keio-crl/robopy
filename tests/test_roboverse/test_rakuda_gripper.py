@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from robopy.models import find_rakuda_model
+from robopy.models import BUNDLED_MODELS_DIR, find_rakuda_model
 
 mujoco = pytest.importorskip("mujoco", reason="needs the 'sim' optional extra")
 
@@ -35,8 +35,11 @@ from robopy.sim.panda_gripper import (  # noqa: E402
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-rakuda = find_rakuda_model(REPO_ROOT / "models")
-pytestmark = pytest.mark.skipif(rakuda is None, reason="models/rakuda is not present")
+# The models directory lives inside the package now, so let the library
+# find it rather than guessing at a layout.
+rakuda = find_rakuda_model()
+MODELS_DIR = BUNDLED_MODELS_DIR
+pytestmark = pytest.mark.skipif(rakuda is None, reason="the Rakuda model is not present")
 
 ALL_FINGER_JOINTS = tuple(j for side in ("left", "right") for j in GRIPPER_JOINTS[side])
 
@@ -56,10 +59,10 @@ def model():
 class TestTheGraft:
     def test_the_meshes_are_vendored(self) -> None:
         """They ship with the repository, so a checkout needs no CALVIN nearby."""
-        meshes = find_gripper_meshes(REPO_ROOT / "models")
+        meshes = find_gripper_meshes(MODELS_DIR)
         for kind, path in meshes.items():
             assert path.is_file(), kind
-        licence = REPO_ROOT / "models" / "gripper_panda" / "LICENSE.txt"
+        licence = MODELS_DIR / "gripper_panda" / "LICENSE.txt"
         assert licence.is_file(), "the Apache licence must travel with the meshes"
         assert "Apache License" in licence.read_text()[:200]
 
