@@ -8,13 +8,14 @@
 # `validated: true` next to it. `allow_hardware_current_output` stays false
 # until every coupled joint's calibration is measured and validated.
 #
-# The model is committed under models/rakuda/ (the CAD export
-# `Rakuda-2_simulation_ready.zip`, layout preserved). URDFs and convex collision
-# meshes are plain git files; the 53 MB of visual meshes are Git LFS
-# (`git lfs install && git lfs pull`). Paths below are relative to the repo root.
+# The model ships inside the robopy package (robopy/models/rakuda, the CAD
+# export `Rakuda-2_simulation_ready.zip` with its layout preserved): URDFs and
+# convex collision meshes are installed with `pip install robopy`; the 53 MB of
+# visual meshes are fetched on demand with `robopy-models fetch`. With
+# `urdf_path: null` below, the control system uses that bundled model.
 #
-#   python -m robopy.kinematics.urdf_audit \
-#       models/rakuda/assembly_2/urdf/assembly_2_convex_collision.urdf --package-dir models/rakuda
+#   python -m robopy.kinematics.urdf_audit "$(robopy-models path urdf)" \
+#       --package-dir "$(robopy-models path package-dir)"
 #
 # What the audit of that file says (docs/robots/assets/rakuda_urdf_audit.json):
 #   - 153 links, 152 joints: fixed=137, revolute=12, continuous=3, 15 movable DOF
