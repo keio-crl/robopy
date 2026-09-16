@@ -115,4 +115,9 @@
       </body>
     </body>
   </worldbody>
+  <contact>
+    <exclude body1="base_link" body2="switch_link" />
+    <exclude body1="base_link" body2="slide_link" />
+    <exclude body1="base_link" body2="drawer_link" />
+  </contact>
 </mujoco>

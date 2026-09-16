@@ -14,10 +14,10 @@ out, which is the quickest way to see that the table is articulated and that the
 robot is standing in the furniture rather than beside a picture of it.
 
 **The Rakuda cannot reach this table from here.**  The scene is sized for a
-Panda; the Rakuda's hands stop 0.428 m from its mounting plane and the nearest
-corner of the work surface is further than that.  The script prints the numbers
-rather than hiding them.  ``rakuda.lift_block`` is the task where the robot can
-actually work.
+Panda; the Rakuda's hand never gets further than 0.507 m from its base body and
+the nearest block is 0.519 m away.  The script prints the numbers rather than
+hiding them.  ``rakuda.calvin_pick`` is the same table with the robot moved to
+where it can work, and ``examples/robot/rakuda_calvin_motion.py`` films both.
 """
 
 from __future__ import annotations
@@ -40,6 +40,7 @@ except ImportError as exc:  # pragma: no cover - depends on the environment
     raise SystemExit(1) from exc
 
 from robopy.roboverse.mount import STAND_HEIGHT
+from robopy.roboverse.tasks._common import MAX_PALM_REACH_M
 from robopy.roboverse.tasks.rakuda_calvin_table import PANDA_BASE_POSITION
 
 #: Where the camera looks: the middle of the bench, a little above it.
@@ -99,7 +100,8 @@ def describe(states, model, data) -> None:
         high = np.maximum(high, data.geom_xpos[geom])
     corners = np.array([[x, y] for x in (low[0], high[0]) for y in (low[1], high[1])])
     reach = np.linalg.norm(corners - base[:2], axis=1)
-    print(f"table corners are {reach.round(3)} m away; the hands reach 0.428 m")
+    print(f"table corners are {reach.round(3)} m away horizontally")
+    print(f"the hand never gets further than {MAX_PALM_REACH_M} m from the base body")
 
 
 def render(renderer, data, camera, azimuth, elevation, distance):

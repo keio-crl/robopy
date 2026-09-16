@@ -148,6 +148,14 @@ _PLANE_MERGE_M: float = 0.004
 #: mesh with no convex decomposition shipped alongside it.
 _BOXED_LINK = "base_link"
 
+#: Parts held by their joint limits rather than by contact with the cabinet.
+#: See :func:`_exclude_cabinet_contacts`.
+#:
+#: The button is deliberately *not* here.  Its housing is what holds it up, and
+#: cutting that contact drops it 0.02 m to the bottom of its travel, looking
+#: permanently pressed.  The other three are all pushed the wrong way by it.
+_SLIDING_PARTS = ("switch_link", "slide_link", "drawer_link")
+
 
 def _read_obj(path: Path) -> Tuple[List[List[float]], List[List[int]]]:
     """Vertices and triangles of a Wavefront OBJ. Polygons are fanned."""
@@ -259,6 +267,29 @@ def decompose_to_boxes(
                     )
                 )
     return boxes
+
+
+def _exclude_cabinet_contacts(mjcf: ET.Element) -> None:
+    """Stop the cabinet from pushing its own drawer open.
+
+    The drawer, the sliding door and the switch collide with the bench they move
+    inside: upstream ships them as convex decompositions, which bulge a little
+    past the real surface, and the box decomposition of the bench is
+    conservative around anything not axis-aligned.  Left alone, and with nothing
+    touching them, the drawer creeps 0.17 m open by itself, the door 0.02 m, and
+    the switch is forced 0.015 m through its own lower limit.
+
+    A drawer should be held by its joint limits, not by grinding against the
+    cabinet, and PyBullet -- which is what CALVIN runs -- disables parent/child
+    collision by default.  So this excludes those pairs explicitly, rather than
+    relying on MuJoCo's ``filterparent``, which a simulator wrapper is free to
+    turn off for the whole model.
+    """
+    contact = mjcf.find("contact")
+    if contact is None:
+        contact = ET.SubElement(mjcf, "contact")
+    for child in _SLIDING_PARTS:
+        ET.SubElement(contact, "exclude", {"body1": _BOXED_LINK, "body2": child})
 
 
 def _boxify_collision(root: ET.Element, meshes: Path, link_name: str) -> int:
@@ -423,6 +454,7 @@ def export_calvin_table_mjcf(
             if source.is_file():
                 mesh.set("file", os.path.relpath(source, output_path.parent))
 
+    _exclude_cabinet_contacts(mjcf)
     _indent(mjcf)
     header = (
         "\n  CALVIN's play table. GENERATED, DO NOT EDIT BY HAND.\n\n"

@@ -1,24 +1,27 @@
-"""The Rakuda standing where CALVIN puts its Panda, at CALVIN's own play table.
+"""The Rakuda at CALVIN's play table: once faithfully, once so it can work.
 
-Registered as ``rakuda.calvin_table``.  It is CALVIN's scene D -- the play table
-with its sliding door, drawer, button and switch, plus the three coloured blocks
--- with a Rakuda bolted at ``robot_base_position`` from ``calvin_scene_D.yaml``
-instead of the Panda.
+Two tasks share this scene -- CALVIN's scene D, the play table with its sliding
+door, drawer, button and switch, plus the three coloured blocks, all at CALVIN's
+own ``global_scaling`` of 0.8.
 
-**The Rakuda cannot reach this table from there, and that is expected.**  The
-scene is built around a Panda, which works at 0.46 to 0.81 m from its base; the
-Rakuda's hands never get further than 0.428 m from its own mounting plane, and
-the nearest corner of CALVIN's work surface is 0.46 m away.  Standing clear of
-the furniture it can cover about 32 of 40 interaction points, but not from
-*this* spot.  This task exists to put the two in the same picture at the same
-scale -- to see the size difference, to line a scene up, to start from -- not to
-be solved.
+``rakuda.calvin_table``
+    A Rakuda bolted exactly where ``calvin_scene_D.yaml`` bolts its Panda.
+    **It cannot reach the table from there, and that is the point.**  The
+    Rakuda's palm never gets further than 0.507 m from its base body, and from
+    ``robot_base_position`` the nearest block is 0.519 m away -- out of reach by
+    a centimetre at the very best, and by much more at the height the bench
+    actually sits.  This task is for seeing the two robots at one scale, not for
+    solving.
 
-For something the Rakuda can actually do, see ``rakuda.lift_block``, which puts
-the work surface where its arms are.
+``rakuda.calvin_pick``
+    The same table and the same blocks, with the Rakuda mounted where it can
+    work: turned to face the bench, and standing at the height its own grasping
+    envelope wants rather than the Panda's.  The red block then sits inside the
+    measured :data:`~robopy.roboverse.tasks._common.OBJECT_ZONE` and the robot
+    picks it up.  See :data:`CALVIN_PICK_BASE_POSITION` for where the numbers
+    come from.
 
-Everything here is at CALVIN's own ``global_scaling`` of 0.8 and the positions
-come from ``calvin_scene_D.yaml`` unchanged, so the layout matches what
+Everything else is ``calvin_scene_D.yaml`` unchanged, so the layout matches what
 ``calvin_env`` instantiates.  The scale is baked into the exported MJCF rather
 than asked of the simulator, because MetaSim's ``scale`` does not reach an
 ``ArticulationObjCfg``.
@@ -34,7 +37,12 @@ from metasim.scenario.simulator_params import SimParamCfg
 from metasim.task.base import BaseTaskEnv
 from metasim.task.registry import register_task
 
-from robopy.roboverse.mount import PLATE_CENTRE_XY, PLATE_SIZE_XY, STAND_HEIGHT
+from robopy.roboverse.mount import (
+    GRASP_OFFSET_ABOVE_MOUNT,
+    PLATE_CENTRE_XY,
+    PLATE_SIZE_XY,
+    STAND_HEIGHT,
+)
 from robopy.sim.calvin_table import (
     CALVIN_SCALE,
     CALVIN_TABLE_SURFACE,
@@ -42,11 +50,16 @@ from robopy.sim.calvin_table import (
     find_calvin_table,
 )
 
+from ._common import OBJECT_ZONE, hand_position
+
 __all__ = [
     "BLOCK_MASS_KG",
     "CALVIN_BLOCKS",
+    "CALVIN_PICK_BASE_POSITION",
+    "CALVIN_PICK_TARGET",
     "PANDA_BASE_POSITION",
     "RakudaAtCalvinTableEnv",
+    "RakudaCalvinPickEnv",
     "block_rest_positions",
 ]
 
@@ -76,9 +89,14 @@ CALVIN_BLOCKS = {
     "block_pink": ((0.10, 0.05, 0.05), (1.0, 0.0, 1.0)),
 }
 
-#: Every block URDF gives its mass as 1 kg.  PyBullet's ``globalScaling`` shrinks
-#: geometry and leaves mass alone, so the scaled blocks really are that dense in
-#: CALVIN, and matching it keeps contact behaviour comparable.
+#: Every block URDF gives its mass as 1 kg, and PyBullet's ``globalScaling``
+#: shrinks geometry while leaving mass alone, so CALVIN's scaled blocks really
+#: are that dense.  It is passed on for the backends that read it.
+#:
+#: **MuJoCo does not.**  Measured off the compiled model, a block comes out at
+#: 0.0896 kg -- its volume times MuJoCo's default density of 1000 -- so on this
+#: backend the blocks weigh about a tenth of what CALVIN's do.  Stated here
+#: because it is the sort of thing that quietly explains why a grasp holds.
 BLOCK_MASS_KG = 1.0
 
 #: Where in CALVIN's drop rectangle each block starts, as ``(x, y)`` fractions.
@@ -247,3 +265,173 @@ class RakudaAtCalvinTableEnv(BaseTaskEnv):
     def _terminated(self, states) -> torch.Tensor:
         """Never: there is nothing here to succeed at."""
         return torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+
+
+# --------------------------------------------------------------------------- #
+# The same table, with the Rakuda mounted where it can actually work.
+# --------------------------------------------------------------------------- #
+
+GRIPPER_ROBOT = "rakuda_gripper"
+PICK_PEDESTAL = "rakuda_work_mount"
+
+#: Which block the robot goes for.  Only one can sit in the middle of the
+#: reachable zone at a time, and the red one is nearest the bench's centre.
+CALVIN_PICK_TARGET = "block_red"
+
+#: How far in front of the robot the target block sits, in the robot's own
+#: frame.  The middle of :data:`~robopy.roboverse.tasks._common.OBJECT_ZONE`,
+#: which is the strip of table a hand can actually come down onto.
+_PICK_REACH_X = (OBJECT_ZONE["x"][0] + OBJECT_ZONE["x"][1]) / 2.0
+
+#: Yaw putting the robot's ``+x`` -- the way it faces -- along world ``+y``, so
+#: it looks at the front of the bench.  CALVIN's Panda meets the table from the
+#: corner; the Rakuda has to square up to it because its grasping strip is
+#: narrow in ``y``.
+_FACING_THE_BENCH = (0.7071067811865476, 0.0, 0.0, 0.7071067811865476)
+
+#: Height of the robot's feet for this task.
+#:
+#: Not CALVIN's 0.24.  A downward grasp only works well below this robot's
+#: shoulders -- see :data:`~robopy.roboverse.mount.GRASP_OFFSET_ABOVE_MOUNT` --
+#: so the bench has to sit that far above the mounting plane, which puts the
+#: feet *higher* than the Panda's base rather than lower.
+CALVIN_PICK_FEET_Z = CALVIN_WORK_SURFACE_Z - GRASP_OFFSET_ABOVE_MOUNT
+
+#: How far the block has to come up, and how near the hand has to stay, for the
+#: pick to count.  The thresholds ``rakuda.lift_block`` uses.
+PICK_LIFT_HEIGHT_M = 0.06
+PICK_HOLD_RADIUS_M = 0.09
+
+
+def _pick_base_position() -> tuple[float, float, float]:
+    """Where the robot's feet go, derived rather than chosen.
+
+    Facing world ``+y``, a point at ``(x, y)`` in the robot's frame lands at
+    ``(-y, x)`` in the world.  Putting the target block at ``(_PICK_REACH_X, 0)``
+    in the robot's frame therefore means standing that far behind it along ``y``.
+    """
+    block_x, block_y, _ = block_rest_positions()[CALVIN_PICK_TARGET]
+    return (block_x, block_y - _PICK_REACH_X, CALVIN_PICK_FEET_Z)
+
+
+#: Where the Rakuda's feet sit for ``rakuda.calvin_pick``.
+CALVIN_PICK_BASE_POSITION = _pick_base_position()
+
+
+def _pick_pedestal_cfg() -> PrimitiveCubeCfg:
+    """The stand, from the floor up to the robot's feet."""
+    return PrimitiveCubeCfg(
+        name=PICK_PEDESTAL,
+        size=(PLATE_SIZE_XY[0] + 0.04, PLATE_SIZE_XY[1] + 0.04, CALVIN_PICK_FEET_Z),
+        color=(0.32, 0.34, 0.38),
+        physics=PhysicStateType.GEOM,
+        fix_base_link=True,
+    )
+
+
+@register_task("rakuda.calvin_pick")
+class RakudaCalvinPickEnv(BaseTaskEnv):
+    """Pick CALVIN's red block off CALVIN's bench.
+
+    Same furniture and same blocks as :class:`RakudaAtCalvinTableEnv`; what
+    differs is where the robot stands, which way it faces, and that it has
+    hands.  Success needs the block both raised by :data:`PICK_LIFT_HEIGHT_M`
+    *and* still within :data:`PICK_HOLD_RADIUS_M` of the hand, so knocking it
+    off the bench does not count.
+    """
+
+    supported_simulators = ("mujoco",)
+    max_episode_steps = 900
+
+    scenario = ScenarioCfg(
+        objects=[_table_cfg(), _pick_pedestal_cfg(), *_blocks()],
+        robots=[GRIPPER_ROBOT],
+        simulator="mujoco",
+        sim_params=SimParamCfg(dt=0.005),
+        decimation=4,
+        num_envs=1,
+        headless=True,
+    )
+
+    def __init__(self, scenario=None, device=None) -> None:
+        self._start_z: torch.Tensor | None = None
+        super().__init__(scenario, device)
+
+    def _get_initial_states(self) -> list[dict]:
+        robot = self.scenario.robots[0]
+        upright = torch.tensor([1.0, 0.0, 0.0, 0.0])
+        facing = torch.tensor(list(_FACING_THE_BENCH))
+        spots = block_rest_positions()
+        self._start_z = torch.full((self.num_envs,), spots[CALVIN_PICK_TARGET][2])
+
+        objects = {
+            TABLE: {
+                "pos": torch.tensor(list(TABLE_POSITION)),
+                "rot": upright.clone(),
+                "dof_pos": dict.fromkeys(
+                    ("base__button", "base__switch", "base__slide", "base__drawer"), 0.0
+                ),
+            },
+            PICK_PEDESTAL: {
+                "pos": torch.tensor(
+                    [
+                        # The plate is off-centre in the robot's frame, and the
+                        # robot is turned, so its offset turns with it.
+                        CALVIN_PICK_BASE_POSITION[0] - PLATE_CENTRE_XY[1],
+                        CALVIN_PICK_BASE_POSITION[1] + PLATE_CENTRE_XY[0],
+                        CALVIN_PICK_FEET_Z / 2.0,
+                    ]
+                ),
+                "rot": upright.clone(),
+            },
+        }
+        for name, spot in spots.items():
+            objects[name] = {"pos": torch.tensor(list(spot)), "rot": upright.clone()}
+
+        base = (
+            CALVIN_PICK_BASE_POSITION[0],
+            CALVIN_PICK_BASE_POSITION[1],
+            CALVIN_PICK_BASE_POSITION[2] + STAND_HEIGHT,
+        )
+        return [
+            {
+                "objects": objects,
+                "robots": {
+                    GRIPPER_ROBOT: {
+                        "pos": torch.tensor(list(base)),
+                        "rot": facing.clone(),
+                        "dof_pos": dict(robot.default_joint_positions),
+                    }
+                },
+                "cameras": {},
+                "extras": {},
+            }
+            for _ in range(self.num_envs)
+        ]
+
+    def _block_position(self, states) -> torch.Tensor:
+        return states.objects[CALVIN_PICK_TARGET].root_state[:, 0:3]
+
+    def _hand_to_block(self, states) -> torch.Tensor:
+        return torch.linalg.norm(
+            hand_position(states, "right", GRIPPER_ROBOT) - self._block_position(states), dim=-1
+        )
+
+    def lift(self, states) -> torch.Tensor:
+        """How far the block has risen from where it started, metres."""
+        if self._start_z is None:  # pragma: no cover - set by _get_initial_states
+            raise RuntimeError("the layout has not been set; reset() the task first")
+        return self._block_position(states)[:, 2] - self._start_z.to(self.device)
+
+    def in_hand(self, states) -> torch.Tensor:
+        """Whether the block is close enough to the hand to be held by it."""
+        return self._hand_to_block(states) < PICK_HOLD_RADIUS_M
+
+    def _reward(self, states) -> torch.Tensor:
+        """Get to the block, then get it off the bench."""
+        approach = -self._hand_to_block(states)
+        return approach + 10.0 * self.lift(states).clamp(min=0.0) * self.in_hand(states)
+
+    def _terminated(self, states) -> torch.Tensor:
+        """True once the block is up by :data:`PICK_LIFT_HEIGHT_M` and still held."""
+        return (self.lift(states) > PICK_LIFT_HEIGHT_M) & self.in_hand(states)

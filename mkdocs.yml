@@ -132,7 +132,7 @@ nav:
     - Rakuda: robots/rakuda.md
     - Rakuda in RoboVerse: robots/rakuda_roboverse.md
     - Rakuda lift_block env: robots/rakuda_lift_block.md
-    - Rakuda at CALVIN's table: robots/rakuda_calvin_table.md
+    - Rakuda in CALVIN's scene: robots/rakuda_calvin_table.md
     - Koch: robots/koch.md
     - xArm: robots/xarm.md
     - SO-101: robots/so101.md

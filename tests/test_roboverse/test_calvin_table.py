@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from robopy.roboverse.tasks._common import MAX_PALM_REACH_M
 from robopy.sim.calvin_table import (
     CALVIN_SCALE,
     CALVIN_TABLE_JOINTS,
@@ -168,16 +169,17 @@ class TestScene:
         joints = env.handler.get_joint_names(robot.name, sort=True)
         hold = torch.tensor([[float(robot.default_joint_positions[j]) for j in joints]])
         states = None
-        for _ in range(120):
+        for _ in range(300):
             states, *_ = env.step(hold)
-        yield states
+        yield states, env
         env.close()
 
     def test_the_robot_stands_at_the_pandas_base(self, rolled):
         from robopy.roboverse.mount import STAND_HEIGHT
         from robopy.roboverse.tasks.rakuda_calvin_table import PANDA_BASE_POSITION
 
-        base = rolled.robots["rakuda"].root_state[0, :3].numpy()
+        states, _ = rolled
+        base = states.robots["rakuda"].root_state[0, :3].numpy()
         feet = base[2] - STAND_HEIGHT
         assert base[0] == pytest.approx(PANDA_BASE_POSITION[0], abs=1e-3)
         assert base[1] == pytest.approx(PANDA_BASE_POSITION[1], abs=1e-3)
@@ -190,10 +192,121 @@ class TestScene:
             block_rest_positions,
         )
 
+        states, _ = rolled
         wanted = block_rest_positions()
         for name, (size, _) in CALVIN_BLOCKS.items():
-            actual = rolled.objects[name].root_state[0, :3].numpy()
+            actual = states.objects[name].root_state[0, :3].numpy()
             start = np.array(wanted[name])
             assert np.linalg.norm(actual[:2] - start[:2]) < 0.01, f"{name} slid away"
             resting = CALVIN_WORK_SURFACE_Z + size[2] * CALVIN_SCALE / 2
             assert actual[2] == pytest.approx(resting, abs=3e-3), f"{name} is not on the bench"
+
+    def test_the_table_stays_shut(self, rolled):
+        """A regression: the bench used to push its own drawer 0.17 m open.
+
+        The box decomposition overlaps the convex hulls upstream ships for the
+        moving parts, so without the contact excludes in the exported MJCF the
+        drawer, the door and the switch all wander off on their own with nothing
+        touching them.
+        """
+        import mujoco
+
+        states, env = rolled
+        model = env.handler.physics.model.ptr
+        data = env.handler.physics.data.ptr
+        for suffix in CALVIN_TABLE_JOINTS:
+            address = None
+            for i in range(model.njnt):
+                name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, i) or ""
+                if name.endswith(suffix):
+                    address = int(model.jnt_qposadr[i])
+            assert address is not None, f"no joint ending in {suffix}"
+            assert abs(float(data.qpos[address])) < 5e-3, f"{suffix} moved on its own"
+
+
+class TestPickScene:
+    """``rakuda.calvin_pick``: the Rakuda mounted where it can reach the bench."""
+
+    @pytest.fixture(scope="class")
+    def env(self):
+        pytest.importorskip("metasim", reason="needs RoboVerse/MetaSim installed")
+        pytest.importorskip("mujoco", reason="needs the mujoco backend")
+        from metasim.task.registry import get_task_class
+
+        cls = get_task_class("rakuda.calvin_pick")
+        made = cls(scenario=cls.scenario.update(num_envs=1, headless=True), device="cpu")
+        made.reset()
+        yield made
+        made.close()
+
+    def test_it_stands_at_the_grasping_height(self, env):
+        """Feet one grasp-offset below CALVIN's bench, not at the Panda's height."""
+        from robopy.roboverse.mount import GRASP_OFFSET_ABOVE_MOUNT
+        from robopy.roboverse.tasks.rakuda_calvin_table import (
+            CALVIN_PICK_BASE_POSITION,
+            PANDA_BASE_POSITION,
+        )
+
+        feet = CALVIN_PICK_BASE_POSITION[2]
+        assert feet == pytest.approx(CALVIN_WORK_SURFACE_Z - GRASP_OFFSET_ABOVE_MOUNT, abs=1e-6)
+        assert feet > PANDA_BASE_POSITION[2], "a downward grasp needs the robot higher, not lower"
+
+    def test_the_target_block_is_in_the_reachable_zone(self, env):
+        """The whole point of moving the robot: the block lands where it can work.
+
+        Checked in the robot's own frame, which is turned 90 degrees from the
+        world's, so the arithmetic that places the base is checked too.
+        """
+        from robopy.roboverse.tasks._common import OBJECT_ZONE
+        from robopy.roboverse.tasks.rakuda_calvin_table import (
+            CALVIN_PICK_BASE_POSITION,
+            CALVIN_PICK_TARGET,
+            block_rest_positions,
+        )
+
+        block = block_rest_positions()[CALVIN_PICK_TARGET]
+        dx = block[0] - CALVIN_PICK_BASE_POSITION[0]
+        dy = block[1] - CALVIN_PICK_BASE_POSITION[1]
+        # World (dx, dy) seen from a frame yawed +90 degrees.
+        in_robot_frame = (dy, -dx)
+        assert OBJECT_ZONE["x"][0] <= in_robot_frame[0] <= OBJECT_ZONE["x"][1]
+        assert OBJECT_ZONE["y"][0] <= in_robot_frame[1] <= OBJECT_ZONE["y"][1]
+
+    def test_the_hand_can_actually_get_to_the_block(self, env):
+        """Not merely inside a box: the IK has to put the palm on the grasp pose."""
+        import numpy as np
+
+        from robopy.roboverse.ik import Arm, solve_ik
+        from robopy.roboverse.tasks.rakuda_calvin_table import (
+            CALVIN_PICK_TARGET,
+            block_rest_positions,
+        )
+
+        arm = Arm(env, env.scenario.robots[0], side="right")
+        block = np.array(block_rest_positions()[CALVIN_PICK_TARGET])
+        _, residual = solve_ik(arm, block + np.array([0.0, 0.0, 0.080]), arm.home)
+        assert residual < 1e-3, f"the grasp pose is {residual:.4f} m out of reach"
+
+    def test_it_cannot_from_where_calvin_puts_the_panda(self, env):
+        """The other half of the claim, so the two tasks stay honest about it."""
+        import numpy as np
+
+        from robopy.roboverse.tasks.rakuda_calvin_table import (
+            CALVIN_PICK_TARGET,
+            PANDA_BASE_POSITION,
+            block_rest_positions,
+        )
+        from robopy.roboverse.mount import STAND_HEIGHT
+
+        block = np.array(block_rest_positions()[CALVIN_PICK_TARGET])
+        base = np.array(
+            [
+                PANDA_BASE_POSITION[0],
+                PANDA_BASE_POSITION[1],
+                PANDA_BASE_POSITION[2] + STAND_HEIGHT,
+            ]
+        )
+        assert np.linalg.norm(block - base) > MAX_PALM_REACH_M, (
+            "the block is within reach from CALVIN's own base position, so the "
+            "docstrings claiming otherwise are now wrong"
+        )

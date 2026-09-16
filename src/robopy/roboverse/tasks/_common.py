@@ -44,6 +44,7 @@ from robopy.roboverse.mount import (
 __all__ = [
     "GRIPPER_BODY",
     "HAND_FLOOR_ABOVE_MOUNT",
+    "MAX_PALM_REACH_M",
     "OBJECT_ZONE",
     "PEDESTAL_FOOTPRINT",
     "REACH_TARGET_BOX",
@@ -59,6 +60,15 @@ GRIPPER_BODY: Dict[str, str] = {
     "left": "gripper_left_dof",
     "right": "gripper_right_dof",
 }
+
+#: Furthest the hand ever gets from the ``base`` body, in any direction.
+#:
+#: From 200,000 samples of the seven joints the arm scripts drive, on the
+#: ``rakuda_gripper`` model.  It is a hard ceiling rather than a working figure:
+#: nothing beyond this sphere can be touched at all, at any height or angle, so
+#: it is the cheapest way to rule a target out.  What can be *worked* on is much
+#: smaller -- see :data:`OBJECT_ZONE`.
+MAX_PALM_REACH_M: float = 0.507
 
 #: Extent of the base plate in the robot's frame, as ``(min, max)`` per axis.
 #: A table has to clear this in ``x`` or it runs into the pedestal.
