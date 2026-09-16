@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CALVIN's play table. GENERATED, DO NOT EDIT BY HAND.
+
+  source:      calvin_table_D.urdf (calvin_env, MIT)
+  regenerate:  python -m robopy.sim.calvin_table
+
+  The LED and the bulb do not light: that behaviour lives in calvin_env's
+  Python, not in the URDF. base_link's concave collision mesh has been
+  replaced by an exact box decomposition, because MuJoCo would otherwise
+  hull it into a wedge and fling anything placed on the bench away.
+-->
+<mujoco model="calvin_table">
+  <compiler angle="radian" />
+  <asset>
+    <mesh name="base_link" file="../meshes/base_link.obj" scale="0.8 0.8 0.8" />
+    <mesh name="button_link" file="../meshes/button_link.STL" scale="0.8 0.8 0.8" />
+    <mesh name="switch_link" file="../meshes/switch_link.obj" scale="0.8 0.8 0.8" />
+    <mesh name="switch_link_vhacd2" file="../meshes/switch_link_vhacd2.obj" scale="0.8 0.8 0.8" />
+    <mesh name="slide_link" file="../meshes/slide_link.obj" scale="0.8 0.8 0.8" />
+    <mesh name="slide_link_vhacd2" file="../meshes/slide_link_vhacd2.obj" scale="0.8 0.8 0.8" />
+    <mesh name="drawer_link" file="../meshes/drawer_link.obj" scale="0.8 0.8 0.8" />
+    <mesh name="drawer_link_vhacd2" file="../meshes/drawer_link_vhacd2.obj" scale="0.8 0.8 0.8" />
+    <mesh name="led_link" file="../meshes/led_link.STL" scale="0.8 0.8 0.8" />
+    <mesh name="light_link" file="../meshes/light_link.STL" scale="0.8 0.8 0.8" />
+    <mesh name="plank_link" file="../meshes/plank_link.obj" scale="0.8 0.8 0.8" />
+  </asset>
+  <worldbody>
+    <body name="base_link">
+      <inertial pos="-0.00699564 0.400826 -0.0360435" quat="0.293011 0.641613 0.3493 0.61682" mass="0" diaginertia="2.18065 1.99996 0.487248" />
+      <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="1 1 1 1" density="0" mesh="base_link" />
+      <geom size="0.02 0.0170096 0.22" pos="-0.42 -0.16299 0.22" type="box" rgba="1 1 1 1" />
+      <geom size="0.44 0.16299 0.01" pos="0 0.0170096 0.41" type="box" rgba="1 1 1 1" />
+      <geom size="0.44 0.0829904 0.01" pos="0 -0.0629904 0.43" type="box" rgba="1 1 1 1" />
+      <geom size="0.04 0.08 0.02" pos="-0.4 0.1 0.44" type="box" rgba="1 1 1 1" />
+      <geom size="0.04 0.059536 0.062478" pos="-0.4 0.120464 0.522478" type="box" rgba="1 1 1 1" />
+      <geom size="0.04 0.031536 0.0214452" pos="-0.4 0.148464 0.606401" type="box" rgba="1 1 1 1" />
+      <geom size="0.44 0.02 0.01" pos="0 0.16 0.637846" type="box" rgba="1 1 1 1" />
+      <geom size="0.02 0.016 0.2" pos="-0.42 0.164 0.2" type="box" rgba="1 1 1 1" />
+      <geom size="0.42 0.14699 0.01" pos="0 0.0010096 0.31" type="box" rgba="1 1 1 1" />
+      <geom size="0.2 0.14699 0.04" pos="-0.22 0.0010096 0.36" type="box" rgba="1 1 1 1" />
+      <geom size="0.42 0.0170096 0.02" pos="0.02 -0.16299 0.42" type="box" rgba="1 1 1 1" />
+      <geom size="0.42 0.0070096 0.01" pos="0.02 -0.15299 0.31" type="box" rgba="1 1 1 1" />
+      <geom size="0.19 0.0070096 0.04" pos="-0.21 -0.15299 0.36" type="box" rgba="1 1 1 1" />
+      <geom size="0.33 0.0057736 0.01" pos="-0.07 0.134226 0.637846" type="box" rgba="1 1 1 1" />
+      <geom size="0.42 0.006 0.05" pos="0.02 0.154 0.35" type="box" rgba="1 1 1 1" />
+      <geom size="0.4 0.01 0.103923" pos="0.04 0.17 0.523923" type="box" rgba="1 1 1 1" />
+      <geom size="0.005 0.015 0.01" pos="-0.155 -0.12 0.45" type="box" rgba="1 1 1 1" />
+      <geom size="0.00433 0.0025 0.01" pos="-0.150311 -0.1375 0.45" type="box" rgba="1 1 1 1" />
+      <geom size="0.00433 0.0025 0.01" pos="-0.150311 -0.1025 0.45" type="box" rgba="1 1 1 1" />
+      <geom size="0.005 0.0029904 0.01" pos="-0.145 -0.14299 0.45" type="box" rgba="1 1 1 1" />
+      <geom size="0.005 0.0029904 0.01" pos="-0.145 -0.0970096 0.45" type="box" rgba="1 1 1 1" />
+      <geom size="0.0259808 0.00433 0.01" pos="-0.12 -0.150311 0.45" type="box" rgba="1 1 1 1" />
+      <geom size="0.0054904 0.0020096 0.01" pos="-0.14049 -0.0920096 0.45" type="box" rgba="1 1 1 1" />
+      <geom size="0.02 0.0023204 0.01" pos="-0.12 -0.0876796 0.45" type="box" rgba="1 1 1 1" />
+      <geom size="0.015 0.0026796 0.01" pos="-0.12 -0.15732 0.45" type="box" rgba="1 1 1 1" />
+      <geom size="0.015 0.0026796 0.01" pos="-0.12 -0.0826796 0.45" type="box" rgba="1 1 1 1" />
+      <geom size="0.0075 0.0020096 0.0939232" pos="-0.1125 -0.0920096 0.553923" type="box" rgba="1 1 1 1" />
+      <geom size="0.0054904 0.0020096 0.01" pos="-0.0995096 -0.0920096 0.45" type="box" rgba="1 1 1 1" />
+      <geom size="0.005 0.0029904 0.01" pos="-0.095 -0.14299 0.45" type="box" rgba="1 1 1 1" />
+      <geom size="0.005 0.0029904 0.01" pos="-0.095 -0.0970096 0.45" type="box" rgba="1 1 1 1" />
+      <geom size="0.00433 0.0025 0.01" pos="-0.0896892 -0.1375 0.45" type="box" rgba="1 1 1 1" />
+      <geom size="0.0020096 0.0075 0.0939232" pos="-0.0920096 -0.1125 0.553923" type="box" rgba="1 1 1 1" />
+      <geom size="0.00433 0.0025 0.01" pos="-0.0896892 -0.1025 0.45" type="box" rgba="1 1 1 1" />
+      <geom size="0.005 0.015 0.01" pos="-0.085 -0.12 0.45" type="box" rgba="1 1 1 1" />
+      <geom size="0.03 0.0025 0.103923" pos="-0.05 -0.1025 0.543923" type="box" rgba="1 1 1 1" />
+      <geom size="0.22 0.043536 0.04" pos="0.2 0.104464 0.36" type="box" rgba="1 1 1 1" />
+      <geom size="0.14 0.07 0.02" pos="0.3 0.09 0.44" type="box" rgba="1 1 1 1" />
+      <geom size="0.14 0.049536 0.062478" pos="0.3 0.110464 0.522478" type="box" rgba="1 1 1 1" />
+      <geom size="0.14 0.021536 0.0214452" pos="0.3 0.138464 0.606401" type="box" rgba="1 1 1 1" />
+      <geom size="0.03 0.0070096 0.04" pos="0.41 -0.15299 0.36" type="box" rgba="1 1 1 1" />
+      <geom size="0.02 0.103454 0.04" pos="0.4 -0.0425264 0.36" type="box" rgba="1 1 1 1" />
+      <geom size="0.02 0.0170096 0.15" pos="0.42 -0.16299 0.15" type="box" rgba="1 1 1 1" />
+      <geom size="0.02 0.01 0.05" pos="0.42 -0.17 0.35" type="box" rgba="1 1 1 1" />
+      <geom size="0.02 0.016 0.15" pos="0.42 0.164 0.15" type="box" rgba="1 1 1 1" />
+      <geom size="0.02 0.01 0.05" pos="0.42 0.17 0.35" type="box" rgba="1 1 1 1" />
+      <body name="button_link" pos="-0.12 -0.12 0.46" quat="0.707107 0.707107 0 0">
+        <inertial pos="0 0.012 0" quat="0.707107 0 0 0.707107" mass="0.0787519" diaginertia="4.0321e-05 2.39406e-05 2.39406e-05" />
+        <joint name="base__button" type="slide" range="0 0.02" axis="0 -1 0" />
+        <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="0 0 0 1" density="0" mesh="button_link" />
+        <geom type="mesh" rgba="0 0 0 1" mesh="button_link" />
+      </body>
+      <body name="switch_link" pos="0.3 0.0609282 0.49489" quat="0.258819 0.965926 0 0">
+        <inertial pos="0 0.0401564 -0.008" quat="0 0.707107 0 0.707107" mass="0.122259" diaginertia="0.000251602 0.000220763 4.91204e-05" />
+        <joint name="base__switch" type="slide" range="0 0.088" axis="0 0 -1" />
+        <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="0.4 0.4 0.4 1" density="0" mesh="switch_link" />
+        <geom type="mesh" rgba="0.4 0.4 0.4 1" mesh="switch_link_vhacd2" />
+      </body>
+      <body name="slide_link" pos="-0.1 0.075 0.535264" quat="0.866025 0.5 0 0">
+        <inertial pos="-0.14 0 0.0163318" quat="0 0.707107 0 0.707107" mass="0.790268" diaginertia="0.00760796 0.00478655 0.00335568" />
+        <joint name="base__slide" type="slide" range="0 0.28" axis="-1 0 0" />
+        <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="1 1 1 1" density="0" mesh="slide_link" />
+        <geom type="mesh" rgba="1 1 1 1" mesh="slide_link_vhacd2" />
+      </body>
+      <body name="drawer_link" pos="0.18 0 0.32" quat="0.707107 0.707107 0 0">
+        <inertial pos="0 0.0265584 0.0790843" quat="0.500201 0.499799 0.500201 0.499799" mass="2.16642" diaginertia="0.0536585 0.036697 0.0194042" />
+        <joint name="base__drawer" type="slide" range="0 0.22" />
+        <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="1 1 1 1" density="0" mesh="drawer_link" />
+        <geom type="mesh" rgba="1 1 1 1" mesh="drawer_link_vhacd2" />
+      </body>
+      <body name="led_link" pos="-0.12 0.16 0.647846" quat="0.707107 0.707107 0 0">
+        <inertial pos="0 0.008 0" quat="0.5 0.5 0.5 0.5" mass="0.104448" diaginertia="0.000236749 0.000225051 1.61546e-05" />
+        <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="1 1 1 1" density="0" mesh="led_link" />
+        <geom type="mesh" rgba="1 1 1 1" mesh="led_link" />
+      </body>
+      <body name="light_link" pos="0.3 0.132 0.647848" quat="0.707105 0.707108 0 0">
+        <inertial pos="0 0.0224213 -0.028" quat="0.707107 0 0 0.707107" mass="0.0890462" diaginertia="2.86328e-05 2.69691e-05 2.69691e-05" />
+        <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="1 1 1 1" density="0" mesh="light_link" />
+        <geom type="mesh" rgba="1 1 1 1" mesh="light_link" />
+      </body>
+      <body name="plank_link" pos="-0.1 0.09 0.42" quat="0.707105 0.707108 0 0">
+        <inertial pos="0 0.01 0" quat="0.5 0.5 0.5 0.5" mass="1.456" diaginertia="0.0351867 0.0328571 0.00242667" />
+        <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="1 1 1 1" density="0" mesh="plank_link" />
+        <geom type="mesh" rgba="1 1 1 1" mesh="plank_link" />
+      </body>
+    </body>
+  </worldbody>
+</mujoco>

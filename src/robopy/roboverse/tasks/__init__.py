@@ -8,9 +8,14 @@ decorators, so importing the modules here is what makes the names usable:
 ``rakuda.bimanual_reach``   both hands to their own targets at once
 ``rakuda.push_cube``        push a cube across a table into a goal region
 ``rakuda.lift_cube``        close a hand on a cube and pick it up
+``rakuda.calvin_table``     stand in CALVIN's scene D, where its Panda stands
 =========================== =================================================
 
-All four run on MuJoCo, which is the only backend the exported assets target.
+All of them run on MuJoCo, which is the only backend the exported assets target.
+
+``rakuda.calvin_table`` is the odd one out: it has no goal and the robot cannot
+reach the furniture from where CALVIN's scene file puts the arm's base.  It is
+there to put the two robots in one picture at one scale.
 
 The first three run on ``rakuda``, the robot the CAD actually describes, whose
 grippers are fixed frames with no fingers to close.  ``rakuda.lift_cube`` needs
@@ -22,11 +27,13 @@ nothing it does should be read as evidence about the real one.
 
 from __future__ import annotations
 
+from .rakuda_calvin_table import RakudaAtCalvinTableEnv
 from .rakuda_lift_cube import RakudaLiftCubeEnv
 from .rakuda_push_cube import RakudaPushCubeEnv
 from .rakuda_reach import RakudaBimanualReachEnv, RakudaReachEnv
 
 __all__ = [
+    "RakudaAtCalvinTableEnv",
     "RakudaBimanualReachEnv",
     "RakudaLiftCubeEnv",
     "RakudaPushCubeEnv",
