@@ -408,19 +408,43 @@ def _stl_bytes(triangles: int = 2) -> bytes:
     return b"\0" * 80 + triangles.to_bytes(4, "little") + b"\0" * (50 * triangles)
 
 
-class TestFetchVisualMeshes:
-    """Downloading the visual meshes into the cache, without a network."""
+def _asset_zip(
+    files: dict[str, bytes], *, manifest: bool = True, extra: dict[str, bytes] | None = None
+) -> bytes:
+    """A release asset as scripts/build_visual_mesh_asset.py would write it."""
+    import hashlib
+    import io
+    import json
+    import zipfile
 
-    def test_fetch_writes_stls_and_the_locator_then_finds_them(self, tmp_path: Path) -> None:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in files.items():
+            archive.writestr(f"assembly_2/meshes/{name}", data)
+        for name, data in (extra or {}).items():
+            archive.writestr(name, data)
+        if manifest:
+            table = {
+                n: {"sha256": hashlib.sha256(d).hexdigest(), "bytes": len(d)}
+                for n, d in files.items()
+            }
+            archive.writestr("MANIFEST.json", json.dumps({"files": table}))
+    return buffer.getvalue()
+
+
+class TestFetchVisualMeshes:
+    """Downloading the release asset into the cache, without a network."""
+
+    def test_fetch_extracts_the_asset_and_the_locator_then_finds_it(self, tmp_path: Path) -> None:
         assert rakuda is not None
         names = visual_mesh_names(rakuda.convex_collision_urdf)
         assert len(names) == 137
-        requested: list[str] = []
+        asset = _asset_zip({n: _stl_bytes() for n in names})
+        requested: list[tuple[str, str | None]] = []
 
         def opener(url: str, token: str | None, timeout_s: float) -> bytes:
-            requested.append(url)
-            assert token == "secret"
-            return _stl_bytes()
+            requested.append((url, token))
+            return asset
 
         # An installed wheel has no visual meshes: pretend by pointing the
         # locator at a copy without them.
@@ -429,13 +453,18 @@ class TestFetchVisualMeshes:
         assert before is not None and before.visual_mesh_status == "ABSENT"
         assert "robopy-models fetch" in (before.visual_mesh_hint() or "")
 
-        report = fetch_visual_meshes(ref="v1", token="secret", opener=opener)
-        assert report.ok and len(report.downloaded) == 137 and report.skipped == []
+        report = fetch_visual_meshes(opener=opener, token="")
+        assert report.ok, report.failed[:3]
+        assert len(report.downloaded) == 137 and report.skipped == []
         assert report.destination == visual_mesh_cache_package_dir() / "assembly_2" / "meshes"
-        assert requested[0].startswith(
-            "https://media.githubusercontent.com/media/keio-crl/robopy/v1/"
-        )
-        assert requested[0].endswith(names[0])
+        assert report.archive_bytes == len(asset)
+        # One request, to the pinned release asset, unauthenticated.
+        assert requested == [
+            (
+                "https://github.com/keio-crl/robopy/releases/download/rakuda-visual-meshes-v1/rakuda_visual_meshes.zip",
+                None,
+            )
+        ]
         assert all((report.destination / n).stat().st_size == len(_stl_bytes()) for n in names)
 
         after = find_rakuda_model(clone)
@@ -444,43 +473,134 @@ class TestFetchVisualMeshes:
         # The cache is searched first, the package's own directory second.
         assert after.package_dirs == [visual_mesh_cache_package_dir(), clone / "rakuda"]
 
-        # A second fetch skips everything; --force fetches again.
-        again = fetch_visual_meshes(token="secret", opener=opener)
-        assert again.downloaded == [] and len(again.skipped) == 137
-        forced = fetch_visual_meshes(token="secret", opener=opener, force=True, names=names[:2])
-        assert forced.downloaded == names[:2]
+        # A second fetch does not even download; --force extracts again.
+        again = fetch_visual_meshes(opener=opener, token="")
+        assert again.downloaded == [] and len(again.skipped) == 137 and again.source is None
+        assert len(requested) == 1
+        forced = fetch_visual_meshes(opener=opener, token="", force=True, names=names[:2])
+        assert forced.downloaded == names[:2] and len(requested) == 2
 
-    def test_pointer_or_error_responses_are_not_kept(self, tmp_path: Path) -> None:
-        import urllib.error
+    def test_a_token_resolves_the_asset_through_the_api(self, tmp_path: Path) -> None:
+        import json
 
-        responses = {
-            "a.stl": b"version https://git-lfs.github.com/spec/v1\noid sha256:00\nsize 1\n",
-            "b.stl": b"<html>Not Found</html>",
-            "c.stl": _stl_bytes(3),
-        }
+        asset = _asset_zip({"a.stl": _stl_bytes()})
+        calls: list[tuple[str, str | None]] = []
 
         def opener(url: str, token: str | None, timeout_s: float) -> bytes:
-            name = url.rsplit("/", 1)[-1]
-            if name == "d.stl":
-                raise urllib.error.HTTPError(url, 404, "Not Found", None, None)  # type: ignore[arg-type]
-            return responses[name]
+            calls.append((url, token))
+            if url.startswith("https://api.github.com/repos/keio-crl/robopy/releases/tags/"):
+                return json.dumps(
+                    {
+                        "assets": [
+                            {
+                                "name": "rakuda_visual_meshes.zip",
+                                "url": "https://api.github.com/repos/keio-crl/robopy/releases/assets/42",
+                            }
+                        ]
+                    }
+                ).encode()
+            assert url.endswith("/assets/42")
+            return asset
 
         report = fetch_visual_meshes(
-            tmp_path / "dest", names=["a.stl", "b.stl", "c.stl", "d.stl"], opener=opener, token=""
+            tmp_path / "dest", names=["a.stl"], opener=opener, token="secret"
         )
-        assert not report.ok
-        assert report.downloaded == ["c.stl"]
-        assert sorted(name for name, _ in report.failed) == ["a.stl", "b.stl", "d.stl"]
-        assert (tmp_path / "dest" / "c.stl").is_file()
-        assert not (tmp_path / "dest" / "a.stl").exists()
-        assert any("HTTP 404" in reason for _, reason in report.failed)
-        assert any("LFS pointer" in reason for _, reason in report.failed)
+        assert report.ok and report.downloaded == ["a.stl"]
+        assert [c[0].rsplit("/", 1)[-1] for c in calls] == ["rakuda-visual-meshes-v1", "42"]
+        assert all(token == "secret" for _, token in calls)
 
-    def test_command_line_status_and_paths(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_bad_archives_and_entries_are_reported_and_not_kept(self, tmp_path: Path) -> None:
+        import urllib.error
+
+        pointer = b"version https://git-lfs.github.com/spec/v1\noid sha256:00\nsize 1\n"
+        good = _stl_bytes(3)
+        archive = _asset_zip(
+            {"a.stl": pointer, "c.stl": good},
+            extra={"assembly_2/meshes/../evil.stl": good, "README.txt": b"hi"},
+        )
+        # Tamper with c's manifest entry so its checksum no longer matches.
+        import io
+        import json
+        import zipfile
+
+        tampered = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(archive)) as src, zipfile.ZipFile(tampered, "w") as dst:
+            for info in src.infolist():
+                data = src.read(info)
+                if info.filename == "MANIFEST.json":
+                    table = json.loads(data)
+                    table["files"]["c.stl"]["sha256"] = "0" * 64
+                    data = json.dumps(table).encode()
+                dst.writestr(info, data)
+
+        report = fetch_visual_meshes(
+            tmp_path / "dest",
+            names=["a.stl", "b.stl", "c.stl", "evil.stl"],
+            opener=lambda url, token, timeout: tampered.getvalue(),
+            token="",
+        )
+        assert not report.ok and report.downloaded == []
+        reasons = dict(report.failed)
+        assert "LFS pointer" in reasons["a.stl"]
+        assert reasons["b.stl"] == "not in the archive"
+        assert "SHA-256" in reasons["c.stl"]
+        assert reasons["evil.stl"] == "not in the archive"  # traversal entry was ignored
+        assert not (tmp_path / "dest" / "c.stl").exists()
+        assert not list(tmp_path.glob("**/evil.stl"))
+
+        html = fetch_visual_meshes(
+            tmp_path / "dest2",
+            names=["a.stl"],
+            opener=lambda u, t, s: b"<html>login</html>",
+            token="",
+        )
+        assert not html.ok and "not a zip" in html.failed[0][1] and "HTML" in html.failed[0][1]
+
+        def missing(url: str, token: str | None, timeout: float) -> bytes:
+            raise urllib.error.HTTPError(url, 404, "Not Found", None, None)  # type: ignore[arg-type]
+
+        gone = fetch_visual_meshes(tmp_path / "dest3", names=["a.stl"], opener=missing, token="")
+        assert (
+            not gone.ok
+            and "HTTP 404" in gone.failed[0][1]
+            and "no such release" in gone.failed[0][1]
+        )
+        assert gone.source is not None and gone.source.endswith("/rakuda_visual_meshes.zip")
+
+    def test_command_line_status_paths_and_fetch(
+        self, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import robopy.models as models
+
         assert models_main(["status"]) == 0
         out = capsys.readouterr().out
-        assert "Rakuda model" in out and "visual meshes" in out
+        assert "Rakuda model" in out and "visual meshes" in out and "release asset" in out
         assert models_main(["path", "urdf"]) == 0
         assert capsys.readouterr().out.strip().endswith("assembly_2_convex_collision.urdf")
         assert models_main(["path", "cache"]) == 0
         assert capsys.readouterr().out.strip().endswith("meshes")
+
+        asset = _asset_zip({"a.stl": _stl_bytes(), "b.stl": _stl_bytes()})
+        seen: list[str] = []
+
+        def fake(url: str, token: str | None, timeout: float) -> bytes:
+            seen.append(url)
+            return asset
+
+        monkeypatch.setattr(models, "_default_opener", fake)
+        monkeypatch.setattr(models, "visual_mesh_names", lambda urdf: ["a.stl", "b.stl"])
+        assert (
+            models_main(
+                [
+                    "fetch",
+                    "--dest",
+                    str(tmp_path / "d"),
+                    "--url",
+                    "https://mirror.example/meshes.zip",
+                ]
+            )
+            == 0
+        )
+        assert seen == ["https://mirror.example/meshes.zip"]
+        assert "extracted 2" in capsys.readouterr().out
+        assert (tmp_path / "d" / "a.stl").is_file()

@@ -500,9 +500,18 @@ robopy-models status     # モデルの場所と視覚メッシュの有無
 robopy-models fetch      # 視覚メッシュをキャッシュ（~/.cache/robopy/models/rakuda/）に取得
 ```
 
-`fetch` は GitHub の LFS 配信エンドポイントから 137 個の STL を取得します（非公開リポジトリなら
-`GITHUB_TOKEN` を設定）。取得先は `ROBOPY_CACHE_DIR`（既定 `$XDG_CACHE_HOME/robopy`）で変えられます。
-チェックアウトで開発している場合は `git lfs install && git lfs pull` でも同じ状態になります。
+`fetch` は GitHub Release `rakuda-visual-meshes-v1` に添付された `rakuda_visual_meshes.zip`（137 個の STL と
+SHA-256 の `MANIFEST.json`）を 1 リクエストで取得し、各ファイルが STL であること（LFS ポインタやエラーページ
+ではないこと）とチェックサム、URDF が参照する 137 個が揃っていることを確認してキャッシュに展開します。
+Git LFS の帯域クォータは消費しません。取得先は `ROBOPY_CACHE_DIR`（既定 `$XDG_CACHE_HOME/robopy`）で
+変えられ、`--tag` / `--url`（ミラーや研究室のファイルサーバ、`file://` も可）/ `--token`（非公開リポジトリは
+API 経由で解決）を指定できます。チェックアウトで開発している場合は `git lfs install && git lfs pull` でも
+同じ状態になります。
+
+アセットの作り方（CAD を再エクスポートしたときだけ）: LFS を pull したチェックアウトで
+`uv run python scripts/build_visual_mesh_asset.py` が zip とマニフェストを作ります。タグ
+`rakuda-visual-meshes-v*` を push すると GitHub Actions（`release-visual-meshes`）が同じものを Release に
+添付します。既定タグは `robopy.models.RAKUDA_VISUAL_MESH_RELEASE_TAG` で、URDF を更新したときに合わせて上げます。
 
 `find_rakuda_model()` は視覚メッシュの状態を `visual_mesh_status` で
 `PRESENT`（実体あり）/ `LFS_POINTERS`（チェックアウトで `git lfs pull` 前）/ `ABSENT`（wheel で未取得）と

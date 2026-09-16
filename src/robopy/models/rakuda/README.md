@@ -22,9 +22,12 @@ wheel には入っていません（`pyproject.toml` の `wheel-exclude`）。�
 robopy-models fetch        # ~/.cache/robopy/models/rakuda/assembly_2/meshes/ に取得
 ```
 
-で GitHub の LFS 配信エンドポイントから取得します（非公開リポジトリなら `GITHUB_TOKEN`）。
-チェックアウトでは `git lfs install && git lfs pull` でも同じです。取得しなくても、運動学・IK・衝突判定・
-ビューア・VR はすべて動きます（ビューアは凸包を描画）。
+で GitHub Release `rakuda-visual-meshes-v1` の `rakuda_visual_meshes.zip` を取得・検証して展開します
+（非公開リポジトリなら `GITHUB_TOKEN`、ミラーなら `--url`）。チェックアウトでは `git lfs install && git lfs pull`
+でも同じです。取得しなくても、運動学・IK・衝突判定・ビューア・VR はすべて動きます（ビューアは凸包を描画）。
+
+アセットは `scripts/build_visual_mesh_asset.py` で作り、タグ `rakuda-visual-meshes-v*` の push で
+GitHub Actions が Release に添付します。
 
 ## ライセンス
 

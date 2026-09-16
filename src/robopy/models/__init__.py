@@ -8,9 +8,10 @@ robopy`` is enough.  The Rakuda-2 CAD export lives under
 * the three URDFs and the 137 convex collision meshes (2.9 MB) are always
   installed and are all the model needs to run;
 * the 137 *visual* meshes (53 MB of decorative STL) are not in the wheel.  In
-  the repository they are Git LFS objects; an installed library fetches them
-  on demand into a per-user cache with :func:`fetch_visual_meshes` (or the
-  ``robopy-models fetch`` command).  Without them the viewer draws the convex
+  the repository they are Git LFS objects; for an installed library they are
+  published as one zip attached to a GitHub Release, and
+  :func:`fetch_visual_meshes` (the ``robopy-models fetch`` command) downloads
+  that asset into a per-user cache.  Without them the viewer draws the convex
   hulls, and nothing else changes.
 
 Resolution order for the models directory (the one containing ``rakuda/``):
@@ -26,6 +27,9 @@ cache behave the same.
 
 from __future__ import annotations
 
+import hashlib
+import io
+import json
 import os
 import shutil
 import tempfile
@@ -33,14 +37,17 @@ import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Literal, Sequence
 
 __all__ = [
     "BUNDLED_MODELS_DIR",
+    "GITHUB_REPO",
     "RAKUDA_PACKAGE_NAME",
-    "RAKUDA_VISUAL_MESH_URL",
+    "RAKUDA_VISUAL_MESH_ASSET",
+    "RAKUDA_VISUAL_MESH_RELEASE_TAG",
     "FetchReport",
     "RakudaModelFiles",
     "VisualMeshStatus",
@@ -49,6 +56,7 @@ __all__ = [
     "find_models_dir",
     "find_rakuda_model",
     "is_lfs_pointer",
+    "release_asset_url",
     "visual_mesh_cache_package_dir",
     "visual_mesh_names",
 ]
@@ -60,13 +68,26 @@ _LFS_MAGIC = b"version https://git-lfs.github.com/spec/"
 #: The models shipped inside the installed package (``robopy/models``).
 BUNDLED_MODELS_DIR: Path = Path(__file__).resolve().parent
 
-#: Where GitHub serves the repository's LFS objects.  ``{ref}`` is a branch,
-#: tag or commit; ``{name}`` the STL file name.  A private repository needs a
-#: token (``GITHUB_TOKEN`` or the ``token`` argument).
-RAKUDA_VISUAL_MESH_URL = (
-    "https://media.githubusercontent.com/media/keio-crl/robopy/{ref}/"
-    "src/robopy/models/rakuda/assembly_2/meshes/{name}"
-)
+#: The repository whose GitHub Releases carry the visual-mesh asset.
+GITHUB_REPO = "keio-crl/robopy"
+#: Release tag the installed package fetches from.  Bumped only when the CAD
+#: export (and so the bundled URDF) changes; ``scripts/build_visual_mesh_asset.py``
+#: builds the asset and the ``release-visual-meshes`` workflow attaches it.
+RAKUDA_VISUAL_MESH_RELEASE_TAG = "rakuda-visual-meshes-v1"
+#: Name of the zip attached to that release: ``assembly_2/meshes/*.stl`` plus a
+#: ``MANIFEST.json`` with a SHA-256 per file.
+RAKUDA_VISUAL_MESH_ASSET = "rakuda_visual_meshes.zip"
+MANIFEST_NAME = "MANIFEST.json"
+
+
+def release_asset_url(
+    tag: str = RAKUDA_VISUAL_MESH_RELEASE_TAG,
+    asset: str = RAKUDA_VISUAL_MESH_ASSET,
+    *,
+    repo: str = GITHUB_REPO,
+) -> str:
+    """Direct download URL of a release asset (public repositories)."""
+    return f"https://github.com/{repo}/releases/download/{tag}/{asset}"
 
 
 def is_lfs_pointer(path: Path) -> bool:
@@ -209,7 +230,8 @@ class RakudaModelFiles:
         return (
             "The visual meshes are not installed (they are not part of the wheel), so the "
             "convex collision hulls are drawn instead. Run `robopy-models fetch` to download "
-            f"them into {visual_mesh_cache_package_dir() / RAKUDA_PACKAGE_NAME / 'meshes'}."
+            "the release asset into "
+            f"{visual_mesh_cache_package_dir() / RAKUDA_PACKAGE_NAME / 'meshes'}."
         )
 
 
@@ -275,15 +297,19 @@ class FetchReport:
 
     Attributes:
         destination: Directory the STLs were written to.
-        downloaded: Files fetched this time.
+        source: URL the archive was downloaded from (``None`` when nothing was).
+        downloaded: Files extracted this time.
         skipped: Files that were already present (and not pointers).
-        failed: ``(name, reason)`` for files that could not be fetched.
+        failed: ``(name, reason)`` for files that could not be obtained.
+        archive_bytes: Size of the downloaded archive.
     """
 
     destination: Path
+    source: str | None = None
     downloaded: List[str] = field(default_factory=list)
     skipped: List[str] = field(default_factory=list)
     failed: List[tuple[str, str]] = field(default_factory=list)
+    archive_bytes: int = 0
 
     @property
     def ok(self) -> bool:
@@ -303,58 +329,84 @@ def _looks_like_stl(data: bytes) -> bool:
 
 
 def _default_opener(url: str, token: str | None, timeout_s: float) -> bytes:
+    """GET ``url`` and return the body; redirects (GitHub's asset CDN) are followed."""
     headers = {"User-Agent": "robopy-models"}
     if token:
-        headers["Authorization"] = f"token {token}"
+        headers["Authorization"] = f"Bearer {token}"
+        if "api.github.com" in url and "/releases/assets/" in url:
+            headers["Accept"] = "application/octet-stream"
     request = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(request, timeout=timeout_s) as response:  # noqa: S310 - https only
         return bytes(response.read())
 
 
+def _api_asset_url(
+    repo: str,
+    tag: str,
+    asset: str,
+    token: str,
+    opener: Callable[[str, str | None, float], bytes],
+    timeout_s: float,
+) -> str:
+    """Resolve a release asset through the API (needed for private repositories)."""
+    listing = json.loads(
+        opener(f"https://api.github.com/repos/{repo}/releases/tags/{tag}", token, timeout_s)
+    )
+    for entry in listing.get("assets", []):
+        if entry.get("name") == asset and entry.get("url"):
+            return str(entry["url"])
+    raise FileNotFoundError(f"Release {tag!r} of {repo} has no asset named {asset!r}.")
+
+
 def fetch_visual_meshes(
     destination: Path | None = None,
     *,
-    ref: str = "main",
+    tag: str = RAKUDA_VISUAL_MESH_RELEASE_TAG,
+    asset: str = RAKUDA_VISUAL_MESH_ASSET,
+    url: str | None = None,
+    repo: str = GITHUB_REPO,
     token: str | None = None,
     force: bool = False,
     names: Sequence[str] | None = None,
     progress: Callable[[str, int, int], None] | None = None,
     opener: Callable[[str, str | None, float], bytes] | None = None,
-    timeout_s: float = 60.0,
-    url_template: str = RAKUDA_VISUAL_MESH_URL,
+    timeout_s: float = 300.0,
 ) -> FetchReport:
-    """Download the Rakuda visual meshes into the cache (or ``destination``).
+    """Download the Rakuda visual meshes (one release asset) into the cache.
 
-    The files come from the repository's Git LFS storage through GitHub's
-    media endpoint, so the installed wheel stays small and a plain
-    ``pip install`` still has everything it needs to *run*; this only adds
-    the pretty rendering.
+    The STLs are published as a single zip attached to a GitHub Release, so a
+    ``pip install`` needs one HTTP request to get them and the wheel stays
+    small.  Every extracted file is checked to be an STL (never an LFS pointer
+    or an error page), against the archive's ``MANIFEST.json`` SHA-256 when
+    present, and the set is checked against the visual meshes the bundled URDF
+    references.
 
     Args:
         destination: Directory for the STLs.  Default: the cache location
             :func:`find_rakuda_model` looks in first.
-        ref: Branch, tag or commit to fetch from.
-        token: GitHub token for a private repository; ``GITHUB_TOKEN`` is used
-            when ``None``.
-        force: Re-download files that are already present.
-        names: The STL names to fetch; default: every ``<visual>`` mesh the
-            bundled URDF references.
-        progress: Called with ``(name, index, total)`` before each download.
+        tag: Release tag to fetch from.
+        asset: Asset file name on that release.
+        url: Fetch this URL instead of the release asset (a mirror, a lab
+            file server, a local ``file://`` path).
+        repo: ``owner/name`` of the GitHub repository.
+        token: GitHub token for a private repository; the release is then
+            resolved through the API.  ``GITHUB_TOKEN`` is used when ``None``.
+        force: Re-extract even when every file is already present.
+        names: The STL names expected; default: every ``<visual>`` mesh of
+            the bundled URDF.
+        progress: Called with ``(name, index, total)`` while extracting.
         opener: ``(url, token, timeout_s) -> bytes``; replaceable for tests.
-        timeout_s: Per-file network timeout.
-        url_template: Where to fetch from; ``{ref}`` and ``{name}`` are filled in.
+        timeout_s: Network timeout for the archive download.
 
     Returns:
-        A :class:`FetchReport`.  Nothing is raised for a failed file; a file
-        that arrives as an LFS pointer or is not an STL counts as failed and
-        is not kept.
+        A :class:`FetchReport`.  Nothing is raised for a failed download or a
+        bad archive; ``failed`` says what went wrong and nothing invalid is kept.
     """
     dest = (
         Path(destination)
         if destination is not None
         else visual_mesh_cache_package_dir() / RAKUDA_PACKAGE_NAME / "meshes"
     )
-    dest.mkdir(parents=True, exist_ok=True)
     if names is None:
         rakuda = find_rakuda_model()
         if rakuda is None:
@@ -362,39 +414,86 @@ def fetch_visual_meshes(
                 "The bundled Rakuda model was not found; cannot list its meshes."
             )
         names = visual_mesh_names(rakuda.convex_collision_urdf)
-    token = token if token is not None else os.environ.get("GITHUB_TOKEN")
-    fetch = opener or _default_opener
+    wanted = list(names)
     report = FetchReport(destination=dest)
-    total = len(names)
-    for index, name in enumerate(names, start=1):
-        target = dest / name
-        if not force and _real_mesh(target):
-            report.skipped.append(name)
+    if not force and wanted and all(_real_mesh(dest / name) for name in wanted):
+        report.skipped = wanted
+        return report
+
+    token = (token if token is not None else os.environ.get("GITHUB_TOKEN")) or None
+    fetch = opener or _default_opener
+    try:
+        if url is None:
+            url = (
+                _api_asset_url(repo, tag, asset, token, fetch, timeout_s)
+                if token
+                else release_asset_url(tag, asset, repo=repo)
+            )
+        report.source = url
+        data = fetch(url, token, timeout_s)
+    except urllib.error.HTTPError as exc:
+        report.source = url
+        hint = (
+            " (no such release/asset: build it with scripts/build_visual_mesh_asset.py and "
+            "attach it, or pass --tag/--url)"
+            if exc.code == 404
+            else ""
+        )
+        report.failed = [(n, f"HTTP {exc.code} for {url}{hint}") for n in wanted]
+        return report
+    except (urllib.error.URLError, OSError, TimeoutError, ValueError) as exc:
+        report.source = url
+        report.failed = [(n, f"{type(exc).__name__}: {exc}") for n in wanted]
+        return report
+    report.archive_bytes = len(data)
+
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile:
+        reason = "the download is not a zip archive"
+        if data[:1] == b"<":
+            reason += " (an HTML page: wrong URL, or a private repository without GITHUB_TOKEN)"
+        report.failed = [(n, reason) for n in wanted]
+        return report
+
+    members: dict[str, zipfile.ZipInfo] = {}
+    manifest: dict[str, Any] = {}
+    for info in archive.infolist():
+        if info.is_dir():
             continue
+        base = info.filename.rsplit("/", 1)[-1]
+        if base == MANIFEST_NAME:
+            try:
+                manifest = json.loads(archive.read(info)).get("files", {})
+            except (ValueError, AttributeError):
+                manifest = {}
+            continue
+        if not base.lower().endswith(".stl") or ".." in info.filename or base != base.strip():
+            continue  # not a mesh, or a name we will not write to disk
+        members[base] = info
+
+    dest.mkdir(parents=True, exist_ok=True)
+    targets = wanted or sorted(members)
+    total = len(targets)
+    for index, name in enumerate(targets, start=1):
         if progress is not None:
             progress(name, index, total)
-        url = url_template.format(ref=ref, name=name)
-        try:
-            data = fetch(url, token, timeout_s)
-        except urllib.error.HTTPError as exc:
-            report.failed.append((name, f"HTTP {exc.code} for {url}"))
+        member = members.get(name)
+        if member is None:
+            report.failed.append((name, "not in the archive"))
             continue
-        except (urllib.error.URLError, OSError, TimeoutError) as exc:
-            report.failed.append((name, f"{type(exc).__name__}: {exc}"))
+        content = archive.read(member)
+        if not _looks_like_stl(content):
+            report.failed.append((name, "archive entry is not an STL (an LFS pointer?)"))
             continue
-        if not _looks_like_stl(data):
-            report.failed.append(
-                (
-                    name,
-                    "the response is not an STL (an LFS pointer or an error page); for a "
-                    "private repository set GITHUB_TOKEN",
-                )
-            )
+        expected = manifest.get(name, {}).get("sha256") if isinstance(manifest, dict) else None
+        if expected and hashlib.sha256(content).hexdigest() != expected:
+            report.failed.append((name, "SHA-256 does not match the archive's manifest"))
             continue
         with tempfile.NamedTemporaryFile(dir=dest, delete=False) as handle:
-            handle.write(data)
+            handle.write(content)
             temporary = Path(handle.name)
-        shutil.move(str(temporary), str(target))
+        shutil.move(str(temporary), str(dest / name))
         report.downloaded.append(name)
     return report
 
@@ -410,6 +509,7 @@ def status_text(rakuda: RakudaModelFiles | None) -> str:
     ]
     if rakuda.visual_mesh_dir is not None:
         lines.append(f"visual mesh dir  : {rakuda.visual_mesh_dir}")
+    lines.append(f"release asset    : {release_asset_url()}")
     hint = rakuda.visual_mesh_hint()
     if hint:
         lines.append(f"note             : {hint}")
@@ -433,11 +533,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         nargs="?",
         default="urdf",
     )
-    fetch_cmd = sub.add_parser("fetch", help="download the visual meshes into the cache")
-    fetch_cmd.add_argument("--ref", default="main", help="git ref to fetch from (default: main)")
+    fetch_cmd = sub.add_parser(
+        "fetch", help="download the visual-mesh release asset into the cache"
+    )
+    fetch_cmd.add_argument(
+        "--tag", default=RAKUDA_VISUAL_MESH_RELEASE_TAG, help="release tag (default: %(default)s)"
+    )
+    fetch_cmd.add_argument(
+        "--asset", default=RAKUDA_VISUAL_MESH_ASSET, help="asset name (default: %(default)s)"
+    )
+    fetch_cmd.add_argument("--url", default=None, help="fetch this zip URL instead of the release")
+    fetch_cmd.add_argument("--repo", default=GITHUB_REPO, help="owner/name (default: %(default)s)")
     fetch_cmd.add_argument("--dest", type=Path, default=None, help="directory instead of the cache")
-    fetch_cmd.add_argument("--force", action="store_true", help="re-download existing files")
-    fetch_cmd.add_argument("--token", default=None, help="GitHub token (default: $GITHUB_TOKEN)")
+    fetch_cmd.add_argument("--force", action="store_true", help="re-extract existing files")
+    fetch_cmd.add_argument(
+        "--token",
+        default=None,
+        help="GitHub token for a private repository (default: $GITHUB_TOKEN)",
+    )
     args = parser.parse_args(argv)
 
     rakuda = find_rakuda_model()
@@ -455,26 +568,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.command == "fetch":
         started = time.monotonic()
+        print(f"fetching {args.url or release_asset_url(args.tag, args.asset, repo=args.repo)} ...")
 
         def show(name: str, index: int, total: int) -> None:
-            print(f"[{index:3d}/{total}] {name}")
+            if index in (1, total) or index % 25 == 0:
+                print(f"[{index:3d}/{total}] {name}")
 
         report = fetch_visual_meshes(
-            args.dest, ref=args.ref, token=args.token, force=args.force, progress=show
+            args.dest,
+            tag=args.tag,
+            asset=args.asset,
+            url=args.url,
+            repo=args.repo,
+            token=args.token,
+            force=args.force,
+            progress=show,
         )
         print(
-            f"downloaded {len(report.downloaded)}, skipped {len(report.skipped)}, "
-            f"failed {len(report.failed)} in {time.monotonic() - started:.1f} s -> "
-            f"{report.destination}"
+            f"extracted {len(report.downloaded)}, already present {len(report.skipped)}, "
+            f"failed {len(report.failed)} ({report.archive_bytes / 1e6:.1f} MB archive) in "
+            f"{time.monotonic() - started:.1f} s -> {report.destination}"
         )
-        for name, reason in report.failed[:10]:
-            print(f"  FAILED {name}: {reason}")
-        if len(report.failed) > 10:
-            print(f"  ... and {len(report.failed) - 10} more")
+        reasons = sorted({reason for _, reason in report.failed})
+        for reason in reasons[:5]:
+            count = sum(1 for _, r in report.failed if r == reason)
+            print(f"  FAILED x{count}: {reason}")
         return 0 if report.ok else 1
     parser.error("unknown command")
     return 2
-
-
-def _unused(*_: Any) -> None:  # pragma: no cover - keeps the import list honest for mypy
-    return None
