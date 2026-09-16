@@ -392,9 +392,8 @@ class ModelBundle:
                 if absent:
                     warnings.append(
                         f"{len(absent)} visual mesh file(s) are missing (e.g. {absent[0]}), so "
-                        "the collision geometry (convex hulls) is drawn instead. Place the "
-                        "assembly_2/meshes/*.stl files from Rakuda-2_simulation_ready.zip under "
-                        "models/rakuda/assembly_2/meshes/ (see models/rakuda/README.md)."
+                        "the collision geometry (convex hulls) is drawn instead. Run "
+                        "`robopy-models fetch` to download them (they are not part of the wheel)."
                     )
         else:
             geometries = _parse_visuals(path, dirs, tag=source)
@@ -407,8 +406,8 @@ class ModelBundle:
             if source == "visual" and absent:
                 warnings.append(
                     f"{len(absent)} visual mesh file(s) are missing (e.g. {absent[0]}) and are "
-                    "not drawn. Copy them from Rakuda-2_simulation_ready.zip, or draw the "
-                    "collision geometry (geometry_source='collision')."
+                    "not drawn. Run `robopy-models fetch`, or draw the collision geometry "
+                    "(geometry_source='collision')."
                 )
         if not geometries:
             warnings.append(

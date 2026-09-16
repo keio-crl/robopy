@@ -70,11 +70,11 @@ MESHES_AT_IDENTITY = """() => {
 
 @pytest.fixture(scope="module")
 def server():  # type: ignore[no-untyped-def]
-    rakuda = find_rakuda_model(REPO_ROOT / "models")
+    rakuda = find_rakuda_model()
     if rakuda is None:
         pytest.skip("committed Rakuda model not found")
     bundle = ModelBundle.load(
-        rakuda.convex_collision_urdf, package_dirs=[rakuda.package_dir], soft_limits=SOFT_LIMITS
+        rakuda.convex_collision_urdf, package_dirs=rakuda.package_dirs, soft_limits=SOFT_LIMITS
     )
     srv = ViewerServer(bundle, host="127.0.0.1", port=0, ik=IKSetup(bundle))
     thread = threading.Thread(target=srv.serve_forever, daemon=True)

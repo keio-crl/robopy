@@ -148,16 +148,30 @@ def build_model_and_ik(config: RakudaControlConfig) -> Tuple[Any, Any]:
     from robopy.kinematics.urdf_model import WholeBodyModel  # noqa: PLC0415
 
     spec = config.model
-    if not spec.urdf_path:
-        raise ValueError("control.model.urdf_path is not set, so no kinematic model can be built.")
+    urdf_path = spec.urdf_path
+    package_dirs: List[str] = list(spec.package_dirs)
+    if not urdf_path:
+        # No URDF configured: use the Rakuda model that ships with robopy.
+        from robopy.models import find_rakuda_model  # noqa: PLC0415
+
+        bundled = find_rakuda_model()
+        if bundled is None:
+            raise ValueError(
+                "control.model.urdf_path is not set and the bundled Rakuda model was not found."
+            )
+        urdf_path = str(bundled.convex_collision_urdf)
+        package_dirs = package_dirs or [str(d) for d in bundled.package_dirs]
+        logger.info(
+            "control.model.urdf_path is unset; using the bundled Rakuda model %s", urdf_path
+        )
     if spec.left_tcp is None or spec.right_tcp is None:
         raise ValueError("control.model.left_tcp and right_tcp must both be defined.")
     if not spec.torso_joint:
         raise ValueError("control.model.torso_joint is not set.")
 
     model = WholeBodyModel.from_urdf(
-        spec.urdf_path,
-        package_dirs=spec.package_dirs,
+        urdf_path,
+        package_dirs=package_dirs,
         build_collision=spec.build_collision,
         geometry_only=spec.geometry_only,
     )

@@ -3,7 +3,7 @@
 Both commands need the same thing -- a :class:`ModelBundle`, the joint groups
 and (optionally) the jog solver -- from the same flags: ``--urdf``,
 ``--package-dir``, ``--config``, ``--soft-limit``, ``--geometry`` and the
-fallbacks to the committed Rakuda model or the synthetic fixture.  Keeping the
+fallbacks to the bundled Rakuda model or the synthetic fixture.  Keeping the
 logic here means the two commands cannot drift apart.
 """
 
@@ -29,14 +29,14 @@ def add_model_arguments(parser: argparse.ArgumentParser) -> None:
         "--urdf",
         type=Path,
         help=(
-            "URDF to load. Default: the Rakuda model committed under models/rakuda; the "
-            "synthetic fixture if no model directory is found."
+            "URDF to load. Default: the Rakuda model bundled with robopy (robopy/models/rakuda); "
+            "the synthetic fixture if no model directory is found."
         ),
     )
     parser.add_argument(
         "--synthetic",
         action="store_true",
-        help="serve the synthetic fixture even when the committed Rakuda model is present",
+        help="serve the synthetic fixture even when the bundled Rakuda model is present",
     )
     parser.add_argument(
         "--package-dir",
@@ -198,8 +198,8 @@ def load_model(
             # The convex URDF carries both the visual meshes (Git LFS, optional)
             # and the convex hulls (plain git); ModelBundle picks whichever is present.
             urdf = rakuda.convex_collision_urdf
-            package_dirs = package_dirs or [rakuda.package_dir]
-            say(f"Serving the committed Rakuda model: {urdf}")
+            package_dirs = package_dirs or list(rakuda.package_dirs)
+            say(f"Serving the bundled Rakuda model: {urdf}")
             hint = rakuda.visual_mesh_hint()
             if hint:
                 say(f"  {hint}")

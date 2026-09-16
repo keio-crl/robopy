@@ -224,8 +224,16 @@ class TestConfigurationErrors:
         with pytest.raises(Exception, match="Unknown or non-movable URDF joint"):
             RakudaControlSystem.from_buses(config, _bus(), _bus())
 
-    def test_a_missing_urdf_path_is_reported(self, synthetic_urdf: Path) -> None:
+    def test_a_missing_urdf_path_uses_the_bundled_rakuda_model(self, synthetic_urdf: Path) -> None:
+        # robopy is a library: with no URDF configured, the model that ships in
+        # the package is used, so a `pip install` needs no model files at all.
+        from robopy.models import find_rakuda_model
+
+        bundled = find_rakuda_model()
+        assert bundled is not None
         config = _config(synthetic_urdf)
         config.model.urdf_path = None
-        with pytest.raises(ValueError, match="urdf_path is not set"):
-            RakudaControlSystem.from_buses(config, _bus(), _bus())
+        config.model.package_dirs = []
+        system = RakudaControlSystem.from_buses(config, _bus(), _bus())
+        assert Path(system.model.source) == bundled.convex_collision_urdf
+        assert "head_camera_link" in system.model.frame_names

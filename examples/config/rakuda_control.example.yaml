@@ -49,8 +49,8 @@ control:
   allow_hardware_current_output: false
 
   model:
-    urdf_path: models/rakuda/assembly_2/urdf/assembly_2_convex_collision.urdf
-    package_dirs: [models/rakuda]
+    urdf_path: null   # null = the Rakuda model bundled with robopy (robopy/models/rakuda)
+    package_dirs: []  # empty = the bundled model's own directory
     torso_joint: torso_yaw_dof
     left_arm_joints:              # shoulder -> wrist, as in the URDF
       - shoulder_pitch_left_dof

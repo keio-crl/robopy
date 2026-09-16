@@ -1,4 +1,4 @@
-"""The Rakuda model committed under ``models/rakuda`` and the helper that finds it.
+"""The Rakuda model bundled as package data and the helper that finds it.
 
 These tests run against the *real* export, not the synthetic fixture. They are
 skipped when the model directory is absent (a wheel install) and, where noted,
@@ -16,32 +16,60 @@ import numpy as np
 import pytest
 
 from robopy.kinematics.urdf_audit import audit_urdf
-from robopy.models import find_models_dir, find_rakuda_model, is_lfs_pointer
+from robopy.models import (
+    BUNDLED_MODELS_DIR,
+    fetch_visual_meshes,
+    find_models_dir,
+    find_rakuda_model,
+    is_lfs_pointer,
+    visual_mesh_cache_package_dir,
+    visual_mesh_names,
+)
+from robopy.models import main as models_main
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AUDIT_JSON = REPO_ROOT / "docs" / "robots" / "assets" / "rakuda_urdf_audit.json"
 
-rakuda = find_rakuda_model(REPO_ROOT / "models")
-pytestmark = pytest.mark.skipif(rakuda is None, reason="models/rakuda is not present")
+rakuda = find_rakuda_model()
+pytestmark = pytest.mark.skipif(rakuda is None, reason="the bundled Rakuda model is not present")
+
+
+@pytest.fixture(autouse=True)
+def _isolated_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    # Whatever the developer has fetched into their own cache must not leak
+    # into these tests; every test gets an empty cache.
+    monkeypatch.setenv("ROBOPY_CACHE_DIR", str(tmp_path / "cache"))
 
 
 class TestLocator:
-    def test_the_committed_model_is_found_from_the_repo(self) -> None:
-        assert find_models_dir(REPO_ROOT / "models") == REPO_ROOT / "models"
+    def test_the_bundled_model_is_found_inside_the_package(self) -> None:
+        assert find_models_dir() == BUNDLED_MODELS_DIR
+        assert BUNDLED_MODELS_DIR.name == "models" and BUNDLED_MODELS_DIR.parent.name == "robopy"
         assert rakuda is not None
-        assert rakuda.package_dir == REPO_ROOT / "models" / "rakuda"
+        assert rakuda.package_dir == BUNDLED_MODELS_DIR / "rakuda"
         assert rakuda.convex_collision_urdf.is_file()
         assert rakuda.visual_urdf.is_file()
+        assert rakuda.visual_mesh_count == 137
+        assert rakuda.package_dirs[-1] == rakuda.package_dir
 
-    def test_env_var_is_tried_first_and_the_checkout_is_the_fallback(
+    def test_env_var_is_tried_first_and_the_package_is_the_fallback(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         # A valid env dir wins; an env dir without the model is skipped and the
-        # checkout is found by walking up from the package.
-        monkeypatch.setenv("ROBOPY_MODELS_DIR", str(REPO_ROOT / "models"))
-        assert find_models_dir() == REPO_ROOT / "models"
-        monkeypatch.setenv("ROBOPY_MODELS_DIR", str(tmp_path))
-        assert find_models_dir() == REPO_ROOT / "models"
+        # package data is used.
+        import shutil
+
+        elsewhere = tmp_path / "elsewhere"
+        shutil.copytree(
+            BUNDLED_MODELS_DIR / "rakuda" / "assembly_2" / "urdf",
+            elsewhere / "rakuda" / "assembly_2" / "urdf",
+        )
+        monkeypatch.setenv("ROBOPY_MODELS_DIR", str(elsewhere))
+        assert find_models_dir() == elsewhere
+        monkeypatch.setenv("ROBOPY_MODELS_DIR", str(tmp_path / "empty"))
+        assert find_models_dir() == BUNDLED_MODELS_DIR
+        monkeypatch.delenv("ROBOPY_MODELS_DIR")
+        assert find_models_dir(tmp_path / "empty") == BUNDLED_MODELS_DIR
 
     def test_lfs_pointer_detection(self, tmp_path: Path) -> None:
         pointer = tmp_path / "p.stl"
@@ -84,7 +112,7 @@ class TestLocator:
         assert absent.visual_meshes_available is False
         assert absent.visual_mesh_status == "ABSENT"
         assert absent.missing_visual_meshes() == []
-        assert "Rakuda-2_simulation_ready.zip" in (absent.visual_mesh_hint() or "")
+        assert "robopy-models fetch" in (absent.visual_mesh_hint() or "")
 
         # And with real geometry it is PRESENT and the visual URDF is preferred.
         (pkg / "meshes" / "a.stl").write_bytes(b"\0" * 2000)
@@ -94,6 +122,8 @@ class TestLocator:
         assert present.visual_meshes_available is True
         assert present.default_urdf == present.visual_urdf
         assert present.visual_mesh_hint() is None
+        assert present.visual_mesh_dir == pkg / "meshes"
+        assert present.package_dirs == [tmp_path / "rakuda"]
 
     def test_the_convex_meshes_are_real_files_not_pointers(self) -> None:
         assert rakuda is not None
@@ -106,7 +136,7 @@ class TestLocator:
 class TestCommittedUrdf:
     def test_audit_matches_the_recorded_result(self) -> None:
         assert rakuda is not None
-        audit = audit_urdf(rakuda.convex_collision_urdf, package_dirs=[rakuda.package_dir])
+        audit = audit_urdf(rakuda.convex_collision_urdf, package_dirs=rakuda.package_dirs)
         recorded = json.loads(AUDIT_JSON.read_text(encoding="utf-8"))
         assert audit.n_links == recorded["n_links"] == 153
         assert audit.n_joints == recorded["n_joints"] == 152
@@ -143,7 +173,7 @@ class TestCommittedModelKinematics:
 
         assert rakuda is not None
         wb = WholeBodyModel.from_urdf(
-            rakuda.convex_collision_urdf, package_dirs=[rakuda.package_dir], geometry_only=True
+            rakuda.convex_collision_urdf, package_dirs=rakuda.package_dirs, geometry_only=True
         )
         for side in ("left", "right"):
             wb.add_fixed_frame(f"{side}_tcp", f"gripper_{side}_dof", np.eye(4))
@@ -294,8 +324,8 @@ class TestGeometrySource:
 
     @pytest.fixture
     def absent_clone(self, tmp_path: Path) -> Path:
-        # What this repository looks like until the visual meshes are added
-        # (see models/rakuda/README.md): no meshes/ directory at all.
+        # What an installed wheel looks like before `robopy-models fetch`: the
+        # visual meshes are excluded from the wheel, so no meshes/ directory.
         return self._clone_without_visual_meshes(tmp_path)
 
     def test_convex_urdf_draws_collision_hulls_when_meshes_are_absent(
@@ -371,3 +401,86 @@ class TestGeometrySource:
             ModelBundle.load(
                 files.convex_collision_urdf, package_dirs=[files.package_dir], geometry_source="x"
             )
+
+
+def _stl_bytes(triangles: int = 2) -> bytes:
+    """A minimal binary STL of the given triangle count."""
+    return b"\0" * 80 + triangles.to_bytes(4, "little") + b"\0" * (50 * triangles)
+
+
+class TestFetchVisualMeshes:
+    """Downloading the visual meshes into the cache, without a network."""
+
+    def test_fetch_writes_stls_and_the_locator_then_finds_them(self, tmp_path: Path) -> None:
+        assert rakuda is not None
+        names = visual_mesh_names(rakuda.convex_collision_urdf)
+        assert len(names) == 137
+        requested: list[str] = []
+
+        def opener(url: str, token: str | None, timeout_s: float) -> bytes:
+            requested.append(url)
+            assert token == "secret"
+            return _stl_bytes()
+
+        # An installed wheel has no visual meshes: pretend by pointing the
+        # locator at a copy without them.
+        clone = TestGeometrySource._clone_without_visual_meshes(tmp_path)
+        before = find_rakuda_model(clone)
+        assert before is not None and before.visual_mesh_status == "ABSENT"
+        assert "robopy-models fetch" in (before.visual_mesh_hint() or "")
+
+        report = fetch_visual_meshes(ref="v1", token="secret", opener=opener)
+        assert report.ok and len(report.downloaded) == 137 and report.skipped == []
+        assert report.destination == visual_mesh_cache_package_dir() / "assembly_2" / "meshes"
+        assert requested[0].startswith(
+            "https://media.githubusercontent.com/media/keio-crl/robopy/v1/"
+        )
+        assert requested[0].endswith(names[0])
+        assert all((report.destination / n).stat().st_size == len(_stl_bytes()) for n in names)
+
+        after = find_rakuda_model(clone)
+        assert after is not None and after.visual_mesh_status == "PRESENT"
+        assert after.visual_mesh_dir == report.destination
+        # The cache is searched first, the package's own directory second.
+        assert after.package_dirs == [visual_mesh_cache_package_dir(), clone / "rakuda"]
+
+        # A second fetch skips everything; --force fetches again.
+        again = fetch_visual_meshes(token="secret", opener=opener)
+        assert again.downloaded == [] and len(again.skipped) == 137
+        forced = fetch_visual_meshes(token="secret", opener=opener, force=True, names=names[:2])
+        assert forced.downloaded == names[:2]
+
+    def test_pointer_or_error_responses_are_not_kept(self, tmp_path: Path) -> None:
+        import urllib.error
+
+        responses = {
+            "a.stl": b"version https://git-lfs.github.com/spec/v1\noid sha256:00\nsize 1\n",
+            "b.stl": b"<html>Not Found</html>",
+            "c.stl": _stl_bytes(3),
+        }
+
+        def opener(url: str, token: str | None, timeout_s: float) -> bytes:
+            name = url.rsplit("/", 1)[-1]
+            if name == "d.stl":
+                raise urllib.error.HTTPError(url, 404, "Not Found", None, None)  # type: ignore[arg-type]
+            return responses[name]
+
+        report = fetch_visual_meshes(
+            tmp_path / "dest", names=["a.stl", "b.stl", "c.stl", "d.stl"], opener=opener, token=""
+        )
+        assert not report.ok
+        assert report.downloaded == ["c.stl"]
+        assert sorted(name for name, _ in report.failed) == ["a.stl", "b.stl", "d.stl"]
+        assert (tmp_path / "dest" / "c.stl").is_file()
+        assert not (tmp_path / "dest" / "a.stl").exists()
+        assert any("HTTP 404" in reason for _, reason in report.failed)
+        assert any("LFS pointer" in reason for _, reason in report.failed)
+
+    def test_command_line_status_and_paths(self, capsys: pytest.CaptureFixture[str]) -> None:
+        assert models_main(["status"]) == 0
+        out = capsys.readouterr().out
+        assert "Rakuda model" in out and "visual meshes" in out
+        assert models_main(["path", "urdf"]) == 0
+        assert capsys.readouterr().out.strip().endswith("assembly_2_convex_collision.urdf")
+        assert models_main(["path", "cache"]) == 0
+        assert capsys.readouterr().out.strip().endswith("meshes")

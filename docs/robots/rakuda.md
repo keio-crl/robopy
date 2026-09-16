@@ -269,8 +269,8 @@ UFactory Studio の「モデルだけを動かして確認する」に相当す�
 ```bash
 uv sync --extra kinematics
 
-# 引数なし: リポジトリ同梱の実モデル（models/rakuda）で起動。
-#   `git lfs pull` 済みなら視覚メッシュ、未取得なら凸包（<collision>）描画に自動フォールバック
+# 引数なし: パッケージ同梱の実モデル（robopy/models/rakuda）で起動。
+#   視覚メッシュ（`robopy-models fetch` または `git lfs pull`）があればそれを、なければ凸包（<collision>）を描画
 uv run robopy-viewer
 uv run robopy-viewer --geometry collision   # 凸包を明示的に描く
 
@@ -484,54 +484,47 @@ multi-turn位置は `[-pi, pi]` へ折り返しません。`zero_count` は
 `control.allow_hardware_current_output` は既定で `false` です。上記が測定され
 `validated: true` になるまで、バイラテラルモードは `configure()` で拒否されます。
 
-### モデルの配置（`models/rakuda/`）
+### モデルの配置（`robopy/models/rakuda/`、パッケージ同梱）
 
-実モデル `Rakuda-2_simulation_ready.zip` はアーカイブ内のレイアウトのまま `models/rakuda/assembly_2/` に
-コミットしてあります（`package://assembly_2/...` は `--package-dir models/rakuda` で解決）。
-Python パッケージの外（リポジトリ直下）に置いてあるので wheel は肥大化しません。
+robopy はライブラリなので、動作に必要なものは `pip install robopy` で入るパッケージの中に入っています。
+`Rakuda-2_simulation_ready.zip` の展開レイアウトをそのまま `robopy/models/rakuda/assembly_2/` に
+パッケージデータとして同梱し、`robopy.models.find_rakuda_model()` が場所を返します（`git clone` は不要です）。
 
-| 内容 | 管理 | 用途 |
+| 内容 | wheel | 用途 |
 | --- | --- | --- |
-| `urdf/*.urdf`（3種）、`collision_meshes/`（凸包137個、2.9 MB） | 通常の git | 運動学・IK・衝突判定・凸包表示。**clone だけで動く** |
-| `meshes/`（視覚メッシュ137個、53 MB） | **Git LFS**（`.gitattributes` で設定済み） | ビューアの見た目のみ |
-
-**視覚メッシュはまだリポジトリに入っていません。** この実装を行った環境からは GitHub の LFS
-サーバ（`lfs.github.com`）への接続が egress ポリシーで拒否されるため、LFS オブジェクトを
-アップロードできませんでした。追加は一度だけ、LFS を使える手元のマシンで行います（`.gitattributes`
-の規則があるので `git add` 時に自動で LFS ポインタになります。詳細は `models/rakuda/README.md`）:
+| `urdf/*.urdf`（3種）、`collision_meshes/`（凸包137個、2.9 MB） | **同梱** | 運動学・IK・衝突判定・凸包表示。**pip install だけで動く** |
+| `meshes/`（視覚メッシュ137個、53 MB） | 含まない（リポジトリでは Git LFS） | ビューア／VR の見た目のみ。`robopy-models fetch` で取得 |
 
 ```bash
-git lfs install
-unzip -j Rakuda-2_simulation_ready.zip 'assembly_2/meshes/*.stl' -d models/rakuda/assembly_2/meshes/
-git add models/rakuda/assembly_2/meshes
-git lfs ls-files | wc -l        # 137 と出れば LFS 管理になっている
-git commit -m "models(rakuda): add visual meshes via Git LFS" && git push
+robopy-models status     # モデルの場所と視覚メッシュの有無
+robopy-models fetch      # 視覚メッシュをキャッシュ（~/.cache/robopy/models/rakuda/）に取得
 ```
 
-追加後のクローンでは次で取得します（任意。なくても凸包で表示できます）:
+`fetch` は GitHub の LFS 配信エンドポイントから 137 個の STL を取得します（非公開リポジトリなら
+`GITHUB_TOKEN` を設定）。取得先は `ROBOPY_CACHE_DIR`（既定 `$XDG_CACHE_HOME/robopy`）で変えられます。
+チェックアウトで開発している場合は `git lfs install && git lfs pull` でも同じ状態になります。
 
-```bash
-git lfs install && git lfs pull
-```
-
-`robopy.models.find_rakuda_model()` は視覚メッシュの状態を `visual_mesh_status` で
-`PRESENT`（実体あり）/ `LFS_POINTERS`（`git lfs pull` 前）/ `ABSENT`（未追加）と区別します。
-どちらの不在でもビューアは同じ URDF の `<collision>`（通常 git の凸包）を描画し、Info タブと起動ログに
+`find_rakuda_model()` は視覚メッシュの状態を `visual_mesh_status` で
+`PRESENT`（実体あり）/ `LFS_POINTERS`（チェックアウトで `git lfs pull` 前）/ `ABSENT`（wheel で未取得）と
+区別します。どちらの不在でもビューアは同じ URDF の `<collision>`（同梱の凸包）を描画し、Info タブと起動ログに
 理由と対処が出ます（`--geometry visual|collision|auto` で明示もできます）。
 注意: `assembly_2_convex_collision.urdf` は `<visual>` に元の視覚メッシュ、`<collision>` に凸包を
 持つので、「凸包 URDF を読めば凸包が表示される」わけではありません。
 コードからは次のように参照します。
 
 ```python
-from robopy.models import find_rakuda_model
+from robopy.models import find_rakuda_model, fetch_visual_meshes
 
-m = find_rakuda_model()            # None なら models/ が見つからない（wheel インストール等）
-m.convex_collision_urdf, m.visual_urdf, m.package_dir, m.visual_mesh_status
+m = find_rakuda_model()            # None なら models データが見つからない（通常はあり得ない）
+m.convex_collision_urdf, m.package_dirs, m.visual_mesh_status
 m.visual_mesh_hint()               # 不在時の対処を 1 行で返す（PRESENT なら None）
+fetch_visual_meshes()              # 視覚メッシュをキャッシュへ（FetchReport を返す）
 ```
 
-探索順は環境変数 `ROBOPY_MODELS_DIR` → 引数 → パッケージ位置／カレントディレクトリから上位に `models/` を探す、
-です。wheel でインストールした環境では `ROBOPY_MODELS_DIR` でチェックアウトの `models/` を指してください。
+`package://assembly_2/...` の解決には `m.package_dirs`（キャッシュ → 同梱ディレクトリの順）を渡してください。
+探索順は環境変数 `ROBOPY_MODELS_DIR` → 引数 → パッケージデータで、別のモデルディレクトリを使いたいときだけ
+`ROBOPY_MODELS_DIR` を指定します。`.robopy/rakuda/config.yaml` の `control.model.urdf_path` を `null` に
+しておけば、制御系（Cartesian モード）も同梱モデルを使います。
 
 ### 実モデル（`Rakuda-2_simulation_ready.zip`）の監査結果
 

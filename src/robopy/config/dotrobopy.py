@@ -188,9 +188,8 @@ def ensure_default_rakuda_yaml(path: Path, *, joint_names: tuple[str, ...]) -> N
             "#   allow_hardware_current_output: false",
             "#",
             "#   model:",
-            "#     urdf_path: null          # e.g. models/assembly_2/urdf/"
-            "assembly_2_convex_collision.urdf",
-            "#     package_dirs: []         # dirs that resolve package:// URIs",
+            "#     urdf_path: null          # null = the Rakuda model bundled with robopy",
+            "#     package_dirs: []         # dirs that resolve package:// URIs (bundled if empty)",
             "#     torso_joint: torso_yaw_dof",
             "#     left_arm_joints: [shoulder_pitch_left_dof, shoulder_roll_left_dof,",
             "#                       elbow_yaw_left_dof, elbow_pitch_left_dof,",
@@ -716,8 +715,6 @@ def validate_rakuda_control(
     if control.mode == "cartesian_teleop":
         model = control.model
         problems: list[str] = []
-        if not model.urdf_path:
-            problems.append("model.urdf_path is not set")
         if not model.torso_joint:
             problems.append("model.torso_joint is not set")
         if len(model.left_arm_joints) != 6:

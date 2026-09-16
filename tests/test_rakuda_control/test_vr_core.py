@@ -302,11 +302,11 @@ class TestHeadMappingFromModel:
         from robopy.kinematics.urdf_model import WholeBodyModel
         from robopy.models import find_rakuda_model
 
-        rakuda = find_rakuda_model(Path(__file__).resolve().parents[2] / "models")
+        rakuda = find_rakuda_model()
         if rakuda is None:
             pytest.skip("committed Rakuda model not found")
         model = WholeBodyModel.from_urdf(
-            rakuda.convex_collision_urdf, package_dirs=[rakuda.package_dir], geometry_only=True
+            rakuda.convex_collision_urdf, package_dirs=rakuda.package_dirs, geometry_only=True
         )
         mapping = HeadJointMapping.from_model(
             model,

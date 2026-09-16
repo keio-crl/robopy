@@ -181,9 +181,10 @@ class RakudaModelConfig:
     """Where the kinematic model lives and how its joints are grouped.
 
     Attributes:
-        urdf_path: Path to the URDF.  ``None`` means no model is configured, so
-            Cartesian teleoperation is unavailable.
-        package_dirs: Directories used to resolve ``package://`` mesh URIs.
+        urdf_path: Path to the URDF.  ``None`` means the Rakuda model bundled
+            with robopy (``robopy/models/rakuda``) is used.
+        package_dirs: Directories used to resolve ``package://`` mesh URIs;
+            the bundled model's own when empty.
         torso_joint: The shared torso yaw joint.
         left_arm_joints: The six left-arm URDF joints, shoulder to wrist.
         right_arm_joints: The six right-arm URDF joints, shoulder to wrist.
