@@ -17,7 +17,7 @@ own ``global_scaling`` of 0.8.
     The same table and the same blocks, with the Rakuda mounted where it can
     work: turned to face the bench, and standing at the height its own grasping
     envelope wants rather than the Panda's.  The red block then sits inside the
-    measured :data:`~robopy.roboverse.tasks._common.OBJECT_ZONE` and the robot
+    measured ``workspace.OBJECT_ZONE`` and the robot
     picks it up.  See :data:`CALVIN_PICK_BASE_POSITION` for where the numbers
     come from.
 
@@ -37,20 +37,20 @@ from metasim.scenario.simulator_params import SimParamCfg
 from metasim.task.base import BaseTaskEnv
 from metasim.task.registry import register_task
 
-from robopy.roboverse.mount import (
+from mount import (
     GRASP_OFFSET_ABOVE_MOUNT,
     PLATE_CENTRE_XY,
     PLATE_SIZE_XY,
     STAND_HEIGHT,
 )
-from robopy.sim.calvin_table import (
+from calvin_table_asset import (
     CALVIN_SCALE,
     CALVIN_TABLE_SURFACE,
     CALVIN_WORK_SURFACE_Z,
     find_calvin_table,
 )
 
-from ._common import OBJECT_ZONE, hand_position
+from workspace import OBJECT_ZONE, hand_position
 
 __all__ = [
     "BLOCK_MASS_KG",
@@ -71,7 +71,7 @@ PEDESTAL = "rakuda_mount"
 #:
 #: In CALVIN this is where the Panda's base link sits, which is its mounting
 #: surface.  The Rakuda's ``base`` body is its waist, so the model goes
-#: :data:`~robopy.roboverse.mount.STAND_HEIGHT` higher to put its *feet* here.
+#: ``mount.STAND_HEIGHT`` higher to put its *feet* here.
 #: The scene file's ``robot_base_orientation`` is ``[0, 0, 0]``, so the identity
 #: rotation used below is CALVIN's own and not a choice made here.
 PANDA_BASE_POSITION = (-0.34, -0.46, 0.24)
@@ -114,13 +114,13 @@ def _table_cfg() -> ArticulationObjCfg:
     table = find_calvin_table()
     if table is None:
         raise FileNotFoundError(
-            "the CALVIN play table is missing from the models directory; it is vendored "
-            "under calvin_table/, so this is a broken checkout"
+            "the CALVIN play table is missing; it is vendored at "
+            "examples/roboverse/assets/calvin_table/, so this is a broken checkout"
         )
     mjcf = table / "mjcf" / "calvin_table.xml"
     if not mjcf.is_file():
         raise FileNotFoundError(
-            f"{mjcf} has not been generated; run python -m robopy.sim.calvin_table"
+            f"{mjcf} has not been generated; run python examples/roboverse/calvin_table_asset.py"
         )
     # No `scale=` here on purpose.  MetaSim's MuJoCo handler loads an
     # articulation's MJCF as it finds it, so a scale set here goes nowhere and
@@ -168,7 +168,7 @@ def _blocks() -> list[PrimitiveCubeCfg]:
 def block_rest_positions() -> dict[str, tuple[float, float, float]]:
     """Where each block starts: spread over the bench, resting on its top.
 
-    The heights come from :data:`~robopy.sim.calvin_table.CALVIN_WORK_SURFACE_Z`
+    The heights come from ``calvin_table_asset.CALVIN_WORK_SURFACE_Z``
     and each block's own size, not from the scene file's 0.46 -- that is a
     *drop* height, two centimetres of clear air above the bench.
     """
@@ -279,7 +279,7 @@ PICK_PEDESTAL = "rakuda_work_mount"
 CALVIN_PICK_TARGET = "block_red"
 
 #: How far in front of the robot the target block sits, in the robot's own
-#: frame.  The middle of :data:`~robopy.roboverse.tasks._common.OBJECT_ZONE`,
+#: frame.  The middle of ``workspace.OBJECT_ZONE``,
 #: which is the strip of table a hand can actually come down onto.
 _PICK_REACH_X = (OBJECT_ZONE["x"][0] + OBJECT_ZONE["x"][1]) / 2.0
 
@@ -292,7 +292,7 @@ _FACING_THE_BENCH = (0.7071067811865476, 0.0, 0.0, 0.7071067811865476)
 #: Height of the robot's feet for this task.
 #:
 #: Not CALVIN's 0.24.  A downward grasp only works well below this robot's
-#: shoulders -- see :data:`~robopy.roboverse.mount.GRASP_OFFSET_ABOVE_MOUNT` --
+#: shoulders -- see ``mount.GRASP_OFFSET_ABOVE_MOUNT`` --
 #: so the bench has to sit that far above the mounting plane, which puts the
 #: feet *higher* than the Panda's base rather than lower.
 CALVIN_PICK_FEET_Z = CALVIN_WORK_SURFACE_Z - GRASP_OFFSET_ABOVE_MOUNT

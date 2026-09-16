@@ -39,9 +39,9 @@ except ImportError as exc:  # pragma: no cover - depends on the environment
     print(f"this example needs RoboVerse and MuJoCo: {exc}", file=sys.stderr)
     raise SystemExit(1) from exc
 
-from robopy.roboverse.mount import STAND_HEIGHT
-from robopy.roboverse.tasks._common import MAX_PALM_REACH_M
-from robopy.roboverse.tasks.rakuda_calvin_table import PANDA_BASE_POSITION
+from mount import STAND_HEIGHT
+from workspace import MAX_PALM_REACH_M
+from tasks.rakuda_calvin import PANDA_BASE_POSITION
 
 #: Where the camera looks: the middle of the bench, a little above it.
 LOOK_AT = (-0.05, -0.12, 0.42)

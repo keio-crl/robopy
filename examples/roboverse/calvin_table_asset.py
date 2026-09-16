@@ -128,13 +128,18 @@ class CalvinTableExportReport:
         )
 
 
-def find_calvin_table(models_dir: Path | None = None) -> Path | None:
-    """Locate the vendored table directory, or ``None``."""
-    from robopy.models import find_models_dir
+#: Where the vendored table lives: beside this file, under ``assets/``.
+#:
+#: Not in robopy's ``models/`` directory, even though that is where the Rakuda's
+#: own meshes are.  Nothing in the library reads this table -- it is scenery for
+#: an example -- and 321 KB of someone else's furniture has no business in the
+#: wheel.
+_ASSETS = Path(__file__).resolve().parent / "assets"
 
-    base = Path(models_dir) if models_dir is not None else find_models_dir()
-    if base is None:
-        return None
+
+def find_calvin_table(assets_dir: Path | None = None) -> Path | None:
+    """Locate the vendored table directory, or ``None``."""
+    base = Path(assets_dir) if assets_dir is not None else _ASSETS
     table = base / MODEL_NAME
     return table if (table / "urdf" / _URDF_NAME).is_file() else None
 
@@ -399,7 +404,7 @@ def export_calvin_table_mjcf(
     table = Path(table_dir) if table_dir is not None else find_calvin_table()
     if table is None:
         raise FileNotFoundError(
-            "the CALVIN play table was not found; it is vendored under the models "
+            "the CALVIN play table was not found; it is vendored beside this file "
             "directory as calvin_table/, so this is a broken checkout"
         )
     table = Path(table).resolve()
@@ -459,7 +464,7 @@ def export_calvin_table_mjcf(
     header = (
         "\n  CALVIN's play table. GENERATED, DO NOT EDIT BY HAND.\n\n"
         f"  source:      {_URDF_NAME} (calvin_env, MIT)\n"
-        "  regenerate:  python -m robopy.sim.calvin_table\n\n"
+        "  regenerate:  python examples/roboverse/calvin_table_asset.py\n\n"
         "  The LED and the bulb do not light: that behaviour lives in calvin_env's\n"
         "  Python, not in the URDF. base_link's concave collision mesh has been\n"
         "  replaced by an exact box decomposition, because MuJoCo would otherwise\n"

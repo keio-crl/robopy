@@ -11,8 +11,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from robopy.roboverse.tasks._common import MAX_PALM_REACH_M
-from robopy.sim.calvin_table import (
+from workspace import MAX_PALM_REACH_M
+from calvin_table_asset import (
     CALVIN_SCALE,
     CALVIN_TABLE_JOINTS,
     CALVIN_TABLE_SURFACE,
@@ -92,7 +92,7 @@ class TestExport:
         mujoco = pytest.importorskip("mujoco")
         mjcf = TABLE / "mjcf" / "calvin_table.xml"
         if not mjcf.is_file():
-            pytest.skip("run python -m robopy.sim.calvin_table first")
+            pytest.skip("run python examples/roboverse/calvin_table_asset.py first")
         return mujoco.MjModel.from_xml_path(str(mjcf))
 
     def test_the_joints_are_all_there(self, model):
@@ -175,8 +175,8 @@ class TestScene:
         env.close()
 
     def test_the_robot_stands_at_the_pandas_base(self, rolled):
-        from robopy.roboverse.mount import STAND_HEIGHT
-        from robopy.roboverse.tasks.rakuda_calvin_table import PANDA_BASE_POSITION
+        from mount import STAND_HEIGHT
+        from tasks.rakuda_calvin import PANDA_BASE_POSITION
 
         states, _ = rolled
         base = states.robots["rakuda"].root_state[0, :3].numpy()
@@ -187,7 +187,7 @@ class TestScene:
 
     def test_the_blocks_stay_on_the_table(self, rolled):
         """The failure this scene was built through: blocks flung off the bench."""
-        from robopy.roboverse.tasks.rakuda_calvin_table import (
+        from tasks.rakuda_calvin import (
             CALVIN_BLOCKS,
             block_rest_positions,
         )
@@ -241,8 +241,8 @@ class TestPickScene:
 
     def test_it_stands_at_the_grasping_height(self, env):
         """Feet one grasp-offset below CALVIN's bench, not at the Panda's height."""
-        from robopy.roboverse.mount import GRASP_OFFSET_ABOVE_MOUNT
-        from robopy.roboverse.tasks.rakuda_calvin_table import (
+        from mount import GRASP_OFFSET_ABOVE_MOUNT
+        from tasks.rakuda_calvin import (
             CALVIN_PICK_BASE_POSITION,
             PANDA_BASE_POSITION,
         )
@@ -257,8 +257,8 @@ class TestPickScene:
         Checked in the robot's own frame, which is turned 90 degrees from the
         world's, so the arithmetic that places the base is checked too.
         """
-        from robopy.roboverse.tasks._common import OBJECT_ZONE
-        from robopy.roboverse.tasks.rakuda_calvin_table import (
+        from workspace import OBJECT_ZONE
+        from tasks.rakuda_calvin import (
             CALVIN_PICK_BASE_POSITION,
             CALVIN_PICK_TARGET,
             block_rest_positions,
@@ -276,8 +276,8 @@ class TestPickScene:
         """Not merely inside a box: the IK has to put the palm on the grasp pose."""
         import numpy as np
 
-        from robopy.roboverse.ik import Arm, solve_ik
-        from robopy.roboverse.tasks.rakuda_calvin_table import (
+        from ik import Arm, solve_ik
+        from tasks.rakuda_calvin import (
             CALVIN_PICK_TARGET,
             block_rest_positions,
         )
@@ -291,12 +291,12 @@ class TestPickScene:
         """The other half of the claim, so the two tasks stay honest about it."""
         import numpy as np
 
-        from robopy.roboverse.tasks.rakuda_calvin_table import (
+        from tasks.rakuda_calvin import (
             CALVIN_PICK_TARGET,
             PANDA_BASE_POSITION,
             block_rest_positions,
         )
-        from robopy.roboverse.mount import STAND_HEIGHT
+        from mount import STAND_HEIGHT
 
         block = np.array(block_rest_positions()[CALVIN_PICK_TARGET])
         base = np.array(

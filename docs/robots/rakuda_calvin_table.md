@@ -19,7 +19,7 @@
 ![pick](../assets/rakuda_calvin_pick.png)
 
 ```bash
-python examples/robot/rakuda_calvin_motion.py \
+python examples/roboverse/rakuda_calvin_motion.py \
     --video docs/robots/assets/rakuda_calvin_motion.mp4 \
     --still docs/robots/assets/rakuda_calvin_pick.png
 # act one -- where CALVIN puts its Panda
@@ -32,7 +32,7 @@ python examples/robot/rakuda_calvin_motion.py \
 #   task reports success: True
 ```
 
-方策ではなく、`robopy.roboverse.ik` の逆運動学によるスクリプト制御です。
+方策ではなく、`examples/roboverse/ik.py` の逆運動学によるスクリプト制御です。
 成功判定は環境自身のものを使っています。
 
 !!! warning "`rakuda.calvin_table` の配置では手はテーブルに届きません"
@@ -52,7 +52,7 @@ python examples/robot/rakuda_calvin_motion.py \
 ![front](../assets/rakuda_calvin_front.png)
 
 ```bash
-python examples/robot/rakuda_calvin_table.py \
+python examples/roboverse/rakuda_calvin_scene.py \
     --stills docs/robots/assets \
     --video docs/robots/assets/rakuda_calvin_table.mp4
 ```
@@ -80,7 +80,7 @@ states, _ = env.reset()
 テーブルの MJCF は生成物なのでリポジトリに入っていますが、作り直すこともできます。
 
 ```bash
-python -m robopy.sim.calvin_table
+python examples/roboverse/calvin_table_asset.py
 #   9 bodies, 4 joints, 60 geoms, 11 meshes
 #   4.81 kg, 0.880 x 0.449 x 0.697 m at scale 0.8
 #   45 boxes in place of base_link's concave mesh
@@ -129,7 +129,7 @@ CALVIN の `calvin_table_D.urdf` は `base_link` の `<collision>` を
 `y = -0.93` まで吹き飛んでいました。
 
 そこで、この 1 つの衝突メッシュだけを箱の集合に置き換えています
-（`robopy.sim.calvin_table.decompose_to_boxes`）。
+（`calvin_table_asset.decompose_to_boxes`）。
 
 この机は CAD 由来でほぼ軸平行なので、**メッシュ自身の面が乗る平面**を延長して空間を
 セルに切ると、各セルは完全に内側か完全に外側のどちらかになります。セルごとに 1 点だけ

@@ -7,7 +7,7 @@
 | --- | --- |
 | `urdf/calvin_table_D.urdf` | 上流のまま。8 リンク、可動関節 4（すべて prismatic） |
 | `meshes/*.obj`, `*.STL` | URDF が参照する 11 個だけ。348 KB |
-| `mjcf/calvin_table.xml` | 生成物。`python -m robopy.sim.calvin_table` で作り直せます |
+| `mjcf/calvin_table.xml` | 生成物。`python examples/roboverse/calvin_table_asset.py` で作り直せます |
 | `LICENSE` | MIT License（Copyright (c) 2021 Oier Mees）。上流のまま |
 
 **変更点**: ファイルは 1 バイトも変更していません。

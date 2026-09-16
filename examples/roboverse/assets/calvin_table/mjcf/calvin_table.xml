@@ -3,7 +3,7 @@
   CALVIN's play table. GENERATED, DO NOT EDIT BY HAND.
 
   source:      calvin_table_D.urdf (calvin_env, MIT)
-  regenerate:  python -m robopy.sim.calvin_table
+  regenerate:  python examples/roboverse/calvin_table_asset.py
 
   The LED and the bulb do not light: that behaviour lives in calvin_env's
   Python, not in the URDF. base_link's concave collision mesh has been

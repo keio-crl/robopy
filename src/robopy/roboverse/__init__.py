@@ -8,16 +8,21 @@ installation step:
     pip install robopy
     python -c "from metasim.utils.setup_util import get_robot; print(get_robot('rakuda'))"
 
-``robopy.roboverse.mount`` is the other half of putting this robot in a scene:
-the Rakuda cannot reach the surface it is bolted to, so it has to be stood on a
-pedestal positioned relative to the work surface rather than to the floor. That
-module derives the heights and builds the geometry; the bundled tasks all use it.
+What this pack contains is **the robot, and nothing else**.
+:mod:`robopy.roboverse.robots` registers ``rakuda`` and ``rakuda_gripper``, and
+:mod:`robopy.roboverse.assets` finds the MJCF they point at.  That is the whole
+surface: with it you can put the machine into any scenario you like.
 
-MetaSim imports ``robopy.roboverse.robots`` to resolve a robot name and
-``robopy.roboverse.tasks`` to resolve a task name, so those two submodules are
-the pack's whole surface.  ``scenes`` and ``grounds`` are present but empty --
-MetaSim looks for all four roles and an absent one is reported as an import
-error in messages about *other* failures, which is needlessly confusing.
+``tasks``, ``scenes`` and ``grounds`` are present but empty.  MetaSim looks for
+all four roles and an absent one is reported as an import error inside messages
+about *other* failures, which is needlessly confusing.
+
+Standing the robot somewhere useful is a scene-building decision, not a fact
+about the machine -- the Rakuda cannot reach the surface it is bolted to, so it
+has to go on a pedestal positioned relative to the work surface, and how high
+depends on whether it is reaching or grasping.  All of that, with the four
+bundled tasks and the scripted arm control that drives them, lives with the
+examples in ``examples/roboverse/``.
 
 Simulator support: MuJoCo, and MJX and Newton insofar as they read the same
 MJCF.  The asset is an MJCF because that is what the CAD export can be turned

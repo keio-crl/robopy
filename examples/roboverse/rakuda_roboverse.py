@@ -23,7 +23,7 @@ around that -- reaching and pushing, no grasping.
 
 It also stands on a pedestal rather than on the floor, the way CALVIN mounts its
 Franka: the Rakuda's hands stop 0.112 m above whatever it is bolted to, so it
-cannot reach its own mounting surface.  ``robopy.roboverse.mount`` derives the
+cannot reach its own mounting surface.  ``mount`` derives the
 height from where the work surface is; see docs/robots/rakuda_roboverse.md.
 """
 
@@ -47,7 +47,8 @@ except ImportError as exc:  # pragma: no cover - depends on the environment
         "From a robopy checkout:  pip install -e '.[sim]'"
     ) from exc
 
-from robopy.roboverse.mount import RakudaMount
+import tasks  # noqa: F401  -- importing is what registers the task names
+from mount import RakudaMount
 from robopy.roboverse.robots import RAKUDA_ARM_JOINTS
 
 ROBOT = "rakuda"

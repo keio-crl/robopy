@@ -8,13 +8,13 @@
 <video controls width="640" src="../assets/rakuda_lift_block.mp4"></video>
 
 ```bash
-python examples/robot/rakuda_lift_block.py --seed 1 \
+python examples/roboverse/rakuda_lift_block.py --seed 1 \
     --video docs/robots/assets/rakuda_lift_block.mp4
 # lifted +0.1161 m, still in the hand: True
 # task reports success: True
 ```
 
-`examples/robot/rakuda_lift_block.py` は**方策ではなく**、逆運動学で手先の経路を作る
+`examples/roboverse/rakuda_lift_block.py` は**方策ではなく**、逆運動学で手先の経路を作る
 スクリプト制御です。環境が端から端まで成立することを示すためのもので、学習の出発点として
 使えます。全配置を解けるわけではありません（後述）。
 
@@ -124,7 +124,9 @@ action = torch.tensor([[targets[j] for j in joints]])
 `RakudaMount(offset=...)` で切り替えます。
 
 ```python
-from robopy.roboverse.mount import GRASP_OFFSET_ABOVE_MOUNT, RakudaMount
+# examples/roboverse/ 配下のスクリプトから。mount はライブラリではなく example です
+from mount import GRASP_OFFSET_ABOVE_MOUNT, RakudaMount
+
 mount = RakudaMount(work_surface_z=0.75, offset=GRASP_OFFSET_ABOVE_MOUNT)
 mount.describe()
 ```
@@ -180,13 +182,13 @@ imageio.mimwrite("out.mp4", frames, fps=30, quality=7, macro_block_size=1)
 
 ## 8. スクリプト制御の成功率
 
-`examples/robot/rakuda_lift_block.py` はシード 0〜5 のうち **2 つ（seed 1, 3）** で成功します。
+`examples/roboverse/rakuda_lift_block.py` はシード 0〜5 のうち **2 つ（seed 1, 3）** で成功します。
 失敗の多くは接近中にブロックを倒すもので、**環境が解けないのではなく、この素朴な制御則が
 配置に対して頑健でない**ということです。方策を学習させる余地がここにあります。
 
 ```bash
 for s in 0 1 2 3 4 5; do
-  python examples/robot/rakuda_lift_block.py --seed $s | tail -1
+  python examples/roboverse/rakuda_lift_block.py --seed $s | tail -1
 done
 ```
 
