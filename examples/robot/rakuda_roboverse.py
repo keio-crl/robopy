@@ -20,6 +20,11 @@ just something that moves towards the goal so the episode does something visible
 What the robot can and cannot do: the CAD export models both grippers as *fixed*
 frames, so there are 15 actuated joints and no fingers.  The tasks are built
 around that -- reaching and pushing, no grasping.
+
+It also stands on a pedestal rather than on the floor, the way CALVIN mounts its
+Franka: the Rakuda's hands stop 0.112 m above whatever it is bolted to, so it
+cannot reach its own mounting surface.  ``robopy.roboverse.mount`` derives the
+height from where the work surface is; see docs/robots/rakuda_roboverse.md.
 """
 
 from __future__ import annotations
@@ -42,9 +47,11 @@ except ImportError as exc:  # pragma: no cover - depends on the environment
         "From a robopy checkout:  pip install -e '.[roboverse]'"
     ) from exc
 
-from robopy.roboverse.robots import RAKUDA_ARM_JOINTS, RAKUDA_STAND_HEIGHT_M
+from robopy.roboverse.mount import RakudaMount
+from robopy.roboverse.robots import RAKUDA_ARM_JOINTS
 
 ROBOT = "rakuda"
+MOUNT = RakudaMount()
 
 
 def _camera() -> PinholeCameraCfg:
@@ -53,11 +60,12 @@ def _camera() -> PinholeCameraCfg:
     The Rakuda faces ``+x`` (its head camera's own frame points that way) and is
     about 0.6 m tall standing on the floor, so this frames the whole machine.
     """
+    height = MOUNT.base_position[2]
     return PinholeCameraCfg(
         width=960,
         height=720,
-        pos=(0.9, -0.7, 0.75),
-        look_at=(0.0, 0.0, 0.35),
+        pos=(0.9, -0.9, height + 0.45),
+        look_at=(0.15, 0.0, height),
     )
 
 
@@ -65,7 +73,7 @@ def demo_wave(args: argparse.Namespace) -> int:
     """Build a bare scene and sweep the torso and both elbows."""
     scenario = ScenarioCfg(
         robots=[ROBOT],
-        objects=[],
+        objects=[MOUNT.pedestal(), MOUNT.table()],
         simulator="mujoco",
         num_envs=1,
         headless=args.headless,
@@ -79,16 +87,27 @@ def demo_wave(args: argparse.Namespace) -> int:
     print(f"robot   : {robot.name}, {robot.num_joints} joints")
     print(f"asset   : {robot.mjcf_path}")
     print(f"          ({robot.asset_source})")
+    print("mount   : " + ", ".join(f"{k}={v:.4f}" for k, v in MOUNT.describe().items()))
 
     handler = get_handler(scenario)
+    upright = torch.tensor([1.0, 0.0, 0.0, 0.0])
     handler.set_states(
         [
             {
-                "objects": {},
+                "objects": {
+                    "rakuda_mount": {
+                        "pos": torch.tensor(list(MOUNT.pedestal_position())),
+                        "rot": upright.clone(),
+                    },
+                    "table": {
+                        "pos": torch.tensor(list(MOUNT.table_position())),
+                        "rot": upright.clone(),
+                    },
+                },
                 "robots": {
                     ROBOT: {
-                        "pos": torch.tensor([0.0, 0.0, RAKUDA_STAND_HEIGHT_M]),
-                        "rot": torch.tensor([1.0, 0.0, 0.0, 0.0]),
+                        "pos": torch.tensor(list(MOUNT.base_position)),
+                        "rot": upright.clone(),
                         "dof_pos": dict(robot.default_joint_positions),
                     }
                 },

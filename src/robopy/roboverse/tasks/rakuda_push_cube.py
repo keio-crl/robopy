@@ -1,23 +1,21 @@
-"""Push a cube across a table with the Rakuda's right hand.
+"""Push a cube across a table with the Rakuda.
 
 Registered as ``rakuda.push_cube``.  This is the object-manipulation task the
 exported model can actually support: the CAD models both grippers as *fixed*
 frames, so there is nothing to close on an object and picking anything up is out
 of reach.  Pushing is not.
 
-Two pieces of the robot's geometry decide the whole layout, both measured rather
-than chosen (see :mod:`robopy.roboverse.tasks._common`):
+The scene is laid out the way CALVIN lays out its Franka: the robot is fixed at
+a height chosen *relative to the work surface*, not stood on the floor.  It has
+to be.  The Rakuda's shoulders are 0.41 m above its own base plate and its arms
+are about 0.30 m long, so a hand never gets closer than 0.112 m to whatever the
+robot is bolted to -- put it on the table and it waves above everything on it.
 
-* A hand gets no lower than ``z = 0.114``, while the robot stands on ``z = 0``.
-  **It cannot reach its own standing surface**, so the cube sits on a table
-  rather than on the floor.
-* The pedestal occupies ``x`` up to ``0.178`` and stands ``0.323`` tall, so the
-  table has to start beyond that or the robot would be standing in it.
-
-The table top is therefore at :data:`~robopy.roboverse.tasks._common.WORK_SURFACE_TOP`
-and the table starts at ``x = 0.20``, which leaves the cube in the band where
-roughly 7.5% of random joint configurations put a hand -- reachable with room to
-get behind the cube and push.
+So it stands on a pedestal whose top is
+:data:`~robopy.roboverse.mount.WORK_OFFSET_ABOVE_MOUNT` below the tabletop, which
+is the height at which the hands work best, and the table sits in front of the
+pedestal rather than under it.  :mod:`robopy.roboverse.mount` has the
+measurements behind both.
 """
 
 from __future__ import annotations
@@ -30,22 +28,27 @@ from metasim.scenario.simulator_params import SimParamCfg
 from metasim.task.base import BaseTaskEnv
 from metasim.task.registry import register_task
 
-from ._common import STAND_HEIGHT, WORK_SURFACE_TOP, hand_position
+from ._common import OBJECT_ZONE, RakudaMount, hand_position
 
 __all__ = ["RakudaPushCubeEnv"]
 
 ROBOT = "rakuda"
+PEDESTAL = "rakuda_mount"
+
+#: The robot's stand, and every height that follows from it.
+MOUNT = RakudaMount()
+
+#: Extent of the table along ``x``. It starts at ``MOUNT.near_edge_x`` so it
+#: never overlaps the pedestal, and reaches past the arm's forward limit (0.365).
+TABLE_DEPTH = 0.34
+TABLE_WIDTH = 0.60
 
 CUBE_SIZE = 0.04
-TABLE_SIZE = (0.30, 0.60, WORK_SURFACE_TOP)
-#: Centre of the table. ``x`` puts its near edge at 0.20, clear of the pedestal
-#: (which reaches ``x = 0.178``); ``z`` is half the height, so it rests on the
-#: floor with its top at :data:`WORK_SURFACE_TOP`.
-TABLE_CENTRE = (0.20 + TABLE_SIZE[0] / 2.0, 0.0, TABLE_SIZE[2] / 2.0)
 
-#: Where the cube starts: on the table, in the near half the hand can get behind.
-CUBE_START_X = (0.23, 0.29)
-CUBE_START_Y = (-0.10, 0.10)
+#: Where the cube starts, in the robot's frame. Measured reachable; see
+#: :data:`~robopy.roboverse.tasks._common.OBJECT_ZONE`.
+CUBE_START_X = OBJECT_ZONE["x"]
+CUBE_START_Y = OBJECT_ZONE["y"]
 
 #: How far the cube has to be pushed, and how close counts as arriving.
 GOAL_OFFSET_Y = 0.16
@@ -63,7 +66,7 @@ class RakudaPushCubeEnv(BaseTaskEnv):
 
     The episode ends when the cube is within :data:`GOAL_RADIUS_M` of the goal.
     Knocking the cube off the table does not end it -- the episode simply runs
-    out, and ``cube_on_table`` in the reward tells the difference.
+    out, and :meth:`cube_on_table` tells the difference.
     """
 
     supported_simulators = ("mujoco",)
@@ -71,13 +74,8 @@ class RakudaPushCubeEnv(BaseTaskEnv):
 
     scenario = ScenarioCfg(
         objects=[
-            PrimitiveCubeCfg(
-                name="table",
-                size=TABLE_SIZE,
-                color=(0.82, 0.76, 0.62),
-                physics=PhysicStateType.GEOM,
-                fix_base_link=True,
-            ),
+            MOUNT.pedestal(PEDESTAL),
+            MOUNT.table("table", depth=TABLE_DEPTH, width=TABLE_WIDTH),
             PrimitiveCubeCfg(
                 name="cube",
                 size=(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE),
@@ -115,7 +113,7 @@ class RakudaPushCubeEnv(BaseTaskEnv):
             [
                 CUBE_START_X[0] + unit[:, 0] * (CUBE_START_X[1] - CUBE_START_X[0]),
                 CUBE_START_Y[0] + unit[:, 1] * (CUBE_START_Y[1] - CUBE_START_Y[0]),
-                torch.full((self.num_envs,), WORK_SURFACE_TOP + CUBE_SIZE / 2.0),
+                torch.full((self.num_envs,), MOUNT.work_surface_z + CUBE_SIZE / 2.0),
             ],
             dim=-1,
         )
@@ -123,7 +121,7 @@ class RakudaPushCubeEnv(BaseTaskEnv):
         # has room to sweep. A goal on the other side would need the left arm.
         goal = start.clone()
         goal[:, 1] -= GOAL_OFFSET_Y
-        goal[:, 2] = WORK_SURFACE_TOP
+        goal[:, 2] = MOUNT.work_surface_z
         return start, goal
 
     def _get_initial_states(self) -> list[dict]:
@@ -134,13 +132,20 @@ class RakudaPushCubeEnv(BaseTaskEnv):
         return [
             {
                 "objects": {
-                    "table": {"pos": torch.tensor(list(TABLE_CENTRE)), "rot": upright.clone()},
+                    PEDESTAL: {
+                        "pos": torch.tensor(list(MOUNT.pedestal_position())),
+                        "rot": upright.clone(),
+                    },
+                    "table": {
+                        "pos": torch.tensor(list(MOUNT.table_position(TABLE_DEPTH))),
+                        "rot": upright.clone(),
+                    },
                     "cube": {"pos": start[env].clone(), "rot": upright.clone()},
                     "goal": {"pos": goal[env].clone(), "rot": upright.clone()},
                 },
                 "robots": {
                     ROBOT: {
-                        "pos": torch.tensor([0.0, 0.0, STAND_HEIGHT]),
+                        "pos": torch.tensor(list(MOUNT.base_position)),
                         "rot": upright.clone(),
                         "dof_pos": dict(robot.default_joint_positions),
                     }
@@ -169,7 +174,7 @@ class RakudaPushCubeEnv(BaseTaskEnv):
 
     def cube_on_table(self, states) -> torch.Tensor:
         """Whether the cube is still up on the table, as ``[num_envs]`` of bool."""
-        return self._cube_position(states)[:, 2] > WORK_SURFACE_TOP - CUBE_SIZE
+        return self._cube_position(states)[:, 2] > MOUNT.work_surface_z - CUBE_SIZE
 
     def _reward(self, states) -> torch.Tensor:
         """Reach the cube first, then move it to the goal.
@@ -201,3 +206,8 @@ class RakudaPushCubeEnv(BaseTaskEnv):
     def goal(self) -> torch.Tensor | None:
         """Where the cube has to end up, ``[num_envs, 3]``."""
         return None if self._goal is None else self._goal.clone()
+
+    @property
+    def mount(self) -> RakudaMount:
+        """Where the robot is standing, and the heights that follow from it."""
+        return MOUNT

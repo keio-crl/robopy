@@ -6,9 +6,14 @@ export models the Rakuda's two grippers as *fixed* frames, so there is nothing
 to open or close and no grasping to be had.  Reaching is the largest useful task
 the model supports as exported.
 
-Targets are sampled inside :data:`~robopy.roboverse.tasks._common.REACH_TARGET_BOX`,
-a per-hand box measured from the model's own reachable set, so a failure means
-the policy missed rather than that it was sent somewhere the arm cannot go.
+The robot stands on a pedestal rather than on the floor -- see
+:mod:`robopy.roboverse.mount` for why, and for where its height comes from.
+Targets are sampled inside
+:data:`~robopy.roboverse.tasks._common.REACH_TARGET_BOX`, a per-hand box
+measured from the model's own reachable set and given relative to the mounting
+plane, so raising or lowering the pedestal moves the targets with the robot and
+a failure means the policy missed rather than that it was sent somewhere the arm
+cannot go.
 
 The target is a marker, not an obstacle: it is drawn where the hand should go
 and has collision turned off, so an arm on its way to the goal is never pushed
@@ -25,11 +30,13 @@ from metasim.scenario.simulator_params import SimParamCfg
 from metasim.task.base import BaseTaskEnv
 from metasim.task.registry import register_task
 
-from ._common import REACH_TARGET_BOX, STAND_HEIGHT, hand_position
+from ._common import REACH_TARGET_BOX, RakudaMount, hand_position
 
 __all__ = ["RakudaBimanualReachEnv", "RakudaReachEnv"]
 
 ROBOT = "rakuda"
+MOUNT = RakudaMount()
+PEDESTAL = "rakuda_mount"
 
 #: How close the hand frame has to get, in metres.
 #:
@@ -56,11 +63,17 @@ def _marker(name: str, color: tuple[float, float, float]) -> PrimitiveSphereCfg:
 
 
 def _sample_in_box(box, num_envs: int, generator: torch.Generator | None) -> torch.Tensor:
-    """Uniform samples in an axis-aligned box, as ``[num_envs, 3]``."""
+    """Uniform samples in an axis-aligned box, as ``[num_envs, 3]``.
+
+    ``z`` comes out in world coordinates: the box is stated relative to the
+    mounting plane, which is where it is a constant.
+    """
     low = torch.tensor([box[axis][0] for axis in "xyz"])
     high = torch.tensor([box[axis][1] for axis in "xyz"])
     unit = torch.rand(num_envs, 3, generator=generator)
-    return low + unit * (high - low)
+    sampled = low + unit * (high - low)
+    sampled[:, 2] += MOUNT.top_z
+    return sampled
 
 
 class _ReachBase(BaseTaskEnv):
@@ -87,22 +100,27 @@ class _ReachBase(BaseTaskEnv):
         if not self._targets:
             self._sample_targets()
         robot = self.scenario.robots[0]
+        upright = torch.tensor([1.0, 0.0, 0.0, 0.0])
         states = []
         for env in range(self.num_envs):
             objects = {
-                self.markers[hand]: {
-                    "pos": self._targets[hand][env].clone(),
-                    "rot": torch.tensor([1.0, 0.0, 0.0, 0.0]),
+                PEDESTAL: {
+                    "pos": torch.tensor(list(MOUNT.pedestal_position())),
+                    "rot": upright.clone(),
                 }
-                for hand in self.hands
             }
+            for hand in self.hands:
+                objects[self.markers[hand]] = {
+                    "pos": self._targets[hand][env].clone(),
+                    "rot": upright.clone(),
+                }
             states.append(
                 {
                     "objects": objects,
                     "robots": {
                         ROBOT: {
-                            "pos": torch.tensor([0.0, 0.0, STAND_HEIGHT]),
-                            "rot": torch.tensor([1.0, 0.0, 0.0, 0.0]),
+                            "pos": torch.tensor(list(MOUNT.base_position)),
+                            "rot": upright.clone(),
                             "dof_pos": dict(robot.default_joint_positions),
                         }
                     },
@@ -150,6 +168,11 @@ class _ReachBase(BaseTaskEnv):
         """The current per-hand goal positions, ``[num_envs, 3]`` each."""
         return {hand: value.clone() for hand, value in self._targets.items()}
 
+    @property
+    def mount(self) -> RakudaMount:
+        """Where the robot is standing, and the heights that follow from it."""
+        return MOUNT
+
 
 @register_task("rakuda.reach")
 class RakudaReachEnv(_ReachBase):
@@ -163,7 +186,7 @@ class RakudaReachEnv(_ReachBase):
     markers = {"right": "target_right"}
 
     scenario = ScenarioCfg(
-        objects=[_marker("target_right", (0.85, 0.25, 0.25))],
+        objects=[MOUNT.pedestal(PEDESTAL), _marker("target_right", (0.85, 0.25, 0.25))],
         robots=[ROBOT],
         simulator="mujoco",
         sim_params=SimParamCfg(dt=0.005),
@@ -188,6 +211,7 @@ class RakudaBimanualReachEnv(_ReachBase):
 
     scenario = ScenarioCfg(
         objects=[
+            MOUNT.pedestal(PEDESTAL),
             _marker("target_right", (0.85, 0.25, 0.25)),
             _marker("target_left", (0.25, 0.45, 0.85)),
         ],

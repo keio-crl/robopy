@@ -8,6 +8,11 @@ installation step:
     pip install robopy
     python -c "from metasim.utils.setup_util import get_robot; print(get_robot('rakuda'))"
 
+``robopy.roboverse.mount`` is the other half of putting this robot in a scene:
+the Rakuda cannot reach the surface it is bolted to, so it has to be stood on a
+pedestal positioned relative to the work surface rather than to the floor. That
+module derives the heights and builds the geometry; the bundled tasks all use it.
+
 MetaSim imports ``robopy.roboverse.robots`` to resolve a robot name and
 ``robopy.roboverse.tasks`` to resolve a task name, so those two submodules are
 the pack's whole surface.  ``scenes`` and ``grounds`` are present but empty --

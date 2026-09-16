@@ -21,6 +21,7 @@ from metasim.utils import configclass
 
 from robopy.motor.dynamixel_control_table import get_motor_capabilities
 from robopy.roboverse.assets import resolve_rakuda_mjcf
+from robopy.roboverse.mount import STAND_HEIGHT
 from robopy.sim.mjcf_export import (
     RAKUDA_ACTUATED_JOINTS,
     RAKUDA_BASE_BODY,
@@ -42,9 +43,15 @@ __all__ = [
 #:
 #: The CAD origin is at the waist, and the underside of the base plate is
 #: 0.25752 m below it, so a Rakuda placed at the origin would be buried to the
-#: chest.  Measured off the model's own collision geometry, not guessed; the
-#: test suite recomputes it and fails if the model moves.
-RAKUDA_STAND_HEIGHT_M: float = 0.25752
+#: chest.  Measured off the model's own collision geometry, not guessed; the test
+#: suite recomputes it and fails if the model moves.
+#:
+#: Standing on the floor is rarely what you want, mind: the Rakuda's hands stop
+#: 0.112 m above whatever it is bolted to, so on the floor it can reach nothing
+#: on the floor.  :class:`robopy.roboverse.mount.RakudaMount` puts it on a
+#: pedestal at a height derived from the work surface instead, which is what all
+#: the bundled tasks do.
+RAKUDA_STAND_HEIGHT_M: float = STAND_HEIGHT
 
 #: The waist joint.  It turns the whole upper body, both arms with it.
 RAKUDA_TORSO_JOINT: str = "torso_yaw_dof"
