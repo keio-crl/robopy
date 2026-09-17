@@ -173,6 +173,12 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
             # self._start_capture_thread()
 
             logger.info(f"{self.name} connected successfully.")
+            
+            logger.info(
+                "RealSense exposure applied: auto=%s exposure=%s",
+                color_sensor.get_option(rs.option.enable_auto_exposure),
+                color_sensor.get_option(rs.option.exposure),
+            )
 
         except Exception as e:
             self.rs_pipeline = None
