@@ -10,6 +10,9 @@ class CameraParams:
     index: int = 0  # Add index attribute for RealSense camera
     serial_no: str | None = None
 
+    auto_exposure: bool = True
+    exposure: float | None = 190.0
+
 
 @dataclass
 class TactileParams:

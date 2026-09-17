@@ -122,6 +122,32 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
         try:
             # Start pipeline
             self.rs_profile = self.rs_pipeline.start(rs_config)  # type: ignore
+
+            # -------------------------
+            # Exposure settings
+            # -------------------------
+            device = self.rs_profile.get_device()
+            color_sensor = device.first_color_sensor()
+
+            if color_sensor.supports(rs.option.enable_auto_exposure):
+                color_sensor.set_option(
+                    rs.option.enable_auto_exposure,
+                    1.0 if self.config.auto_exposure else 0.0,
+                )
+
+            if (
+                not self.config.auto_exposure
+                and self.config.exposure is not None
+                and color_sensor.supports(rs.option.exposure)
+            ):
+                color_sensor.set_option(
+                    rs.option.exposure,
+                    float(self.config.exposure),
+                )
+
+
+
+
             self.align = rs.align(rs.stream.color)  # type: ignore
             self._update_config_from_stream()
             self._is_connected = True

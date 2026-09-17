@@ -1,0 +1,64 @@
+diff --git a/src/robopy/config/sensor_config/params_config.py b/src/robopy/config/sensor_config/params_config.py
+index 9e9b936..e2256b7 100644
+--- a/src/robopy/config/sensor_config/params_config.py
++++ b/src/robopy/config/sensor_config/params_config.py
+@@ -10,6 +10,9 @@ class CameraParams:
+     index: int = 0  # Add index attribute for RealSense camera
+     serial_no: str | None = None
+ 
++    auto_exposure: bool = True
++    exposure: float | None = 190.0
++
+ 
+ @dataclass
+ class TactileParams:
+diff --git a/src/robopy/robots/xarm/xarm_robot.py b/src/robopy/robots/xarm/xarm_robot.py
+index 4d94f80..e9a2e5e 100644
+--- a/src/robopy/robots/xarm/xarm_robot.py
++++ b/src/robopy/robots/xarm/xarm_robot.py
+@@ -473,6 +473,8 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
+             cam_cfg.fps = cam_param.fps
+             cam_cfg.index = cam_param.index
+             cam_cfg.serial_no = cam_param.serial_no
++            cam_cfg.auto_exposure = cam_param.auto_exposure
++            cam_cfg.exposure = cam_param.exposure
+             camera_configs.append(cam_cfg)
+         tactile_configs: List[TactileParams] = list(self.config.sensors.tactile)
+         audio_configs: List[AudioParams] = list(self.config.sensors.audio)
+diff --git a/src/robopy/sensors/visual/realsense_camera.py b/src/robopy/sensors/visual/realsense_camera.py
+index 201ba81..ea1d8ed 100644
+--- a/src/robopy/sensors/visual/realsense_camera.py
++++ b/src/robopy/sensors/visual/realsense_camera.py
+@@ -122,6 +122,32 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
+         try:
+             # Start pipeline
+             self.rs_profile = self.rs_pipeline.start(rs_config)  # type: ignore
++
++            # -------------------------
++            # Exposure settings
++            # -------------------------
++            device = self.rs_profile.get_device()
++            color_sensor = device.first_color_sensor()
++
++            if color_sensor.supports(rs.option.enable_auto_exposure):
++                color_sensor.set_option(
++                    rs.option.enable_auto_exposure,
++                    1.0 if self.config.auto_exposure else 0.0,
++                )
++
++            if (
++                not self.config.auto_exposure
++                and self.config.exposure is not None
++                and color_sensor.supports(rs.option.exposure)
++            ):
++                color_sensor.set_option(
++                    rs.option.exposure,
++                    float(self.config.exposure),
++                )
++
++
++
++
+             self.align = rs.align(rs.stream.color)  # type: ignore
+             self._update_config_from_stream()
+             self._is_connected = True

@@ -473,6 +473,8 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
             cam_cfg.fps = cam_param.fps
             cam_cfg.index = cam_param.index
             cam_cfg.serial_no = cam_param.serial_no
+            cam_cfg.auto_exposure = cam_param.auto_exposure
+            cam_cfg.exposure = cam_param.exposure
             camera_configs.append(cam_cfg)
         tactile_configs: List[TactileParams] = list(self.config.sensors.tactile)
         audio_configs: List[AudioParams] = list(self.config.sensors.audio)
