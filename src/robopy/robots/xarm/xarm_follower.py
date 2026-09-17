@@ -149,9 +149,12 @@ class XArmFollower(XArmArm):
         self._cartesian_speed = int(cfg.cartesian_speed)
         self._cartesian_mvacc = int(cfg.cartesian_mvacc)
         self._collision_sensitivity = int(cfg.collision_sensitivity)
-        self._gripper_open = int(cfg.gripper_open)
-        self._gripper_close = int(cfg.gripper_close)
+        self._gripper_open = float(cfg.gripper_open)
+        self._gripper_close = float(cfg.gripper_close)
         self._gripper_speed = int(cfg.gripper_speed)
+        self._gripper_force = int(cfg.gripper_force)
+
+
 
         self._robot: Any | None = None  # XArmAPI (lazy import)
         self._last_state_lock = threading.Lock()
@@ -308,34 +311,43 @@ class XArmFollower(XArmArm):
         time.sleep(0.2)
         self._robot.set_gripper_enable(True)
         time.sleep(0.2)
-        self._robot.set_gripper_mode(0)
-        time.sleep(0.2)
-        self._robot.set_gripper_speed(self._gripper_speed)
-        time.sleep(0.2)
+
 
     def _set_gripper_position(self, pos: int) -> None:
         if self._robot is None:
             return
-        self._robot.set_gripper_position(pos, speed=100000, wait=False, wait_motion=False)
+        self._robot.set_gripper_g2_position(
+            pos,
+            speed=self._gripper_speed,
+            force=self._gripper_force,
+            wait=False,
+        )
 
     def _get_gripper_pos(self) -> float:
-        if self._robot is None:
-            return 0.0
-        code, gripper_pos = self._robot.get_gripper_position()
+        if self._robot is None: return 0.0
+
+        code, gripper_pos = self._robot.get_gripper_g2_position()
+
         retries = 0
         while code != 0 or gripper_pos is None:
-            logger.warning("get_gripper_position error code=%s value=%s", code, gripper_pos)
+            logger.warning("get_gripper_g2_position error code=%s value=%s", code, gripper_pos,)
+
             if code == 22:
                 self._clear_error_states()
+
             retries += 1
-            if retries > 10:
-                return 0.0
+            if retries > 10: return 0.0
             time.sleep(0.001)
-            code, gripper_pos = self._robot.get_gripper_position()
+
+            code, gripper_pos = self._robot.get_gripper_g2_position()
+
         span = self._gripper_close - self._gripper_open
-        if span == 0:
-            return 0.0
-        return float((float(gripper_pos) - self._gripper_open) / span)
+
+        if span == 0: return 0.0
+
+        return float(float(gripper_pos) - self._gripper_open) / span
+
+
 
     def _update_last_state(self) -> RobotState:
         with self._last_state_lock:
@@ -424,6 +436,8 @@ class XArmFollower(XArmArm):
         rate = _Rate(duration=1.0 / self._control_frequency)
         step_times: list[float] = []
         count = 0
+        
+        last_gripper_command = None
 
         while self._running:
             s_t = time.time()
@@ -454,11 +468,22 @@ class XArmFollower(XArmArm):
                     delta = joint_delta
                 self._set_position(self._last_state.joints() + delta)
 
+            # if gripper_command is not None:
+            #     gripper_pos = self._gripper_open + float(gripper_command) * (
+            #         self._gripper_close - self._gripper_open
+            #     )
+            #     self._set_gripper_position(int(gripper_pos))
             if gripper_command is not None:
-                gripper_pos = self._gripper_open + float(gripper_command) * (
-                    self._gripper_close - self._gripper_open
-                )
-                self._set_gripper_position(int(gripper_pos))
+                if (
+                    last_gripper_command is None
+                    or abs(gripper_command - last_gripper_command) > 1e-3
+                ):
+                    gripper_pos = self._gripper_open + float(gripper_command) * (
+                        self._gripper_close - self._gripper_open
+                    )
+
+                    self._set_gripper_position(gripper_pos)
+                    last_gripper_command = gripper_command
 
             self._last_state = self._update_last_state()
             rate.sleep()

@@ -215,9 +215,10 @@ class XArmConfig:
     cartesian_speed: int = 300
     cartesian_mvacc: int = 1000
     collision_sensitivity: int = 3
-    gripper_open: int = 800
-    gripper_close: int = 0
-    gripper_speed: int = 3000
+    gripper_open: float = 84.0
+    gripper_close: float = 0.0
+    gripper_speed: int = 200
+    gripper_force: int = 50
     start_joints: NDArray[np.float32] | None = None
     gello: GelloArmConfig = field(default_factory=GelloArmConfig)
     sensors: XArmSensorParams | None = None
