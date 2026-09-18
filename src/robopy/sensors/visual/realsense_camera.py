@@ -146,6 +146,26 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
                 )
 
 
+            # -------------------------
+            # White balance settings
+            # -------------------------
+            if color_sensor.supports(rs.option.enable_auto_white_balance):
+                color_sensor.set_option(
+                    rs.option.enable_auto_white_balance,
+                    1.0 if self.config.auto_white_balance else 0.0,
+                )
+
+            if (
+                not self.config.auto_white_balance
+                and self.config.white_balance is not None
+                and color_sensor.supports(rs.option.white_balance)
+            ):
+                color_sensor.set_option(
+                    rs.option.white_balance,
+                    float(self.config.white_balance),
+                )
+
+
 
 
             self.align = rs.align(rs.stream.color)  # type: ignore
@@ -178,6 +198,12 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
                 "RealSense exposure applied: auto=%s exposure=%s",
                 color_sensor.get_option(rs.option.enable_auto_exposure),
                 color_sensor.get_option(rs.option.exposure),
+            )
+
+            logger.info(
+                "RealSense white balance applied: auto=%s white_balance=%s",
+                color_sensor.get_option(rs.option.enable_auto_white_balance),
+                color_sensor.get_option(rs.option.white_balance),
             )
 
         except Exception as e:

@@ -13,6 +13,9 @@ class CameraParams:
     auto_exposure: bool = True
     exposure: float | None = 190.0
 
+    auto_white_balance: bool = True
+    white_balance: float | None = 3300.0
+
 
 @dataclass
 class TactileParams:
