@@ -560,7 +560,9 @@ fetch_visual_meshes()              # 視覚メッシュをキャッシュへ（F
 | リンク／関節 | 153 / 152（fixed=137, revolute=12, continuous=3） |
 | 可動自由度 | 15 = 胴体1 + 左腕6 + 右腕6 + 頭部2 |
 | メッシュ | 274参照。`--package-dir <展開先>` で全て解決（視覚メッシュ未追加のチェックアウトでは `meshes/` の137参照が未解決になる） |
-| 総質量 | **0.0020693 kg → 幾何専用。動力学モデルとして採用不可** |
+| 総質量 | **7.8828710 kg**（密度設定後の再エクスポートを取り込み済み。数値としては整合しているが、実機校正は未実施） |
+| 可動サブツリー質量 | `torso_yaw_dof` 1.9934 kg / 肩ピッチ 左右 0.7011・0.7010 kg。**ベースプレート約 5.6 kg は腕の負荷に含まれない** |
+| 質量のないリンク | 可動部以下に 12。うち**形状を持つものは 0**（座標フレームと CAD の重複ソリッド） |
 | `effort` / `velocity` | revolute 12関節すべて `1 / 1` のプレースホルダ |
 | continuous関節 | `torso_yaw_dof`, `shoulder_pitch_left_dof`, `shoulder_pitch_right_dof`（範囲なし） |
 | 同名の関節とリンク | `gripper_left_dof`, `gripper_right_dof`, `head_camera_link` |
@@ -601,9 +603,31 @@ URDFは使う前に監査します（kinematics extra は不要）。
 python -m robopy.kinematics.urdf_audit path/to/robot.urdf --package-dir path/to/pkgs
 ```
 
-総質量が非現実的（CAD出力では数mgになることがあります）、`effort=1 velocity=1` の
+総質量が非現実的（密度未設定のCAD出力では数mgになります）、`effort=1 velocity=1` の
 プレースホルダ、`*_dof` という名前の固定関節、範囲のないcontinuous関節などを警告します。
-**質量を書き換えて「動力学検証済み」にしないでください。** 幾何専用モデルとして扱います。
+
+監査は**2つの別々の問いに別々に答えます**。混同すると、辻褄が合うだけのモデルがモータへの
+電流出力を許可してしまいます。
+
+| 判定 | 意味 | 何で決まるか |
+| --- | --- | --- |
+| `numerically_consistent()` | ファイル内の数値が剛体の集合として整合しているか | 総質量、可動部以下に**形状を持つ**無質量リンクが無いこと、全慣性テンソルが正定値かつ主慣性モーメントが三角不等式を満たすこと |
+| `hardware_validated` | その数値が**実機と一致する**か | 測定。**推論では絶対に True にならない** |
+
+形状を持たないリンクは座標フレームなので質量が無くて当然です。形状を描くのに質量が無いリンクだけが
+欠陥で、両者は名前ではなく構造（`<visual>` / `<collision>` の有無）で区別しています。
+固定ルートリンクに `<inertial>` が無いのも正常です（世界への取り付け点）。
+
+**質量を書き換えて「動力学検証済み」にしないでください。**
+`usable_for_dynamics()` は `numerically_consistent()` の別名として残してありますが、
+名前が「実機で使える」と誤読されたための改称です。
+
+慣性値の取り込みは以下で再実行できます（ZIP から対象 URDF だけを読み、`<inertial>` だけを差し替え、
+collision 要素・visual・関節設定は保持します）。
+
+```bash
+python scripts/update_rakuda_inertials.py path/to/Assembly_2.zip --dry-run
+```
 
 ## :material-stop-circle: 停止方針と異常時
 

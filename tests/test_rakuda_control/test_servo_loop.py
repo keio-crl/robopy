@@ -178,9 +178,7 @@ class TestConfiguration:
             )
         assert all(sim_bus.registers(n).torque_enable == 0 for n in COUPLED_MOTORS)
 
-    def test_the_watchdog_is_written_when_configured(
-        self, sim_bus: SimulatedDynamixelBus
-    ) -> None:
+    def test_the_watchdog_is_written_when_configured(self, sim_bus: SimulatedDynamixelBus) -> None:
         servo = _servo(sim_bus, ModeManager(), config=ServoLoopConfig(bus_watchdog_counts=10))
         servo.configure_for_mode(ControlMode.POSITION_TELEOP)
         assert sim_bus.registers("torso_yaw").bus_watchdog == 10
@@ -198,9 +196,7 @@ class TestCommanding:
         servo = _servo(sim_bus, manager, config=ServoLoopConfig(max_command_age_s=0.001))
         servo.acquire_command_path()
         with pytest.raises(ModeTransitionError, match="old, over the"):
-            servo.command_positions_rad(
-                {"torso_yaw": 0.1}, issued_ns=monotonic_ns() - 500_000_000
-            )
+            servo.command_positions_rad({"torso_yaw": 0.1}, issued_ns=monotonic_ns() - 500_000_000)
 
     def test_a_command_from_an_old_generation_is_dropped(
         self, sim_bus: SimulatedDynamixelBus
@@ -258,7 +254,9 @@ class TestCommanding:
 
 class TestStopping:
     def test_zero_current_leaves_torque_enabled(self, sim_bus: SimulatedDynamixelBus) -> None:
-        servo = _servo(sim_bus, ModeManager(), config=ServoLoopConfig(stop_policy=StopPolicy.ZERO_CURRENT))
+        servo = _servo(
+            sim_bus, ModeManager(), config=ServoLoopConfig(stop_policy=StopPolicy.ZERO_CURRENT)
+        )
         servo.configure_for_mode(
             ControlMode.BILATERAL_JOINT, current_limits_a={n: 0.5 for n in COUPLED_MOTORS}
         )
@@ -268,7 +266,9 @@ class TestStopping:
         assert sim_bus.registers("torso_yaw").torque_enable == 1
 
     def test_torque_off_disables_every_motor(self, sim_bus: SimulatedDynamixelBus) -> None:
-        servo = _servo(sim_bus, ModeManager(), config=ServoLoopConfig(stop_policy=StopPolicy.TORQUE_OFF))
+        servo = _servo(
+            sim_bus, ModeManager(), config=ServoLoopConfig(stop_policy=StopPolicy.TORQUE_OFF)
+        )
         sim_bus.torque_enabled(list(COUPLED_MOTORS))
         servo.stop()
         assert all(sim_bus.registers(n).torque_enable == 0 for n in COUPLED_MOTORS)
@@ -370,3 +370,251 @@ class TestTimingStats:
         assert report["configured_rate_hz"] == pytest.approx(500.0)
         # Nothing has run yet, so the measured period is unknown rather than 500 Hz.
         assert np.isnan(report["measured_period_s"]["p50"])
+
+
+class TestCurrentOutputBoundary:
+    """What actually reaches the bus when a torque is commanded.
+
+    ``command_torques_nm`` works in *joint* coordinates; the bus writes in the
+    motor's own positive direction and says so.  The conversion between them is
+    a single multiplication that is easy to leave out, and leaving it out on a
+    ``direction = -1`` joint drives the arm the wrong way under a command that
+    reads correctly at every level above the bus.  These tests watch the raw
+    register, which is the only place the mistake shows.
+    """
+
+    def test_a_negated_joint_reaches_the_bus_with_the_motor_sign(self) -> None:
+        """direction=-1, k=1.5 Nm/A, +0.15 Nm on an XC330 -> -0.1 A, raw -100."""
+        bus = make_sim_bus(("r_arm_sh_pitch1",), model="xc330-t288")
+        manager = ModeManager()
+        _running(manager)
+        servo = ArmServo(
+            "leader",
+            bus,
+            make_calibration(("r_arm_sh_pitch1",), model="xc330-t288", direction=-1),
+            manager,
+        )
+        servo.acquire_command_path()
+
+        currents = servo.command_torques_nm({"r_arm_sh_pitch1": 0.15})
+
+        # The return value stays in joint coordinates: +0.15 Nm / 1.5 Nm/A.
+        assert currents["r_arm_sh_pitch1"] == pytest.approx(0.1)
+        # What the motor was actually told, in its own frame and its own unit.
+        assert bus.registers("r_arm_sh_pitch1").goal_current_raw == -100
+
+    def test_a_positive_joint_is_unchanged(self) -> None:
+        """The same command on direction=+1 keeps its sign, so the fix is a sign
+        conversion rather than a blanket negation."""
+        bus = make_sim_bus(("r_arm_sh_pitch1",), model="xc330-t288")
+        manager = ModeManager()
+        _running(manager)
+        servo = ArmServo(
+            "leader",
+            bus,
+            make_calibration(("r_arm_sh_pitch1",), model="xc330-t288", direction=1),
+            manager,
+        )
+        servo.acquire_command_path()
+
+        servo.command_torques_nm({"r_arm_sh_pitch1": 0.15})
+        assert bus.registers("r_arm_sh_pitch1").goal_current_raw == 100
+
+    def test_the_model_decides_the_raw_unit(self) -> None:
+        """0.1 A is 100 counts on an XC330 and 37 on an XM430: one ampere value,
+        two raw values.  A shared constant here would be wrong for one of them."""
+        for model, expected in (("xc330-t288", 100), ("xm430-w350", 37)):
+            bus = make_sim_bus(("torso_yaw",), model=model)
+            manager = ModeManager()
+            _running(manager)
+            servo = ArmServo("leader", bus, make_calibration(("torso_yaw",), model=model), manager)
+            servo.acquire_command_path()
+            servo.command_torques_nm({"torso_yaw": 0.15})
+            assert bus.registers("torso_yaw").goal_current_raw == expected, model
+
+
+class TestCurrentRateLimit:
+    """The commanded current may only change so fast."""
+
+    @staticmethod
+    def _servo(bus: SimulatedDynamixelBus, rate: float | None) -> ArmServo:
+        manager = ModeManager()
+        _running(manager)
+        joint_map = make_calibration(("torso_yaw",), model="xc330-t288").with_updates(
+            {"torso_yaw": {"max_current_rate_a_s": rate}}
+        )
+        servo = ArmServo("leader", bus, joint_map, manager)
+        servo.acquire_command_path()
+        return servo
+
+    def test_the_first_step_is_held_to_the_rate(self) -> None:
+        """1 A/s over 10 ms is 0.01 A, whatever was asked for."""
+        bus = make_sim_bus(("torso_yaw",), model="xc330-t288")
+        servo = self._servo(bus, rate=1.0)
+        servo.configure_for_mode(ControlMode.BILATERAL_JOINT, current_limits_a={"torso_yaw": 1.0})
+
+        currents = servo.command_torques_nm({"torso_yaw": 1.5}, dt_s=0.01)
+
+        assert currents["torso_yaw"] == pytest.approx(0.01)
+        assert servo.last_current_command is not None
+        assert servo.last_current_command.rate_limited == ("torso_yaw",)
+
+    def test_successive_commands_ramp(self) -> None:
+        bus = make_sim_bus(("torso_yaw",), model="xc330-t288")
+        servo = self._servo(bus, rate=1.0)
+        servo.configure_for_mode(ControlMode.BILATERAL_JOINT, current_limits_a={"torso_yaw": 1.0})
+
+        for step in range(1, 4):
+            currents = servo.command_torques_nm({"torso_yaw": 1.5}, dt_s=0.01)
+            assert currents["torso_yaw"] == pytest.approx(0.01 * step)
+
+    def test_no_rate_means_no_limit(self) -> None:
+        """An unset rate is not a rate of zero; it means the joint has none."""
+        bus = make_sim_bus(("torso_yaw",), model="xc330-t288")
+        servo = self._servo(bus, rate=None)
+        servo.configure_for_mode(ControlMode.BILATERAL_JOINT, current_limits_a={"torso_yaw": 1.0})
+
+        currents = servo.command_torques_nm({"torso_yaw": 1.5}, dt_s=0.01)
+        assert currents["torso_yaw"] == pytest.approx(1.0)  # the ceiling, not the rate
+
+    def test_the_ceiling_wins_over_the_rate(self) -> None:
+        """Lowering the ceiling takes effect now, not at the slew rate."""
+        bus = make_sim_bus(("torso_yaw",), model="xc330-t288")
+        servo = self._servo(bus, rate=0.001)
+        servo.configure_for_mode(ControlMode.BILATERAL_JOINT, current_limits_a={"torso_yaw": 1.0})
+        # Ramp up under the old ceiling.
+        servo.command_torques_nm({"torso_yaw": 1.5}, dt_s=10.0)
+        assert servo.command_torques_nm({"torso_yaw": 1.5}, dt_s=0.0)["torso_yaw"] > 0.009
+
+        servo.configure_for_mode(ControlMode.BILATERAL_JOINT, current_limits_a={"torso_yaw": 0.002})
+        currents = servo.command_torques_nm({"torso_yaw": 1.5}, dt_s=0.01)
+        assert currents["torso_yaw"] <= 0.002 + 1e-9
+
+    def test_a_mode_change_forgets_the_previous_current(self) -> None:
+        """Configuring rewrites GOAL_CURRENT to zero, so the ramp restarts there."""
+        bus = make_sim_bus(("torso_yaw",), model="xc330-t288")
+        servo = self._servo(bus, rate=1.0)
+        servo.configure_for_mode(ControlMode.BILATERAL_JOINT, current_limits_a={"torso_yaw": 1.0})
+        servo.command_torques_nm({"torso_yaw": 1.5}, dt_s=0.5)
+
+        servo.configure_for_mode(ControlMode.BILATERAL_JOINT, current_limits_a={"torso_yaw": 1.0})
+        currents = servo.command_torques_nm({"torso_yaw": 1.5}, dt_s=0.01)
+        assert currents["torso_yaw"] == pytest.approx(0.01)
+
+    def test_a_new_lease_keeps_the_ramp_continuous(self) -> None:
+        """A lease change does not discharge the motor.
+
+        A command computed in the old generation is refused by the freshness
+        check, but the current that generation wrote is still flowing.  Treating
+        a new lease as a fresh start would let its first command step straight
+        to the ceiling, which is the jolt the rate limit exists to prevent.
+        """
+        bus = make_sim_bus(("torso_yaw",), model="xc330-t288")
+        servo = self._servo(bus, rate=1.0)
+        servo.configure_for_mode(ControlMode.BILATERAL_JOINT, current_limits_a={"torso_yaw": 1.0})
+        before = servo.command_torques_nm({"torso_yaw": 1.5}, dt_s=0.02)["torso_yaw"]
+        servo.release_command_path()
+
+        servo.acquire_command_path()
+        after = servo.command_torques_nm({"torso_yaw": 1.5}, dt_s=0.01)["torso_yaw"]
+        assert after == pytest.approx(before + 0.01)
+
+    def test_the_diagnostic_keeps_both_frames(self) -> None:
+        bus = make_sim_bus(("torso_yaw",), model="xc330-t288")
+        manager = ModeManager()
+        _running(manager)
+        servo = ArmServo(
+            "leader",
+            bus,
+            make_calibration(("torso_yaw",), model="xc330-t288", direction=-1),
+            manager,
+        )
+        servo.acquire_command_path()
+        servo.command_torques_nm({"torso_yaw": 0.15})
+
+        record = servo.last_current_command
+        assert record is not None
+        assert record.joint_a["torso_yaw"] == pytest.approx(0.1)
+        assert record.motor_a["torso_yaw"] == pytest.approx(-0.1)
+        assert record.raw["torso_yaw"] == -100
+        assert not record.saturated
+
+
+class TestReadAndCommandSets:
+    """Reading a motor is not permission to write to it."""
+
+    def test_an_empty_command_set_is_honoured(self) -> None:
+        bus = make_sim_bus()
+        servo = ArmServo(
+            "follower",
+            bus,
+            make_calibration(COUPLED_MOTORS),
+            ModeManager(),
+            command_motor_names=[],
+        )
+        assert servo.read_motor_names == COUPLED_MOTORS
+        assert servo.command_motor_names == ()
+
+    def test_a_read_only_motor_cannot_be_commanded(self) -> None:
+        bus = make_sim_bus()
+        manager = ModeManager()
+        _running(manager)
+        servo = ArmServo(
+            "follower",
+            bus,
+            make_calibration(COUPLED_MOTORS),
+            manager,
+            command_motor_names=["l_arm_sh_pitch1"],
+        )
+        servo.acquire_command_path()
+
+        with pytest.raises(ValueError, match="read by this servo but is not in its command set"):
+            servo.command_torques_nm({"torso_yaw": 0.1})
+
+    def test_a_motor_on_no_list_is_still_not_owned(self) -> None:
+        bus = make_sim_bus()
+        manager = ModeManager()
+        _running(manager)
+        servo = ArmServo("follower", bus, make_calibration(COUPLED_MOTORS), manager)
+        servo.acquire_command_path()
+
+        with pytest.raises(ValueError, match="not owned by this servo"):
+            servo.command_torques_nm({"nonexistent": 0.1})
+
+    def test_the_command_set_must_be_inside_the_read_set(self) -> None:
+        bus = make_sim_bus()
+        with pytest.raises(ValueError, match="not the read set"):
+            ArmServo(
+                "follower",
+                bus,
+                make_calibration(COUPLED_MOTORS),
+                ModeManager(),
+                motor_names=["torso_yaw"],
+                command_motor_names=["l_arm_sh_pitch1"],
+            )
+
+    def test_an_empty_read_set_is_refused(self) -> None:
+        """`motor_names or joint_map.motor_names` used to turn [] into every motor."""
+        bus = make_sim_bus()
+        with pytest.raises(ValueError, match="must read at least one motor"):
+            ArmServo(
+                "follower", bus, make_calibration(COUPLED_MOTORS), ModeManager(), motor_names=[]
+            )
+
+    def test_none_still_means_every_motor(self) -> None:
+        bus = make_sim_bus()
+        servo = ArmServo(
+            "follower", bus, make_calibration(COUPLED_MOTORS), ModeManager(), motor_names=None
+        )
+        assert servo.read_motor_names == COUPLED_MOTORS
+        assert servo.command_motor_names == COUPLED_MOTORS
+
+    def test_operating_modes_are_reported_per_motor(self) -> None:
+        bus = make_sim_bus()
+        manager = ModeManager()
+        _running(manager)
+        servo = ArmServo("follower", bus, make_calibration(COUPLED_MOTORS), manager)
+        servo.configure_for_mode(ControlMode.POSITION_TELEOP)
+        assert servo.operating_mode_by_motor == {
+            name: OperatingMode.POSITION for name in COUPLED_MOTORS
+        }

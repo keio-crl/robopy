@@ -19,7 +19,10 @@
 #
 # What the audit of that file says (docs/robots/assets/rakuda_urdf_audit.json):
 #   - 153 links, 152 joints: fixed=137, revolute=12, continuous=3, 15 movable DOF
-#   - total mass 0.0020693 kg  -> geometry only; NOT a dynamic model
+#   - total mass 7.8828710 kg -> the density-corrected re-export, imported by
+#     scripts/update_rakuda_inertials.py. The numbers are internally consistent;
+#     they have NOT been checked against the machine, so geometry_only stays true
+#     until someone measures it.
 #   - effort=1 velocity=1 on the 12 revolute joints -> exporter placeholders
 #   - torso_yaw_dof, shoulder_pitch_left/right_dof are continuous -> no range;
 #     the real cable-limited travel must be supplied as soft_limits_rad

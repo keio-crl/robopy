@@ -18,7 +18,7 @@ import queue
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Mapping, Protocol, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Protocol, Sequence, Tuple
 
 import numpy as np
 
@@ -33,11 +33,54 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "ArmServo",
     "BusLike",
+    "CurrentCommand",
     "ServoLoop",
     "ServoLoopConfig",
     "StopPolicy",
     "TimingStats",
 ]
+
+#: Currents closer together than this count as equal when deciding whether a
+#: limit actually bit.  Well under one raw count on either motor family
+#: (0.001 A for XC330, 0.00269 A for XM430/XM540), so it never hides a real
+#: difference, and it keeps float noise out of the saturation report.
+_CURRENT_EPSILON_A: float = 1e-9
+
+
+@dataclass(frozen=True)
+class CurrentCommand:
+    """What one current write actually contained, in both frames.
+
+    ``joint_a`` is what the controller asked for after limiting, in joint
+    coordinates.  ``motor_a`` is the same figure in each motor's own positive
+    direction, and ``raw`` the counts the bus produced from it -- the two differ
+    by the joint ``direction`` and by the model's current unit, and keeping all
+    three lets a diagnostic show where a sign or a unit went astray.
+
+    Attributes:
+        joint_a: Commanded current per motor, amperes, joint coordinates.
+        motor_a: The same, in the motor's own positive direction.
+        raw: Signed raw counts written to ``GOAL_CURRENT``.
+        dt_s: Interval the rate limit was applied over, or ``None`` when no
+            previous command existed to rate-limit against.
+        at_ceiling: Motors whose requested current exceeded the ceiling.
+        rate_limited: Motors the rate limit held back.
+        ceiling_over_rate: Motors where the ceiling overrode the rate limit,
+            i.e. the ceiling was lowered below where the current already was.
+    """
+
+    joint_a: Dict[str, float]
+    motor_a: Dict[str, float]
+    raw: Dict[str, int]
+    dt_s: float | None = None
+    at_ceiling: Tuple[str, ...] = ()
+    rate_limited: Tuple[str, ...] = ()
+    ceiling_over_rate: Tuple[str, ...] = ()
+
+    @property
+    def saturated(self) -> bool:
+        """Whether any limit bit on this write."""
+        return bool(self.at_ceiling or self.rate_limited or self.ceiling_over_rate)
 
 
 class BusLike(Protocol):
@@ -247,8 +290,14 @@ class ArmServo:
         config: ServoLoopConfig | None = None,
         *,
         motor_names: Sequence[str] | None = None,
+        command_motor_names: Sequence[str] | None = None,
     ) -> None:
         """Bind a servo to one bus.
+
+        Reading and commanding are separate sets.  A model needs angles from
+        joints this controller has no business driving -- a shared torso is the
+        obvious one -- and reading a motor is not a reason to be allowed to
+        write to it.
 
         Args:
             name: Identifier used in logs and faults, e.g. ``"follower"``.
@@ -256,19 +305,43 @@ class ArmServo:
             joint_map: Calibration for the motors on that bus.
             manager: The shared mode manager.
             config: Periods and thresholds.
-            motor_names: Motors to include in the control cycle.  Defaults to
-                every motor in ``joint_map``.
+            motor_names: Motors to read every cycle.  ``None`` means every motor
+                in ``joint_map``; an explicit empty sequence is an error, since
+                a servo that reads nothing cannot control anything.
+            command_motor_names: Motors this servo may write to.  ``None`` means
+                all of ``motor_names``; ``[]`` means none, and is honoured --
+                a read-only servo is a legitimate thing to ask for.
+
+        Raises:
+            ValueError: On a motor outside the joint map, an empty read set, or
+                a command set that is not contained in the read set.
         """
         self._name = name
         self._bus = bus
         self._map = joint_map
         self._manager = manager
         self._config = config or ServoLoopConfig()
-        self._motor_names: Tuple[str, ...] = tuple(motor_names or joint_map.motor_names)
+        # `motor_names or joint_map.motor_names` would quietly turn an explicit
+        # empty list into "every motor".  None and [] mean different things.
+        self._motor_names: Tuple[str, ...] = tuple(
+            joint_map.motor_names if motor_names is None else motor_names
+        )
+        if not self._motor_names:
+            raise ValueError(f"{name}: a servo must read at least one motor.")
 
         unknown = [n for n in self._motor_names if n not in joint_map]
         if unknown:
             raise ValueError(f"{name}: motor(s) {unknown} are not in the joint map.")
+
+        self._command_motor_names: Tuple[str, ...] = tuple(
+            self._motor_names if command_motor_names is None else command_motor_names
+        )
+        outside = sorted(set(self._command_motor_names) - set(self._motor_names))
+        if outside:
+            raise ValueError(
+                f"{name}: motor(s) {outside} are in the command set but not the read set. "
+                "Nothing may be commanded that is not also observed."
+            )
 
         self._lock = threading.RLock()
         self._snapshot = _Snapshot()
@@ -277,6 +350,10 @@ class ArmServo:
         self._write_stats = TimingStats(f"{name}.write")
         self._lease: CommandLease | None = None
         self._operating_modes: Dict[str, int] = {}
+        self._current_limits_a: Dict[str, float] = {}
+        self._last_current_a: Dict[str, float] = {}
+        self._last_current_write_s: float | None = None
+        self._last_current: CurrentCommand | None = None
 
     # -- properties ---------------------------------------------------------
 
@@ -287,8 +364,33 @@ class ArmServo:
 
     @property
     def motor_names(self) -> Tuple[str, ...]:
-        """Motors this servo reads and commands."""
+        """Motors this servo reads every cycle.
+
+        Kept as the read set, which is what it has always been, so existing
+        callers that iterate it to build a state vector are unaffected.  What
+        may be *written* is :attr:`command_motor_names`.
+        """
         return self._motor_names
+
+    @property
+    def read_motor_names(self) -> Tuple[str, ...]:
+        """Motors this servo reads every cycle. The same as :attr:`motor_names`."""
+        return self._motor_names
+
+    @property
+    def command_motor_names(self) -> Tuple[str, ...]:
+        """Motors this servo may write to. A subset of the read set, possibly empty."""
+        return self._command_motor_names
+
+    @property
+    def operating_mode_by_motor(self) -> Dict[str, int]:
+        """Operating mode last configured, per motor.
+
+        Per motor rather than one value for the servo: an arm held in current
+        control can sit on the same bus as a gripper left in position control,
+        and a single mode for the whole port cannot express that.
+        """
+        return dict(self._operating_modes)
 
     @property
     def joint_map(self) -> JointMap:
@@ -544,6 +646,7 @@ class ArmServo:
             )
             self._operating_modes = {name: target_mode for name in self._motor_names}
 
+            self._current_limits_a = {}
             if current_limits_a is not None:
                 raw_limits: Dict[str, int | float] = {}
                 for motor in self._motor_names:
@@ -559,6 +662,7 @@ class ArmServo:
                         )
                     unit = self._bus.capabilities(motor).current_unit_a
                     raw_limits[motor] = int(round(wanted / unit))
+                    self._current_limits_a[motor] = wanted
                 if raw_limits:
                     self._bus.write_with_readback(XControlTable.CURRENT_LIMIT, raw_limits)
 
@@ -576,6 +680,11 @@ class ArmServo:
                     {name: 0.0 for name in self._motor_names},
                     timeout_s=self._config.write_timeout_s,
                 )
+                # The motors are now at zero, so that -- not whatever was last
+                # commanded in the previous mode -- is what the rate limit ramps
+                # away from.
+                self._reset_current_history()
+                self._last_current_a = {name: 0.0 for name in self._motor_names}
             else:
                 goals: Dict[str, int | float] = {}
                 for i, motor in enumerate(self._motor_names):
@@ -586,6 +695,7 @@ class ArmServo:
                         )
                     goals[motor] = self._map[motor].rad_to_count(float(state.position_rad[i]))
                 self._bus.sync_write(XControlTable.GOAL_POSITION, goals)
+                self._reset_current_history()
 
             self._bus.torque_enabled(enable)
             configured = True
@@ -610,6 +720,13 @@ class ArmServo:
         """
         lease = self._manager.acquire(path or f"{self._name}_command")
         self._lease = lease
+        # The slew reference is deliberately *not* reset here.  A stale command
+        # from the previous generation is refused by the freshness check, but
+        # the motor is still holding the current that generation last wrote, and
+        # forgetting that would let the first command of a new lease step
+        # straight to the ceiling.  The reference is a record of the hardware,
+        # not of who asked for it; it is cleared where the hardware actually
+        # changes -- a mode change, a stop, a reconnect.
         return lease
 
     def release_command_path(self) -> None:
@@ -669,42 +786,163 @@ class ArmServo:
         *,
         generation: int | None = None,
         issued_ns: int | None = None,
+        dt_s: float | None = None,
     ) -> Dict[str, float]:
         """Convert joint torques to currents and write them.
 
         The conversion uses each joint's own validated torque constant; a joint
         without one raises rather than falling back to a datasheet ratio.  The
-        resulting current is then clamped to the calibrated per-joint ceiling.
+        current is then held under the effective ceiling and under the joint's
+        rate limit, and finally converted into the motor's own direction.
+
+        **Two frames meet in this method.**  Everything down to the ceiling and
+        the slew limit is in *joint* coordinates, where a positive torque turns
+        the joint the way the URDF says.  The bus writes in the *motor's* own
+        positive direction and does not apply a joint sign, so the last step
+        before the write multiplies by ``direction``.  Leaving that out drives a
+        reversed joint backwards under a command that looks right everywhere
+        above the bus, which is a fault no higher-level test can see.
+
+        Args:
+            torques_nm: ``{motor_name: newton-metres}`` in joint coordinates.
+            generation: Command generation the torques were computed from.
+            issued_ns: Monotonic time the command was produced.
+            dt_s: Seconds since the previous current command, for the rate
+                limit.  Omitted, the real elapsed time since the last write is
+                measured instead; no nominal period is assumed.
 
         Returns:
-            The currents actually commanded, in amperes.
+            The currents actually commanded, in amperes, in **joint**
+            coordinates.  :attr:`last_current_command` has the same figures in
+            the motor's frame, and the raw counts.
 
         Raises:
             ModeTransitionError: If no valid lease is held or the command is stale.
             JointMapError: If a joint has no validated torque constant.
+            ValueError: On a motor this servo may not command, or a non-finite
+                torque.
         """
         lease = self._require_lease()
         self._check_command_freshness(generation, issued_ns, lease)
 
-        currents: Dict[str, float] = {}
+        now = time.perf_counter()
+        elapsed = dt_s if dt_s is not None else self._seconds_since_last_current(now)
+
+        joint_currents: Dict[str, float] = {}
+        motor_currents: Dict[str, float] = {}
+        at_ceiling: List[str] = []
+        rate_limited: List[str] = []
+        ceiling_over_rate: List[str] = []
+
         for motor, torque in torques_nm.items():
-            if motor not in self._motor_names:
-                raise ValueError(f"{self._name}: '{motor}' is not owned by this servo.")
+            self._require_commandable(motor)
             if not np.isfinite(torque):
                 raise ValueError(f"{self._name}/{motor}: non-finite torque command.")
             calibration = self._map[motor]
-            amps = calibration.torque_to_current_a(float(torque))
-            ceiling = calibration.current_limit_a
-            if ceiling is not None:
-                amps = float(np.clip(amps, -ceiling, ceiling))
-            currents[motor] = amps
+            wanted = calibration.torque_to_current_a(float(torque))
+            ceiling = self._effective_current_ceiling_a(motor)
+
+            amps = wanted if ceiling is None else float(np.clip(wanted, -ceiling, ceiling))
+            if ceiling is not None and abs(wanted) > ceiling + _CURRENT_EPSILON_A:
+                at_ceiling.append(motor)
+
+            slewed = self._rate_limit(motor, amps, elapsed)
+            if abs(slewed - amps) > _CURRENT_EPSILON_A:
+                rate_limited.append(motor)
+
+            # The ceiling wins over the rate limit.  Lowering a ceiling has to
+            # take effect on the next cycle, not be approached at the slew rate.
+            final = slewed if ceiling is None else float(np.clip(slewed, -ceiling, ceiling))
+            if abs(final - slewed) > _CURRENT_EPSILON_A:
+                ceiling_over_rate.append(motor)
+
+            joint_currents[motor] = final
+            motor_currents[motor] = calibration.direction * final
 
         started = time.perf_counter()
-        self._bus.write_goal_current_a(currents, timeout_s=self._config.write_timeout_s)
+        raw = self._bus.write_goal_current_a(motor_currents, timeout_s=self._config.write_timeout_s)
         self._write_stats.record(
             time.perf_counter() - started, budget_s=self._config.write_timeout_s
         )
-        return currents
+
+        self._last_current_a.update(joint_currents)
+        self._last_current_write_s = now
+        self._last_current = CurrentCommand(
+            joint_a=dict(joint_currents),
+            motor_a=dict(motor_currents),
+            raw=dict(raw or {}),
+            dt_s=elapsed,
+            at_ceiling=tuple(at_ceiling),
+            rate_limited=tuple(rate_limited),
+            ceiling_over_rate=tuple(ceiling_over_rate),
+        )
+        return joint_currents
+
+    @property
+    def last_current_command(self) -> CurrentCommand | None:
+        """The last current write, in both frames, or ``None`` before the first."""
+        return self._last_current
+
+    def _require_commandable(self, motor: str) -> None:
+        if motor in self._command_motor_names:
+            return
+        if motor in self._motor_names:
+            raise ValueError(
+                f"{self._name}: '{motor}' is read by this servo but is not in its command set."
+            )
+        raise ValueError(f"{self._name}: '{motor}' is not owned by this servo.")
+
+    def _effective_current_ceiling_a(self, motor: str) -> float | None:
+        """The lower of the calibrated ceiling and the one configured for this mode.
+
+        The configured limit is already refused at configuration time if it
+        exceeds the calibrated one, so this is belt and braces -- but it is the
+        value that actually bounds a command, and reading it from one place
+        keeps the software clamp and the motor's own ``CURRENT_LIMIT`` register
+        in agreement.
+        """
+        limits = [
+            value
+            for value in (self._map[motor].current_limit_a, self._current_limits_a.get(motor))
+            if value is not None
+        ]
+        return min(limits) if limits else None
+
+    def _seconds_since_last_current(self, now: float) -> float | None:
+        if self._last_current_write_s is None:
+            return None
+        return max(0.0, now - self._last_current_write_s)
+
+    def _rate_limit(self, motor: str, amps: float, dt_s: float | None) -> float:
+        """Hold a command within ``max_current_rate_a_s`` of the last one sent.
+
+        Returns ``amps`` unchanged when the joint declares no rate, when no
+        previous command exists (the reference is the zero written during
+        configuration), or when the elapsed time is unknown -- a rate limit
+        needs a real interval, and inventing one would either throttle a fast
+        loop or wave a slow one through.
+        """
+        rate = self._map[motor].max_current_rate_a_s
+        if rate is None or dt_s is None:
+            return amps
+        previous = self._last_current_a.get(motor)
+        if previous is None:
+            return amps
+        step = rate * dt_s
+        return float(np.clip(amps, previous - step, previous + step))
+
+    def _reset_current_history(self, motors: Iterable[str] | None = None) -> None:
+        """Forget the last commanded current, so no slew reference survives.
+
+        Called wherever the actual current stops following what this object last
+        commanded: a mode change (which resets ``GOAL_CURRENT`` in the motor), a
+        stop, and a new command lease.
+        """
+        names = tuple(motors) if motors is not None else tuple(self._motor_names)
+        for motor in names:
+            self._last_current_a.pop(motor, None)
+        self._last_current_write_s = None
+        self._last_current = None
 
     def _check_command_freshness(
         self,
@@ -740,6 +978,7 @@ class ArmServo:
             :attr:`ServoLoopConfig.bus_watchdog_counts`.
         """
         policy = self._config.stop_policy
+        self._reset_current_history()
         if policy == StopPolicy.ZERO_CURRENT:
             self._bus.write_goal_current_a(
                 {name: 0.0 for name in self._motor_names},

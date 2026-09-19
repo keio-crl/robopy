@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import zipfile
 from pathlib import Path
 
@@ -139,9 +140,7 @@ class TestMeshResolution:
         package = tmp_path / "pkgs" / "assembly_2" / "meshes"
         package.mkdir(parents=True)
         (package / "base.stl").write_bytes(b"solid\n")
-        resolved = resolve_package_path(
-            "package://assembly_2/meshes/base.stl", [tmp_path / "pkgs"]
-        )
+        resolved = resolve_package_path("package://assembly_2/meshes/base.stl", [tmp_path / "pkgs"])
         assert resolved is not None and resolved.exists()
 
 
@@ -201,3 +200,190 @@ class TestAmbiguousNames:
         path = write_synthetic_dual_arm_urdf(tmp_path / "u.urdf", joint_named_child_links=False)
         audit = audit_urdf(path)
         assert audit.ambiguous_names == []
+
+
+class TestConsistencyVersusValidation:
+    """Two different questions, deliberately given two different answers.
+
+    "Do these numbers describe a coherent machine" is arithmetic, and this
+    module can answer it.  "Do they describe *the* machine" is a measurement,
+    and nothing here can.  Conflating them is how a model that merely adds up
+    ends up authorising current into a motor.
+    """
+
+    @staticmethod
+    def _model(tmp_path, links: str, joints: str = "") -> Path:
+        urdf = tmp_path / "model.urdf"
+        urdf.write_text(f"<robot name='t'>{links}{joints}</robot>", encoding="utf-8")
+        return urdf
+
+    def test_a_static_root_without_an_inertial_is_not_a_fault(self, tmp_path: Path) -> None:
+        """The world attachment carries no mass by definition."""
+        urdf = self._model(
+            tmp_path,
+            links=(
+                "<link name='root'/>"
+                "<link name='arm'><inertial><mass value='1.0'/>"
+                "<inertia ixx='1' ixy='0' ixz='0' iyy='1' iyz='0' izz='1'/></inertial>"
+                "<visual><geometry><box size='1 1 1'/></geometry></visual></link>"
+            ),
+            joints=(
+                "<joint name='j' type='revolute'><parent link='root'/><child link='arm'/>"
+                "<axis xyz='0 0 1'/></joint>"
+            ),
+        )
+        audit = audit_urdf(urdf)
+        assert audit.links_without_inertial == ["root"]
+        assert audit.root_links_without_inertial == ["root"]
+        assert audit.massless_moving_parts == []
+        assert audit.numerically_consistent(min_plausible_mass_kg=0.5)
+
+    def test_a_moving_part_without_mass_is_a_fault(self, tmp_path: Path) -> None:
+        """Geometry hanging off a joint that weighs nothing changes every torque."""
+        urdf = self._model(
+            tmp_path,
+            links=(
+                "<link name='root'/>"
+                "<link name='arm'><inertial><mass value='1.0'/>"
+                "<inertia ixx='1' ixy='0' ixz='0' iyy='1' iyz='0' izz='1'/></inertial>"
+                "<visual><geometry><box size='1 1 1'/></geometry></visual></link>"
+                "<link name='hand'><visual><geometry><box size='1 1 1'/></geometry></visual></link>"
+            ),
+            joints=(
+                "<joint name='j' type='revolute'><parent link='root'/><child link='arm'/>"
+                "<axis xyz='0 0 1'/></joint>"
+                "<joint name='k' type='fixed'><parent link='arm'/><child link='hand'/></joint>"
+            ),
+        )
+        audit = audit_urdf(urdf)
+        assert "hand" in audit.massless_moving_links
+        assert audit.massless_moving_parts == ["hand"]
+        assert not audit.numerically_consistent(min_plausible_mass_kg=0.5)
+
+    def test_a_frame_without_geometry_is_not_a_part(self, tmp_path: Path) -> None:
+        """The same link, minus its geometry, is a coordinate frame and fine."""
+        urdf = self._model(
+            tmp_path,
+            links=(
+                "<link name='root'/>"
+                "<link name='arm'><inertial><mass value='1.0'/>"
+                "<inertia ixx='1' ixy='0' ixz='0' iyy='1' iyz='0' izz='1'/></inertial>"
+                "<visual><geometry><box size='1 1 1'/></geometry></visual></link>"
+                "<link name='tcp'/>"
+            ),
+            joints=(
+                "<joint name='j' type='revolute'><parent link='root'/><child link='arm'/>"
+                "<axis xyz='0 0 1'/></joint>"
+                "<joint name='k' type='fixed'><parent link='arm'/><child link='tcp'/></joint>"
+            ),
+        )
+        audit = audit_urdf(urdf)
+        assert "tcp" in audit.massless_moving_links
+        assert audit.massless_moving_parts == []
+        assert audit.numerically_consistent(min_plausible_mass_kg=0.5)
+
+    def test_consistent_arithmetic_never_implies_a_measured_machine(self, tmp_path: Path) -> None:
+        urdf = self._model(
+            tmp_path,
+            links=(
+                "<link name='root'/>"
+                "<link name='arm'><inertial><mass value='9.0'/>"
+                "<inertia ixx='1' ixy='0' ixz='0' iyy='1' iyz='0' izz='1'/></inertial>"
+                "<visual><geometry><box size='1 1 1'/></geometry></visual></link>"
+            ),
+            joints=(
+                "<joint name='j' type='revolute'><parent link='root'/><child link='arm'/>"
+                "<axis xyz='0 0 1'/></joint>"
+            ),
+        )
+        audit = audit_urdf(urdf)
+        assert audit.numerically_consistent()
+        assert audit.hardware_validated is False
+        assert any("not been checked against the actual machine" in w for w in audit.warnings)
+
+    def test_subtree_masses_do_not_charge_a_joint_for_the_base(self, tmp_path: Path) -> None:
+        """A heavy fixed base must not appear as load on the arm.
+
+        The Rakuda's base plate is most of its mass; adding it to what the
+        torso holds up would overstate every gravity term computed from it.
+        """
+        urdf = self._model(
+            tmp_path,
+            links=(
+                "<link name='root'/>"
+                "<link name='base'><inertial><mass value='5.0'/>"
+                "<inertia ixx='1' ixy='0' ixz='0' iyy='1' iyz='0' izz='1'/></inertial></link>"
+                "<link name='arm'><inertial><mass value='2.0'/>"
+                "<inertia ixx='1' ixy='0' ixz='0' iyy='1' iyz='0' izz='1'/></inertial></link>"
+            ),
+            joints=(
+                "<joint name='fixed_base' type='fixed'><parent link='root'/><child link='base'/></joint>"
+                "<joint name='shoulder' type='revolute'><parent link='base'/><child link='arm'/>"
+                "<axis xyz='0 0 1'/></joint>"
+            ),
+        )
+        audit = audit_urdf(urdf)
+        assert audit.total_mass_kg == pytest.approx(7.0)
+        assert audit.movable_subtree_masses_kg == {"shoulder": pytest.approx(2.0)}
+
+    def test_an_impossible_inertia_is_caught(self, tmp_path: Path) -> None:
+        """Principal moments must obey the triangle inequality."""
+        urdf = self._model(
+            tmp_path,
+            links=(
+                "<link name='root'/>"
+                "<link name='arm'><inertial><mass value='1.0'/>"
+                "<inertia ixx='1' ixy='0' ixz='0' iyy='1' iyz='0' izz='9'/></inertial>"
+                "<visual><geometry><box size='1 1 1'/></geometry></visual></link>"
+            ),
+            joints=(
+                "<joint name='j' type='revolute'><parent link='root'/><child link='arm'/>"
+                "<axis xyz='0 0 1'/></joint>"
+            ),
+        )
+        audit = audit_urdf(urdf)
+        assert audit.invalid_inertias and "triangle inequality" in audit.invalid_inertias[0]
+        assert not audit.numerically_consistent()
+
+    def test_the_old_name_still_answers(self, tmp_path: Path) -> None:
+        """`usable_for_dynamics` is kept so existing callers and the recorded
+        audit JSON keep working."""
+        urdf = self._model(
+            tmp_path,
+            links=(
+                "<link name='root'/>"
+                "<link name='arm'><inertial><mass value='9.0'/>"
+                "<inertia ixx='1' ixy='0' ixz='0' iyy='1' iyz='0' izz='1'/></inertial></link>"
+            ),
+            joints=(
+                "<joint name='j' type='revolute'><parent link='root'/><child link='arm'/>"
+                "<axis xyz='0 0 1'/></joint>"
+            ),
+        )
+        audit = audit_urdf(urdf)
+        assert audit.usable_for_dynamics() == audit.numerically_consistent()
+        payload = json.loads(audit.to_json())
+        assert payload["usable_for_dynamics"] == payload["numerically_consistent"]
+
+
+class TestPrincipalMoments:
+    """The pure-Python eigensolver, against the one everybody trusts."""
+
+    def test_it_agrees_with_numpy(self) -> None:
+        import numpy as np
+
+        from robopy.kinematics.urdf_audit import _principal_moments
+
+        rng = np.random.default_rng(0)
+        for _ in range(200):
+            a = rng.normal(size=(3, 3))
+            tensor = a @ a.T  # symmetric positive semi-definite
+            mine = _principal_moments(
+                tensor[0, 0], tensor[0, 1], tensor[0, 2], tensor[1, 1], tensor[1, 2], tensor[2, 2]
+            )
+            assert np.allclose(sorted(mine), sorted(np.linalg.eigvalsh(tensor)), atol=1e-9)
+
+    def test_a_sphere_has_three_equal_moments(self) -> None:
+        from robopy.kinematics.urdf_audit import _principal_moments
+
+        assert _principal_moments(2.0, 0.0, 0.0, 2.0, 0.0, 2.0) == pytest.approx((2.0, 2.0, 2.0))

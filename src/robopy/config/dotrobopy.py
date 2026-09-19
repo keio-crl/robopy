@@ -199,7 +199,7 @@ def ensure_default_rakuda_yaml(path: Path, *, joint_names: tuple[str, ...]) -> N
             "#                        wrist_yaw_right_dof, wrist_pitch_right_dof]",
             "#     head_joints: []          # modelled, never driven by the arm IK",
             "#     build_collision: false",
-            "#     geometry_only: true      # the CAD export's masses are not usable",
+            "#     geometry_only: true      # masses imported but not measured on the machine",
             "#     left_tcp:",
             "#       parent_frame: gripper_left_dof",
             "#       translation_m: [0.0, 0.0, 0.0]   # MEASURE THIS",
