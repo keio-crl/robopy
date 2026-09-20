@@ -247,6 +247,15 @@ function wsUrl(path) {
   return `${proto}://${location.host}${path}`;
 }
 
+// The server drops an operator whose socket is silent for teleop_timeout_s
+// (5 s by default).  Poses only flow while presenting or previewing, so the
+// page keeps the socket alive with a ping every second the rest of the time
+// (before Enter VR, while the headset prompts, while the operator reads the
+// page) and reconnects on its own if the connection is lost anyway.
+const KEEPALIVE_MS = 1000;
+const RECONNECT_MS = 1500;
+let keepalive = null;
+
 function connectTeleop() {
   const ws = new WebSocket(wsUrl('/ws/teleop'));
   state.ws = ws;
@@ -254,6 +263,12 @@ function connectTeleop() {
     state.connected = true;
     ws.send(JSON.stringify({ type: 'hello', want_poses: true }));
     setStatus('connected; waiting for hello…');
+    if (keepalive) clearInterval(keepalive);
+    keepalive = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN && performance.now() - state.lastSendMs > KEEPALIVE_MS) {
+        ws.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, KEEPALIVE_MS);
   };
   ws.onmessage = (ev) => {
     let msg;
@@ -262,11 +277,14 @@ function connectTeleop() {
     if (msg.type === 'hello') onHello(msg);
     else if (msg.type === 'state') onState(msg);
     else if (msg.type === 'recording') { state.recording = msg.recording; renderStatus(); }
+    else if (msg.type === 'pong') { /* keepalive answered */ }
     else if (msg.type === 'error') { setStatus(`server error: ${msg.message}`, 'bad'); console.warn(msg.message); }
   };
   ws.onclose = () => {
     state.connected = false;
-    setStatus('teleop socket closed — the arms hold. Reload to reconnect.', 'bad');
+    if (keepalive) { clearInterval(keepalive); keepalive = null; }
+    setStatus('teleop socket closed — the arms hold; reconnecting…', 'bad');
+    setTimeout(connectTeleop, RECONNECT_MS);
   };
   ws.onerror = () => setStatus('teleop socket error', 'bad');
 }
@@ -324,6 +342,7 @@ function send(obj) {
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return false;
   state.ws.send(JSON.stringify(obj));
   state.sent += 1;
+  state.lastSendMs = performance.now();
   return true;
 }
 state.send = send;   // for tests: window.__robopy_vr.send({...})

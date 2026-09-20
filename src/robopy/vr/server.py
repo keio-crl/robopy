@@ -19,6 +19,7 @@ Client -> server::
                "buttons": {"a": bool, "b": bool, "stick": bool}} | null,
      "right": {...} | null}
     {"type": "recenter"}
+    {"type": "ping"}                       keepalive; answered with {"type": "pong"}
     {"type": "set", "head_enabled": bool, "arms_enabled": bool,
      "position_scale": float, "orientation_enabled": bool, "want_poses": bool}
 
@@ -300,6 +301,11 @@ class TeleopSession:
             return self._apply_settings(message)
         if kind == "record":
             return self._record(message, now_s)
+        if kind == "ping":
+            # Keepalive from a page that is connected but not yet streaming
+            # poses (before Enter VR); answering it also lets the page measure
+            # the link.
+            return {"type": "pong", "t": message.get("t")}
         return {"type": "error", "message": f"unknown message type {kind!r}"}
 
     # -- recording ----------------------------------------------------------

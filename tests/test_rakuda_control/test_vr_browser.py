@@ -52,7 +52,7 @@ def server(synthetic_urdf: Path):  # type: ignore[no-untyped-def]
         camera=FrameStreamer(SyntheticFrameSource(160, 120), fps=30.0),
         host="127.0.0.1",
         port=0,
-        config=VRServerConfig(state_hz=60.0),
+        config=VRServerConfig(state_hz=60.0, teleop_timeout_s=2.0),
     )
     assert srv.camera is not None
     srv.camera.start()
@@ -116,5 +116,26 @@ def test_preview_mode_streams_head_poses_and_draws_the_twin(server: VRServer, br
             text in info["xrText"]
             for text in ("WebXR", "navigator.xr", "immersive-vr", "secure context")
         )
+    finally:
+        page.close()
+
+
+def test_idle_page_keeps_its_socket_until_the_operator_enters_vr(server: VRServer, browser) -> None:  # type: ignore[no-untyped-def]
+    # Poses only flow while presenting or previewing.  A page that just sits
+    # there (the operator putting the headset on) must not be dropped by the
+    # server's idle timeout, or Enter VR later drives a dead socket.
+    page = browser.new_page(viewport={"width": 1200, "height": 800})
+    errors: list[str] = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(server.vr_url)
+    page.wait_for_function(OVERLAY_HIDDEN, timeout=60_000)
+    page.wait_for_timeout(3 * server.vr_config.teleop_timeout_s * 1000)
+    try:
+        assert errors == []
+        assert page.evaluate("() => window.__robopy_vr.connected") is True
+        assert server.status()["session"] is not None, "the server dropped the idle operator"
+        page.click("#preview")
+        page.wait_for_function("() => window.__robopy_vr.received > 5", timeout=20_000)
+        assert page.evaluate("() => window.__robopy_vr.mirrorOn") is True
     finally:
         page.close()

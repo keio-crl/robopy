@@ -585,6 +585,26 @@ class TestVRServer:
         client.close()
         assert _wait_until(lambda: server.status()["camera_clients"] == 0, 3.0)
 
+    def test_pinging_operator_outlives_the_idle_timeout(self, server: VRServer) -> None:
+        # The page pings once a second before Enter VR; the server must keep
+        # the socket (the timeout is for operators who vanished, not for ones
+        # still reading the page).
+        host, port = server.server_address[0], server.server_address[1]
+        client = RawClient(host, port, "/ws/teleop")
+        try:
+            client.send_json({"type": "hello"})
+            assert client.recv_json()["type"] == "hello"
+            deadline = time.monotonic() + 2.5 * server.vr_config.teleop_timeout_s
+            while time.monotonic() < deadline:
+                client.send_json({"type": "ping", "t": 1.0})
+                reply = client.recv_json()
+                assert reply == {"type": "pong", "t": 1.0}
+                time.sleep(server.vr_config.teleop_timeout_s / 3)
+            client.send_json({"type": "pose", "head": HEAD0, "left": None, "right": None})
+            assert client.recv_json()["type"] == "state"  # still driving
+        finally:
+            client.close()
+
     def test_silent_operator_times_out_and_the_arms_hold(self, server: VRServer) -> None:
         host, port = server.server_address[0], server.server_address[1]
         client = RawClient(host, port, "/ws/teleop")
