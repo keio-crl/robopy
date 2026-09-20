@@ -61,7 +61,7 @@ def main(argv: List[str] | None = None) -> int:
         "--leader-port", default=None, help="real leader: every joint but the head follows it"
     )
     parser.add_argument("--camera", default="synthetic", help="synthetic, none, realsense[:i]")
-    parser.add_argument("--camera-rotate", type=int, default=180, help="0/90/180/270 clockwise")
+    parser.add_argument("--camera-rotate", type=int, default=0, help="0/90/180/270 clockwise")
     parser.add_argument(
         "--head-signs", default="1,-1", help="YAW,PITCH motor signs (lab default), or auto"
     )
@@ -150,7 +150,7 @@ def main(argv: List[str] | None = None) -> int:
                 camera_size="640x480",
                 camera_fps=30.0,
                 camera_rotate=args.camera_rotate,
-                camera_mirror="on",
+                camera_mirror="off",
                 jpeg_quality=75,
                 camera_max_width=960,
             )

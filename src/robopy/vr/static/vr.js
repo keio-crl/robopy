@@ -359,7 +359,10 @@ function connectCamera() {
       return;
     }
     try {
-      const bitmap = await createImageBitmap(ev.data);
+      // three.js's texture.flipY does nothing for an ImageBitmap, and a plane's
+      // UVs put v=1 at the top, so an un-flipped bitmap is drawn upside down.
+      // Flip it here, once, so the plane shows the JPEG exactly as sent.
+      const bitmap = await createImageBitmap(ev.data, { imageOrientation: 'flipY' });
       const aspect = bitmap.width / bitmap.height;
       if (Math.abs(aspect - imageAspect) > 1e-3) { imageAspect = aspect; sizeImagePlane((state.hello && state.hello.camera_fov_deg) || 69); }
       if (imageTexture.image && imageTexture.image.close) imageTexture.image.close();

@@ -84,19 +84,19 @@ def build_parser() -> argparse.ArgumentParser:
     cam.add_argument(
         "--camera-mirror",
         choices=["on", "off"],
-        default="on",
-        help="flip the picture left-right after the rotation, at the source. Default on: "
-        "the lab's Rakuda camera comes out mirrored. off for a camera that does not",
+        default="off",
+        help="flip the picture left-right after the rotation, at the source, for a camera "
+        "whose image comes out mirrored. Default off",
     )
     cam.add_argument(
         "--camera-rotate",
         type=int,
         choices=[0, 90, 180, 270],
-        default=180,
+        default=0,
         help="how the camera is mounted: the picture is turned by this much, clockwise, "
         "as it comes off the camera, and that upright picture is the only one anything "
-        "downstream (page, recording, videos) ever sees. Default 180: the lab's Rakuda "
-        "carries its RealSense upside down. 0 for an upright camera",
+        "downstream (page, recording, videos) ever sees. Default 0: the lab's Rakuda "
+        "carries its RealSense upright",
     )
     cam.add_argument("--jpeg-quality", type=int, default=75)
     cam.add_argument("--camera-max-width", type=int, default=960, help="downscale wider frames")
