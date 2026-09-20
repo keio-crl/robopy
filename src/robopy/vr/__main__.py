@@ -221,6 +221,12 @@ def build_parser() -> argparse.ArgumentParser:
         "leader's positions. The head still follows the headset. THE ROBOT WILL MOVE.",
     )
     hw.add_argument("--leader-port", default=None, help="leader serial port (config default)")
+    hw.add_argument(
+        "--leader-grip-hold",
+        action="store_true",
+        help="--hardware-head with a leader: keep the leader's grippers torque ON with the "
+        "spring-back goal position teleoperation uses. Default: their torque is switched OFF",
+    )
     hw.add_argument("--follower-port", default=None, help="follower serial port (config default)")
 
     parser.add_argument(
@@ -406,22 +412,29 @@ def _home_head_before_loop(backend: Any, bus: Any) -> Dict[str, Any]:
     return {"moved": True, "arrived": arrived, "start": home}
 
 
-def _hold_leader_grippers(leader: Any) -> None:
-    """Give the leader's torque-enabled grippers their spring-back goal."""
+def _leader_grippers(leader: Any, *, hold: bool) -> str:
+    """Torque OFF the leader's grippers, or (``hold``) give them the spring-back goal.
+
+    ``RakudaLeader.connect()`` torque-enables the grippers (the position
+    teleoperation default, where they spring back when released).  In the
+    head-only modes the leader is a master device the operator moves by
+    hand, so the grippers are switched off unless the spring is asked for.
+    """
     from robopy.motor.dynamixel_control_table import XControlTable
 
     from .head_only import LEADER_GRIP_HOLD_COUNT
 
-    enabled = leader.config.leader_torque_enabled
-    grippers = [
-        name
-        for name in getattr(leader, "GRIPPER_MOTORS", ("l_arm_grip", "r_arm_grip"))
-        if enabled is None or name in enabled
-    ]
-    if grippers:
-        leader.motors.sync_write(
-            XControlTable.GOAL_POSITION, {name: LEADER_GRIP_HOLD_COUNT for name in grippers}
-        )
+    grippers = list(getattr(leader, "GRIPPER_MOTORS", ("l_arm_grip", "r_arm_grip")))
+    if hold:
+        enabled = leader.config.leader_torque_enabled
+        held = [n for n in grippers if enabled is None or n in enabled]
+        if held:
+            leader.motors.sync_write(
+                XControlTable.GOAL_POSITION, {n: LEADER_GRIP_HOLD_COUNT for n in held}
+            )
+        return f"spring-back goal {LEADER_GRIP_HOLD_COUNT} on {', '.join(held) or 'none'}"
+    leader.motors.torque_disabled(grippers)
+    return "torque OFF (--leader-grip-hold keeps the spring)"
 
 
 def _parse_home(text: str, parser: argparse.ArgumentParser) -> Dict[str, float] | None:
@@ -674,7 +687,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 pair = RakudaPairSys(cfg)
                 pair.connect()
-                _hold_leader_grippers(pair.leader)
+                grips = _leader_grippers(pair.leader, hold=args.leader_grip_hold)
+                print(f"  leader grippers: {grips}")
                 system = pair.build_control_system()
                 # Built before the loop runs: it reads the head's start pose itself.
                 backend = HeadOnlyFollowerBackend(
@@ -713,7 +727,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     leader = RakudaLeader(cfg)
                     leader.connect()
                     leader_bus = leader.motors
-                    _hold_leader_grippers(leader)
+                    print(
+                        f"  leader grippers: {_leader_grippers(leader, hold=args.leader_grip_hold)}"
+                    )
                 writable = cfg.follower_torque_enabled
                 backend = HeadOnlyFollowerBackend(
                     follower.motors,

@@ -141,3 +141,35 @@ class TestBilateralFlag:
             ["--hardware-head", "--bilateral", "--leader-port", "/dev/x"]
         )
         assert args.bilateral and args.leader_port == "/dev/x"
+
+
+class TestLeaderGrippers:
+    def test_default_switches_the_leader_grippers_off(self) -> None:
+        from robopy.vr.__main__ import _leader_grippers
+
+        class Bus:
+            def __init__(self) -> None:
+                self.disabled: list[str] = []
+                self.written: dict[str, int] = {}
+
+            def torque_disabled(self, names: list[str]) -> None:
+                self.disabled += names
+
+            def sync_write(self, item: object, values: dict[str, int]) -> None:
+                self.written.update(values)
+
+        class Leader:
+            GRIPPER_MOTORS = ("l_arm_grip", "r_arm_grip")
+
+            def __init__(self) -> None:
+                self.motors = Bus()
+                self.config = type("C", (), {"leader_torque_enabled": None})()
+
+        off = Leader()
+        assert "OFF" in _leader_grippers(off, hold=False)
+        assert off.motors.disabled == ["l_arm_grip", "r_arm_grip"] and off.motors.written == {}
+        held = Leader()
+        assert "2400" in _leader_grippers(held, hold=True)
+        assert held.motors.written == {"l_arm_grip": 2400, "r_arm_grip": 2400}
+        assert held.motors.disabled == []
+        assert build_parser().parse_args([]).leader_grip_hold is False

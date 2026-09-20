@@ -436,7 +436,9 @@ uv run --frozen --extra kinematics robopy-vr --hardware-head --follower-port /de
 **マスター（リーダ）も使う**: `--leader-port /dev/ttyUSB0` を足す（または config の `leader_port`）と、
 頭の 2 関節はヘッドセット、それ以外の関節（胴体・両腕・グリッパ）はリーダの現在位置をそのままフォロワの
 目標にする位置テレオペになります。リーダの頭の読み値は無視します。書き込む関節は `follower.torque_enabled`
-に従い、頭はリーダからは決して書きません。リーダのグリッパには位置テレオペと同じ戻りばねの目標を与えます。
+に従い、頭はリーダからは決して書きません。リーダのグリッパは既定で**トルク OFF** にします（リーダは手で動かす
+マスタ装置なので）。位置テレオペと同じ戻りばね（トルク ON、目標 2400）が欲しい場合は `--leader-grip-hold` を
+付けてください。
 
 ```bash
 uv run --extra kinematics --extra realsense robopy-vr --hardware-head \
