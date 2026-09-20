@@ -20,8 +20,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import math
 import os
+import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,10 +40,14 @@ __all__ = [
     "RakudaVideoRenderer",
     "render_recording",
     "select_gl_backend",
+    "find_ffmpeg",
+    "open_video_writer",
     "main",
 ]
 
 VIEWS = ("third_person", "first_person")
+
+logger = logging.getLogger(__name__)
 
 #: Camera axes in the base frame when the head looks forward: right = -Y,
 #: up = +Z, and MuJoCo cameras look along their -Z, so back = -X.
@@ -80,6 +87,9 @@ class RenderSettings:
     def __post_init__(self) -> None:
         if self.fps <= 0.0 or self.width <= 0 or self.height <= 0:
             raise ValueError("fps, width and height must be positive.")
+        # H.264 in yuv420p needs even dimensions; round up rather than fail.
+        self.width += self.width % 2
+        self.height += self.height % 2
 
 
 def select_gl_backend() -> str | None:
@@ -371,8 +381,97 @@ def _overlay(frame: NDArray[np.uint8], lines: Sequence[str]) -> NDArray[np.uint8
     return out
 
 
-class _Mp4Writer:
-    """OpenCV's writer (``mp4v``), the encoder every install of robopy has."""
+def find_ffmpeg() -> str | None:
+    """An ``ffmpeg`` executable: the system's, else imageio-ffmpeg's bundled one."""
+    exe = shutil.which("ffmpeg")
+    if exe:
+        return exe
+    try:
+        import imageio_ffmpeg
+
+        return str(imageio_ffmpeg.get_ffmpeg_exe())
+    except Exception:  # noqa: BLE001 - optional package, any failure means "none"
+        return None
+
+
+def _ffmpeg_has_encoder(exe: str, encoder: str) -> bool:
+    try:
+        out = subprocess.run(
+            [exe, "-hide_banner", "-encoders"], capture_output=True, text=True, timeout=20
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return any(line.split()[1:2] == [encoder] for line in out.stdout.splitlines())
+
+
+class _FfmpegH264Writer:
+    """Raw RGB frames piped to ``ffmpeg`` -> H.264 in MP4, which everything plays.
+
+    ``yuv420p`` and ``+faststart`` are what browsers and phones expect.
+    """
+
+    codec = "h264"
+
+    def __init__(self, path: Path, fps: float, width: int, height: int, exe: str) -> None:
+        self._path = path
+        command = [
+            exe,
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-s",
+            f"{width}x{height}",
+            "-r",
+            f"{fps:g}",
+            "-i",
+            "-",
+            "-an",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "20",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            str(path),
+        ]
+        self._proc = subprocess.Popen(
+            command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+        )
+
+    def write(self, rgb: NDArray[np.uint8]) -> None:
+        assert self._proc.stdin is not None
+        try:
+            self._proc.stdin.write(np.ascontiguousarray(rgb).tobytes())
+        except BrokenPipeError:
+            self._fail()
+
+    def close(self) -> None:
+        assert self._proc.stdin is not None
+        try:
+            self._proc.stdin.close()
+        except BrokenPipeError:
+            pass
+        if self._proc.wait() != 0:
+            self._fail()
+
+    def _fail(self) -> None:
+        err = self._proc.stderr.read().decode(errors="replace").strip() if self._proc.stderr else ""
+        self._proc.wait()
+        raise RuntimeError(f"ffmpeg failed writing {self._path}: {err or 'no message'}")
+
+
+class _OpenCvMp4vWriter:
+    """OpenCV's ``mp4v`` (MPEG-4 part 2): always available, not universally playable."""
+
+    codec = "mp4v"
 
     def __init__(self, path: Path, fps: float, width: int, height: int) -> None:
         import cv2
@@ -388,6 +487,21 @@ class _Mp4Writer:
 
     def close(self) -> None:
         self._writer.release()
+
+
+MP4V_WARNING = (
+    "written as MPEG-4 part 2 (mp4v), which browsers and most players cannot play "
+    "(VLC can); install ffmpeg with libx264 for H.264"
+)
+
+
+def open_video_writer(path: Path, fps: float, width: int, height: int) -> Any:
+    """The best MP4 writer this machine has: H.264 through ffmpeg, else OpenCV's mp4v."""
+    exe = find_ffmpeg()
+    if exe is not None and _ffmpeg_has_encoder(exe, "libx264"):
+        return _FfmpegH264Writer(path, fps, width, height, exe)
+    logger.warning("%s: %s", path.name, MP4V_WARNING)
+    return _OpenCvMp4vWriter(path, fps, width, height)
 
 
 def render_recording(
@@ -433,7 +547,7 @@ def render_recording(
     try:
         for view in views:
             path = directory / f"{recording.stem}_{view}.mp4"
-            writer = _Mp4Writer(path, settings.fps, settings.width, settings.height)
+            writer = open_video_writer(path, settings.fps, settings.width, settings.height)
             try:
                 for k, frame in enumerate(frames):
                     q = frame.get("q") or []
@@ -510,6 +624,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         fovy_deg=args.fovy,
         overlay=not args.no_overlay,
     )
+    if find_ffmpeg() is None:
+        print(f"note: no ffmpeg found; videos will be {MP4V_WARNING}", file=sys.stderr)
     for recording in args.recording:
         outputs = render_recording(
             recording, args.out_dir, settings=settings, views=args.view or VIEWS

@@ -451,7 +451,9 @@ WebXR は https か localhost でしか動きません。方法は 2 つあり�
 - `*_first_person.mp4`: ロボットの頭部カメラ（`head_camera_link`、光軸は頭の中立姿勢から導出）の 1 人称視点。
 
 進捗と保存先はページの status 欄／VR 内の HUD に出ます。描画には MuJoCo が必要です（無ければログだけが
-残り、後から描画できます）。
+残り、後から描画できます）。動画は `ffmpeg`（libx264 付き。Ubuntu なら `apt install ffmpeg`）があれば
+H.264 で書かれ、ブラウザや VS Code でも再生できます。無い場合は OpenCV の MPEG-4 part 2（`mp4v`）になり、
+VLC 以外の多くのプレイヤーで再生できないので、その旨を警告します。
 
 ```bash
 uv pip install mujoco                                     # 描画に必要（一度だけ）

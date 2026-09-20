@@ -174,6 +174,53 @@ class TestRenderHelpers:
             load_recording(Path(__file__))  # not a recording
 
 
+class TestVideoWriter:
+    @staticmethod
+    def _fourcc(path: Path) -> str:
+        import cv2
+
+        cap = cv2.VideoCapture(str(path))
+        try:
+            code = int(cap.get(cv2.CAP_PROP_FOURCC))
+            frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        finally:
+            cap.release()
+        return "".join(chr((code >> (8 * i)) & 0xFF) for i in range(4)) + f":{frames}"
+
+    def test_h264_through_ffmpeg_when_available(self, tmp_path: Path) -> None:
+        from robopy.vr.render import find_ffmpeg, open_video_writer
+
+        if find_ffmpeg() is None:
+            pytest.skip("no ffmpeg on this machine")
+        out = tmp_path / "clip.mp4"
+        writer = open_video_writer(out, 30.0, 64, 48)
+        if writer.codec != "h264":
+            pytest.skip("ffmpeg without libx264")
+        for i in range(5):
+            writer.write(np.full((48, 64, 3), i * 40, dtype=np.uint8))
+        writer.close()
+        assert out.stat().st_size > 0
+        assert self._fourcc(out) == "h264:5"  # OpenCV reports the codec, H.264
+
+    def test_falls_back_to_opencv_without_ffmpeg(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        from robopy.vr.render import open_video_writer
+
+        monkeypatch.setattr("robopy.vr.render.find_ffmpeg", lambda: None)
+        out = tmp_path / "clip.mp4"
+        with caplog.at_level("WARNING", logger="robopy.vr.render"):
+            writer = open_video_writer(out, 30.0, 64, 48)
+        assert writer.codec == "mp4v" and "mp4v" in caplog.text
+        writer.write(np.zeros((48, 64, 3), dtype=np.uint8))
+        writer.close()
+        assert self._fourcc(out) == "FMP4:1"  # OpenCV's name for MPEG-4 part 2
+
+    def test_odd_sizes_are_rounded_up_to_even(self) -> None:
+        s = RenderSettings(width=321, height=241)
+        assert (s.width, s.height) == (322, 242)
+
+
 @pytest.mark.skipif(not HAS_MUJOCO, reason="mujoco not installed")
 class TestRenderWithMujoco:
     def test_recording_renders_to_two_mp4s(self, bundle: ModelBundle, tmp_path: Path) -> None:
