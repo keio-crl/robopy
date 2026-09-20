@@ -558,6 +558,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     follower = None
     leader = None
     head_motors: Any = None
+    head_backend: Any = None
     try:
         # -- backend --------------------------------------------------------
         if args.hardware:
@@ -668,6 +669,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     leader_to_follower=RAKUDA_MOTOR_MAPPING if leader_bus is not None else None,
                     follower_writable=None if writable is None else list(writable),
                 )
+            head_backend = backend
             print(
                 "  head motors at start: "
                 + ", ".join(f"{k}={v:.0f}" for k, v in backend.start_units.items())
@@ -858,6 +860,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print("stopping control:", "; ".join(pair.stop_control()))
             finally:
                 pair.disconnect()
+        if head_backend is not None:
+            head_backend.close()
         if leader is not None:
             leader.disconnect()
         if follower is not None:

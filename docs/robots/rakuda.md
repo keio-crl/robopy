@@ -441,6 +441,15 @@ uv run --extra kinematics --extra realsense robopy-vr --hardware-head \
 ページのツインとミラー、録画ログの関節角は、頭以外は起動姿勢のままです（リーダ追従の腕の角度を URDF に
 直すには校正済み joint map が要るため）。実機の動きは頭部カメラの映像と 1 人称動画で確認してください。
 
+バスの読み書きはバックエンド専用のスレッドが固定周期（50 Hz）で行い、ヘッドセットの姿勢メッセージは最新の
+頭目標を置くだけです。Linux の USB シリアルは 1 往復 16 ms 前後かかり、リーダ付きでは 1 周期に 3 往復あるので、
+これを受信スレッドで行うと 60 Hz の姿勢メッセージに追いつけず頭の遅れが増え続けます。1 周期が周期の 2 倍を
+超えると起動ログに警告が出ます。その場合は USB シリアルのレイテンシタイマを 1 ms にしてください。
+
+```bash
+echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer   # ttyUSB1 も同様
+```
+
 **バイラテラル**: さらに `--bilateral` を付けると、腕はリーダの位置を写すのではなく
 [バイラテラル関節制御](#制御モード双腕ik-バイラテラル)（仮想ばね・ダンパ、電流制御）で結合され、頭はヘッドセットに
 追従します。制御系（`RakudaControlSystem`）を `bilateral_joint` モードで起動するので、`.robopy/rakuda/config.yaml` の

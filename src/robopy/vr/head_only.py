@@ -27,7 +27,9 @@ readings are ignored.
 
 from __future__ import annotations
 
+import logging
 import math
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Mapping, Tuple
@@ -37,6 +39,8 @@ from numpy.typing import NDArray
 
 from .backend import BackendReport, TeleopCommand
 from .head_tracking import HeadJointMapping
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "LEADER_GRIP_HOLD_COUNT",
@@ -154,6 +158,15 @@ class HeadOnlyFollowerBackend:
             backend's.  The start pose is read here, so build the backend
             *before* the system starts.
         target_ttl_s: Validity of the goals handed to the control system.
+        threaded: Do the bus traffic on a thread of this backend's own, at
+            ``rate_hz``, and make :meth:`apply` only *post* the head goals.
+            A USB serial round trip costs some 16 ms on Linux, and with a
+            leader each step is three of them: done on the teleop socket's
+            thread, that falls behind the headset's 60 Hz and the head lags
+            further with every message.  ``False`` writes inline, for tests.
+        rate_hz: The bus thread's rate.
+        present_read_every: Read the head's present position (for the
+            twin) every this many cycles rather than every cycle.
     """
 
     name = "hardware"
@@ -172,6 +185,9 @@ class HeadOnlyFollowerBackend:
         follower_writable: Iterable[str] | None = None,
         control_system: Any | None = None,
         target_ttl_s: float = 0.25,
+        threaded: bool = True,
+        rate_hz: float = 50.0,
+        present_read_every: int = 10,
     ) -> None:
         from robopy.motor.dynamixel_control_table import XControlTable
 
@@ -179,8 +195,20 @@ class HeadOnlyFollowerBackend:
             raise ValueError("With a control system the leader is coupled by it; drop leader_bus.")
         if target_ttl_s <= 0.0:
             raise ValueError("target_ttl_s must be positive.")
+        if rate_hz <= 0.0 or present_read_every <= 0:
+            raise ValueError("rate_hz and present_read_every must be positive.")
         self._system = control_system
         self._ttl = target_ttl_s
+        self._threaded = threaded and control_system is None
+        self._period_s = 1.0 / rate_hz
+        self._present_read_every = present_read_every
+        self._lock = threading.Lock()
+        self._pending: Dict[str, float] = {}
+        self._thread: threading.Thread | None = None
+        self._stop = threading.Event()
+        self._cycles = 0
+        self._cycle_ms = 0.0
+        self._slow_warned = False
         self._bus = bus
         self._leader = leader_bus
         self._leader_names: list[str] = []
@@ -250,10 +278,12 @@ class HeadOnlyFollowerBackend:
     def joint_positions(self) -> Dict[str, float]:
         """Model angles: rest values, with the head joints as last measured."""
         out = dict(self._rest)
+        with self._lock:
+            present = dict(self._present)
         for motor in self._by_name.values():
             if motor.urdf_joint is None:
                 continue
-            delta = (self._present[motor.motor] - self._start[motor.motor]) / self._scale(motor)
+            delta = (present[motor.motor] - self._start[motor.motor]) / self._scale(motor)
             out[motor.urdf_joint] = motor.urdf_neutral_rad + motor.direction * delta
         return out
 
@@ -309,19 +339,105 @@ class HeadOnlyFollowerBackend:
                 self._last_write_s = command.stamp_s
                 # The loop owns the bus: no read-back; the goal stands in for it.
                 self._present.update(goals)
-        elif goals:
-            self._bus.sync_write(self._goal_item, goals)
-            self._goals.update(goals)
-            self._writes += 1
-            self._last_write_s = command.stamp_s
-        if self._system is None:
-            self._present.update(self._read_present())
+        elif self._threaded:
+            if goals:
+                with self._lock:
+                    self._pending.update(goals)
+                    self._goals.update(goals)
+                self._last_write_s = command.stamp_s
+            self._ensure_thread()
+        else:
+            if goals:
+                self._goals.update(goals)
+                self._last_write_s = command.stamp_s
+            self.step(head_goals=goals)
         self._last_warnings = warnings
         report = BackendReport(joints=self.joint_positions())
         report.hand_poses = {side: self.hand_pose(side) for side in ("left", "right")}
         report.compute_ms = (time.perf_counter() - started) * 1e3
         report.warnings = warnings
         return report
+
+    def step(self, head_goals: Mapping[str, float] | None = None) -> None:
+        """One bus cycle: leader in, goals out, head position back now and then.
+
+        The only place the bus is used once the backend is built.  Called by
+        the bus thread; or inline from :meth:`apply` when not threaded.
+
+        Args:
+            head_goals: Head goals to write this cycle; the posted ones when
+                ``None``.
+        """
+        started = time.perf_counter()
+        with self._lock:
+            goals = dict(self._pending if head_goals is None else head_goals)
+            self._pending.clear()
+        if self._leader is not None and self._leader_map:
+            leader = self._leader.sync_read(self._present_item, self._leader_names)
+            leader_goals = {
+                follower: float(leader[name])
+                for name, follower in self._leader_map.items()
+                if name in leader
+            }
+            with self._lock:
+                self._leader_goals = leader_goals
+            goals.update(leader_goals)
+        if goals:
+            self._bus.sync_write(self._goal_item, goals)
+            with self._lock:
+                self._writes += 1
+        self._cycles += 1
+        if self._cycles % self._present_read_every == 1 or not self._threaded:
+            present = self._read_present()
+            with self._lock:
+                self._present.update(present)
+        elapsed_ms = (time.perf_counter() - started) * 1e3
+        self._cycle_ms = (
+            elapsed_ms if self._cycles == 1 else 0.9 * self._cycle_ms + 0.1 * elapsed_ms
+        )
+        if (
+            self._threaded
+            and not self._slow_warned
+            and self._cycles > 20
+            and self._cycle_ms > 2.0 * self._period_s * 1e3
+        ):
+            self._slow_warned = True
+            logger.warning(
+                "bus cycle takes %.0f ms, more than twice the %.0f ms period: the head will lag. "
+                "On Linux set the USB serial latency timer to 1 ms, e.g. "
+                "echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB*/latency_timer",
+                self._cycle_ms,
+                self._period_s * 1e3,
+            )
+
+    def _ensure_thread(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, name="vr-head-bus", daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        next_time = time.monotonic()
+        while not self._stop.is_set():
+            try:
+                self.step()
+            except Exception:  # noqa: BLE001 - a bus hiccup must not end the loop
+                logger.exception("bus cycle failed")
+                self._stop.wait(0.1)
+            next_time += self._period_s
+            delay = next_time - time.monotonic()
+            if delay > 0.0:
+                self._stop.wait(delay)
+            else:
+                next_time = time.monotonic()
+
+    def close(self) -> None:
+        """Stop the bus thread (the motors keep their last goals)."""
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(2.0)
+            self._thread = None
 
     def hold(self) -> None:
         """Nothing to do: position-controlled motors hold their last goal."""
@@ -349,6 +465,14 @@ class HeadOnlyFollowerBackend:
             },
             "writes": self._writes,
             "warnings": list(self._last_warnings),
+            "bus_thread": None
+            if not self._threaded
+            else {
+                "running": self._thread is not None and self._thread.is_alive(),
+                "rate_hz": 1.0 / self._period_s,
+                "cycles": self._cycles,
+                "mean_cycle_ms": round(self._cycle_ms, 2),
+            },
             "leader": None
             if self._leader is None
             else {

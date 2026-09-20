@@ -49,6 +49,7 @@ def make_backend(
     pitch = HeadMotor(
         "head_pitch", urdf_joint="head_pitch_dof", urdf_neutral_rad=0.1, range_rad=math.radians(35)
     )
+    kw.setdefault("threaded", False)  # inline bus traffic, so assertions can follow apply()
     return HeadOnlyFollowerBackend(bus, model=bundle.model, yaw=yaw, pitch=pitch, **kw)
 
 
@@ -174,6 +175,35 @@ class TestLeaderFollowing:
         backend.apply(TeleopCommand())
         assert follower.registers("r_arm_sh_pitch1").goal_position_count == 1000
         assert backend.describe()["leader"]["follower_motors"] == ["r_arm_sh_pitch1"]
+
+
+class TestBusThread:
+    def test_apply_only_posts_and_the_thread_does_the_bus_work(self, bundle: ModelBundle) -> None:
+        import time
+
+        follower = make_bus({"head_yaw": 2048, "head_pitch": 2048})
+        leader = make_bus({"torso_yaw": 1200})
+        backend = make_backend(bundle, follower, leader_bus=leader, threaded=True, rate_hz=200.0)
+        before = follower.transaction_count
+        backend.apply(TeleopCommand(head_targets_rad={"head_yaw": 0.2, "head_pitch": 0.0}))
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and backend.describe()["bus_thread"]["cycles"] < 5:
+            time.sleep(0.01)
+        info = backend.describe()
+        assert info["bus_thread"]["running"] and info["bus_thread"]["cycles"] >= 5
+        assert follower.registers("head_yaw").goal_position_count == round(
+            2048 + 0.2 * COUNTS_PER_RAD
+        )
+        assert follower.registers("torso_yaw").goal_position_count == 1200
+        assert follower.transaction_count > before
+        # Goals are posted once and the leader keeps being copied every cycle.
+        writes = info["writes"]
+        time.sleep(0.05)
+        assert backend.describe()["writes"] > writes
+        backend.close()
+        assert not backend.describe()["bus_thread"]["running"]
+        with pytest.raises(ValueError):
+            make_backend(bundle, follower, threaded=True, rate_hz=0.0)
 
 
 class TestMotorSpaceMapping:
