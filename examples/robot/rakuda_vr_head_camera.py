@@ -150,6 +150,7 @@ def main(argv: List[str] | None = None) -> int:
                 camera_size="640x480",
                 camera_fps=30.0,
                 camera_rotate=args.camera_rotate,
+                camera_mirror="on",
                 jpeg_quality=75,
                 camera_max_width=960,
             )

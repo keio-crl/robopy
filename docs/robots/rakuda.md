@@ -419,7 +419,9 @@ uv run --frozen --extra kinematics robopy-vr --hardware-head --follower-port /de
 - **カメラ**: `--camera realsense`（複数台なら `realsense:1`）で色ストリームを配信します。`--camera-size`
   と `--camera-fps` で解像度とレートを、`--camera-fov` で投影サイズを変えられます。D435 の色カメラの
   水平画角 69° が既定です。研究室の Rakuda は RealSense が上下逆に付いているので `--camera-rotate` の既定は
-  180 です（正立なら 0、90 / 270 も可）。回転は**カメラから画像を受け取った直後に 1 回だけ**行い、それ以降の
+  180 です（正立なら 0、90 / 270 も可）。さらに画像が左右鏡像で出るため `--camera-mirror` の既定は `on`
+  で、回転後に左右を反転します（鏡像でないカメラは `off`）。これらの補正は**カメラから画像を受け取った直後に
+  1 回だけ**行い、それ以降の
   すべて（配信、ヘッドセット表示、録画の動画、描画）は補正済みの正立画像しか受け取りません。下流のどこにも
   回転の設定はなく、二重に回ることはありません。
 - **録画**: 実カメラ（`realsense` / `opencv:`）を使っているときは、録画中にそのカメラの画像を
@@ -641,6 +643,7 @@ multi-turn位置は `[-pi, pi]` へ折り返しません。`zero_count` は
 
 `control.allow_hardware_current_output` は既定で `false` です。上記が測定され
 `validated: true` になるまで、バイラテラルモードは `configure()` で拒否されます。
+
 
 ### モデルの配置（`robopy/models/rakuda/`、パッケージ同梱）
 

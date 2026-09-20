@@ -82,6 +82,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cam.add_argument("--camera-fps", type=float, default=30.0)
     cam.add_argument(
+        "--camera-mirror",
+        choices=["on", "off"],
+        default="on",
+        help="flip the picture left-right after the rotation, at the source. Default on: "
+        "the lab's Rakuda camera comes out mirrored. off for a camera that does not",
+    )
+    cam.add_argument(
         "--camera-rotate",
         type=int,
         choices=[0, 90, 180, 270],
@@ -563,9 +570,10 @@ def _make_camera(args: argparse.Namespace, caption: Any) -> Any:
             "--camera must be synthetic, none, opencv:<source> or realsense[:index], "
             f"got {args.camera!r}"
         )
-    if int(args.camera_rotate) % 360:
-        # Corrected once, at the source; nothing downstream knows a rotation happened.
-        source = RotatedFrameSource(source, int(args.camera_rotate))
+    mirror = args.camera_mirror == "on"
+    if int(args.camera_rotate) % 360 or mirror:
+        # Corrected once, at the source; nothing downstream knows it happened.
+        source = RotatedFrameSource(source, int(args.camera_rotate), mirror=mirror)
     encoder = JpegEncoder(args.jpeg_quality, max_width=args.camera_max_width)
     return FrameStreamer(source, fps=args.camera_fps, encoder=encoder)
 

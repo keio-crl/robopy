@@ -321,18 +321,26 @@ class RotatedFrameSource:
     Args:
         source: The camera.
         degrees: Clockwise rotation, a multiple of 90.
+        mirror: Also flip the picture left-right (after the rotation), for a
+            camera whose image comes out mirrored.
     """
 
-    def __init__(self, source: FrameSource, degrees: int) -> None:
+    def __init__(self, source: FrameSource, degrees: int, *, mirror: bool = False) -> None:
         if degrees % 90 != 0:
             raise ValueError("degrees must be a multiple of 90.")
         self.source = source
         self.degrees = degrees % 360
+        self.mirror = bool(mirror)
 
     def read(self) -> NDArray[np.uint8] | None:
-        """The source's frame, upright."""
+        """The source's frame, upright and the right way round."""
         frame = self.source.read()
-        return None if frame is None else rotate_frame(frame, self.degrees)
+        if frame is None:
+            return None
+        frame = rotate_frame(frame, self.degrees)
+        if self.mirror:
+            frame = np.ascontiguousarray(frame[:, ::-1])
+        return frame
 
     def close(self) -> None:
         """Release the source."""

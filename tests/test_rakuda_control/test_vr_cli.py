@@ -122,6 +122,7 @@ class TestLabDefaults:
     def test_rotation_and_head_signs_default_to_the_measured_machine(self) -> None:
         args = build_parser().parse_args([])
         assert args.camera_rotate == 180 and args.head_signs == "1,-1"
+        assert args.camera_mirror == "on"
         assert (
             build_parser().parse_args(["--camera-rotate", "0", "--head-signs", "auto"]).head_signs
             == "auto"

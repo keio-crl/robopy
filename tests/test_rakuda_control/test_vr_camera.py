@@ -58,6 +58,21 @@ class TestRotation:
             RotatedFrameSource(source, 30)
         assert RotatedFrameSource(source, 360).degrees == 0
 
+    def test_mirror_flips_left_right_after_the_rotation(self) -> None:
+        class One:
+            def read(self) -> Any:
+                frame = np.zeros((2, 3, 3), dtype=np.uint8)
+                frame[0, 0] = (1, 2, 3)  # top-left
+                return frame
+
+            def close(self) -> None:
+                pass
+
+        mirrored = RotatedFrameSource(One(), 0, mirror=True).read()
+        assert mirrored is not None and tuple(mirrored[0, 2]) == (1, 2, 3)  # top-right
+        both = RotatedFrameSource(One(), 180, mirror=True).read()
+        assert both is not None and tuple(both[1, 0]) == (1, 2, 3)  # bottom-left
+
 
 class TestRealsenseRecovery:
     def test_failures_are_swallowed_and_the_pipeline_restarts(
