@@ -20,6 +20,7 @@ from robopy.vr.camera import (  # noqa: E402
     FrameStreamer,
     JpegEncoder,
     RealsenseFrameSource,
+    RotatedFrameSource,
     SyntheticFrameSource,
     rotate_frame,
 )
@@ -42,17 +43,20 @@ class TestRotation:
         with pytest.raises(ValueError):
             rotate_frame(frame, 45)
 
-    def test_streamer_applies_the_rotation_before_encoding(self) -> None:
+    def test_rotation_happens_at_the_source_and_nowhere_downstream(self) -> None:
         source = SyntheticFrameSource(64, 32)
         upright = FrameStreamer(source, fps=30.0, encoder=JpegEncoder(90)).capture_once()
-        turned = FrameStreamer(
-            source, fps=30.0, encoder=JpegEncoder(90), rotate_deg=90
-        ).capture_once()
+        turned_source = RotatedFrameSource(source, 90)
+        turned = FrameStreamer(turned_source, fps=30.0, encoder=JpegEncoder(90)).capture_once()
         assert upright is not None and turned is not None
         assert (upright.width, upright.height) == (64, 32)
         assert (turned.width, turned.height) == (32, 64)
+        # The streamer has no rotation setting: only the source can turn a picture.
+        assert not hasattr(FrameStreamer(source), "rotate_deg")
+        assert "rotate" not in FrameStreamer(source).describe()
         with pytest.raises(ValueError):
-            FrameStreamer(source, rotate_deg=30)
+            RotatedFrameSource(source, 30)
+        assert RotatedFrameSource(source, 360).degrees == 0
 
 
 class TestRealsenseRecovery:
@@ -92,7 +96,7 @@ class TestRealsenseRecovery:
 def camera_server(synthetic_urdf: Any) -> Iterator[VRServer]:
     bundle = ModelBundle.load(synthetic_urdf, soft_limits=SOFT_LIMITS)
     ik = IKSetup(bundle, config_overrides=STREAMING_IK_OVERRIDES)
-    camera = FrameStreamer(SyntheticFrameSource(64, 48), fps=60.0, rotate_deg=180)
+    camera = FrameStreamer(RotatedFrameSource(SyntheticFrameSource(64, 48), 180), fps=60.0)
     srv = VRServer(
         bundle,
         ik=ik,
@@ -123,7 +127,7 @@ class TestCameraSocket:
         client = RawClient(host, port, "/ws/camera")
         try:
             greeting = client.recv_json()
-            assert greeting["type"] == "camera" and greeting["rotate_deg"] == 180
+            assert greeting["type"] == "camera" and "rotate_deg" not in greeting
             frames = 0
             pongs = 0
             deadline = time.monotonic() + 3.0

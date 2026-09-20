@@ -85,8 +85,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         choices=[0, 90, 180, 270],
         default=180,
-        help="rotate the picture clockwise. Default 180: the lab's Rakuda carries its "
-        "RealSense upside down. 0 for an upright camera",
+        help="how the camera is mounted: the picture is turned by this much, clockwise, "
+        "as it comes off the camera, and that upright picture is the only one anything "
+        "downstream (page, recording, videos) ever sees. Default 180: the lab's Rakuda "
+        "carries its RealSense upside down. 0 for an upright camera",
     )
     cam.add_argument("--jpeg-quality", type=int, default=75)
     cam.add_argument("--camera-max-width", type=int, default=960, help="downscale wider frames")
@@ -452,7 +454,13 @@ def _start_pose(
 
 
 def _make_camera(args: argparse.Namespace, caption: Any) -> Any:
-    from .camera import FrameStreamer, JpegEncoder, OpenCVFrameSource, SyntheticFrameSource
+    from .camera import (
+        FrameStreamer,
+        JpegEncoder,
+        OpenCVFrameSource,
+        RotatedFrameSource,
+        SyntheticFrameSource,
+    )
 
     spec = str(args.camera).strip().lower()
     if spec == "none":
@@ -483,10 +491,11 @@ def _make_camera(args: argparse.Namespace, caption: Any) -> Any:
             "--camera must be synthetic, none, opencv:<source> or realsense[:index], "
             f"got {args.camera!r}"
         )
+    if int(args.camera_rotate) % 360:
+        # Corrected once, at the source; nothing downstream knows a rotation happened.
+        source = RotatedFrameSource(source, int(args.camera_rotate))
     encoder = JpegEncoder(args.jpeg_quality, max_width=args.camera_max_width)
-    return FrameStreamer(
-        source, fps=args.camera_fps, encoder=encoder, rotate_deg=int(args.camera_rotate)
-    )
+    return FrameStreamer(source, fps=args.camera_fps, encoder=encoder)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

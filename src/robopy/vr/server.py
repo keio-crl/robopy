@@ -666,6 +666,13 @@ class _VRHandler(_Handler):
             self.close_connection = True
 
 
+def _unwrapped(source: Any) -> Any:
+    """The camera behind any source wrappers (rotation and the like)."""
+    while hasattr(source, "source"):
+        source = source.source
+    return source
+
+
 class VRServer(ViewerServer):
     """The viewer server extended with the teleoperation and camera sockets.
 
@@ -724,7 +731,9 @@ class VRServer(ViewerServer):
                     return render_recording(path, progress=progress)
 
             tap = None
-            if self.camera is not None and not isinstance(self.camera.source, SyntheticFrameSource):
+            if self.camera is not None and not isinstance(
+                _unwrapped(self.camera.source), SyntheticFrameSource
+            ):
                 # A real camera: its pictures become the first-person video.
                 tap = CameraTap(self.camera)
             self.recorder = SessionRecorder(self.vr_config.record_dir, render=render, camera=tap)
@@ -883,7 +892,6 @@ class VRServer(ViewerServer):
                         "type": "camera",
                         "fov_deg": self.vr_config.camera_fov_deg,
                         "source": type(self.camera.source).__name__,
-                        "rotate_deg": self.camera.rotate_deg,
                     }
                 )
             )

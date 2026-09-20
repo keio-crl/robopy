@@ -31,6 +31,7 @@ __all__ = [
     "OpenCVFrameSource",
     "SyntheticFrameSource",
     "RealsenseFrameSource",
+    "RotatedFrameSource",
     "rotate_frame",
     "to_bgr_uint8",
 ]
@@ -308,6 +309,36 @@ _ROTATIONS = {
 }
 
 
+class RotatedFrameSource:
+    """A frame source whose pictures come out turned by a multiple of 90 degrees.
+
+    The correction for a camera mounted askew belongs here, at the source,
+    and nowhere else: everything downstream -- the JPEG stream, the page,
+    the recorded video, the renderer -- sees only the upright picture and
+    has no notion that a rotation ever happened, so nothing can turn it
+    twice.
+
+    Args:
+        source: The camera.
+        degrees: Clockwise rotation, a multiple of 90.
+    """
+
+    def __init__(self, source: FrameSource, degrees: int) -> None:
+        if degrees % 90 != 0:
+            raise ValueError("degrees must be a multiple of 90.")
+        self.source = source
+        self.degrees = degrees % 360
+
+    def read(self) -> NDArray[np.uint8] | None:
+        """The source's frame, upright."""
+        frame = self.source.read()
+        return None if frame is None else rotate_frame(frame, self.degrees)
+
+    def close(self) -> None:
+        """Release the source."""
+        self.source.close()
+
+
 def rotate_frame(frame: NDArray[np.uint8], degrees: int) -> NDArray[np.uint8]:
     """Rotate an image clockwise by a multiple of 90 degrees (for a camera mounted askew)."""
     degrees %= 360
@@ -384,16 +415,12 @@ class FrameStreamer:
         *,
         fps: float = 30.0,
         encoder: JpegEncoder | None = None,
-        rotate_deg: int = 0,
     ) -> None:
         if fps <= 0.0:
             raise ValueError("fps must be positive.")
         self.source = source
         self.fps = float(fps)
         self.encoder = encoder or JpegEncoder()
-        if rotate_deg % 90 != 0:
-            raise ValueError("rotate_deg must be a multiple of 90.")
-        self.rotate_deg = rotate_deg % 360
         self._latest: EncodedFrame | None = None
         self._condition = threading.Condition()
         self._stop = threading.Event()
@@ -456,8 +483,6 @@ class FrameStreamer:
             self._read_failures += 1
             return None
         started = time.perf_counter()
-        if self.rotate_deg:
-            frame = rotate_frame(frame, self.rotate_deg)
         data, width, height = self.encoder.encode(frame)
         self._encode_seconds += time.perf_counter() - started
         with self._condition:
@@ -485,7 +510,6 @@ class FrameStreamer:
         return {
             "running": self.running,
             "fps_ceiling": self.fps,
-            "rotate_deg": self.rotate_deg,
             "frames": self._frames,
             "read_failures": self._read_failures,
             "mean_encode_ms": (1e3 * self._encode_seconds / self._frames if self._frames else None),
