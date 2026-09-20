@@ -130,6 +130,52 @@ class TestHeadOnlyFollowerBackend:
         assert bus.registers("head_yaw").goal_position_count == pytest.approx(start + 10, abs=1)
 
 
+class TestLeaderFollowing:
+    def test_leader_drives_everything_but_the_head(self, bundle: ModelBundle) -> None:
+        follower = make_bus({"head_yaw": 2048, "head_pitch": 2048})
+        leader = make_bus({"torso_yaw": 1500, "head_yaw": 900, "r_arm_sh_pitch1": 3000})
+        before = {n: follower.registers(n).goal_position_count for n in MOTORS}
+        backend = make_backend(
+            bundle,
+            follower,
+            leader_bus=leader,
+            follower_writable=["torso_yaw", "head_yaw", "head_pitch", "r_arm_sh_pitch1"],
+        )
+        report = backend.apply(TeleopCommand(head_targets_rad={"head_yaw": 0.1, "head_pitch": 0.0}))
+        assert report.warnings == []
+        # Torso and right shoulder: copied from the leader, count for count.
+        assert follower.registers("torso_yaw").goal_position_count == 1500
+        assert follower.registers("r_arm_sh_pitch1").goal_position_count == 3000
+        # Left shoulder: not torque-enabled on the follower, so not written.
+        assert (
+            follower.registers("l_arm_sh_pitch1").goal_position_count == before["l_arm_sh_pitch1"]
+        )
+        # Head: from the headset, never from the leader's own head.
+        assert follower.registers("head_yaw").goal_position_count == round(
+            2048 + 0.1 * COUNTS_PER_RAD
+        )
+        assert follower.registers("head_pitch").goal_position_count == 2048
+        described = backend.describe()["leader"]
+        assert described["follower_motors"] == ["r_arm_sh_pitch1", "torso_yaw"]
+        assert described["last_goals"] == {"torso_yaw": 1500.0, "r_arm_sh_pitch1": 3000.0}
+        # Controllers are reported as not in charge of the arms.
+        report = backend.apply(TeleopCommand(gripper_targets_rad={"l_arm_grip": 0.3}))
+        assert any("follow the leader" in w for w in report.warnings)
+
+    def test_leader_mapping_and_unknown_motors(self, bundle: ModelBundle) -> None:
+        follower = make_bus()
+        leader = make_bus({"torso_yaw": 1000})
+        backend = make_backend(
+            bundle,
+            follower,
+            leader_bus=leader,
+            leader_to_follower={"torso_yaw": "r_arm_sh_pitch1", "ghost": "torso_yaw"},
+        )
+        backend.apply(TeleopCommand())
+        assert follower.registers("r_arm_sh_pitch1").goal_position_count == 1000
+        assert backend.describe()["leader"]["follower_motors"] == ["r_arm_sh_pitch1"]
+
+
 class TestMotorSpaceMapping:
     def test_signs_combine_urdf_and_direction_unless_overridden(self) -> None:
         yaw = HeadMotor("head_yaw", direction=-1)

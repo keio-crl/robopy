@@ -57,6 +57,9 @@ def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     add_model_arguments(parser)
     parser.add_argument("--follower-port", default=None, help="real follower; simulated otherwise")
+    parser.add_argument(
+        "--leader-port", default=None, help="real leader: every joint but the head follows it"
+    )
     parser.add_argument("--camera", default="synthetic", help="synthetic, none, realsense[:i]")
     parser.add_argument("--camera-rotate", type=int, default=180, help="0/90/180/270 clockwise")
     parser.add_argument(
@@ -69,6 +72,8 @@ def main(argv: List[str] | None = None) -> int:
 
     loaded = load_model(args, parser, ik_overrides=STREAMING_IK_OVERRIDES)
     follower = None
+    leader = None
+    leader_bus = None
     try:
         bundle = loaded.bundle
         model = bundle.model
@@ -85,6 +90,13 @@ def main(argv: List[str] | None = None) -> int:
             follower = RakudaFollower(cfg)
             follower.connect()
             bus = follower.motors
+            if args.leader_port:
+                from robopy.robots.rakuda.rakuda_leader import RakudaLeader
+
+                cfg.leader_port = args.leader_port
+                leader = RakudaLeader(cfg)
+                leader.connect()
+                leader_bus = leader.motors
         else:
             bus = simulated_follower_bus()
 
@@ -122,6 +134,7 @@ def main(argv: List[str] | None = None) -> int:
             pitch=pitch,
             tcp_frames=bundle.tcp_frames,
             rest_positions_rad=rest,
+            leader_bus=leader_bus,
         )
         print(f"head motors at start: {backend.start_units}  ({backend.describe()['units']})")
         for note in mapping.notes:
@@ -187,6 +200,8 @@ def main(argv: List[str] | None = None) -> int:
             )
         session.close()
     finally:
+        if leader is not None:
+            leader.disconnect()
         if follower is not None:
             follower.disconnect()
         loaded.cleanup()

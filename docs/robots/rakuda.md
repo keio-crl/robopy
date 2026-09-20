@@ -428,6 +428,19 @@ uv run --frozen --extra kinematics robopy-vr --hardware-head --follower-port /de
 - ページのツイン／ミラーは、頭だけがモータの読み値に従って動き、腕は起動姿勢のまま描かれます。録画も
   同様に使えます。
 
+**マスター（リーダ）も使う**: `--leader-port /dev/ttyUSB0` を足す（または config の `leader_port`）と、
+頭の 2 関節はヘッドセット、それ以外の関節（胴体・両腕・グリッパ）はリーダの現在位置をそのままフォロワの
+目標にする位置テレオペになります。リーダの頭の読み値は無視します。書き込む関節は `follower.torque_enabled`
+に従い、頭はリーダからは決して書きません。リーダのグリッパには位置テレオペと同じ戻りばねの目標を与えます。
+
+```bash
+uv run --extra kinematics --extra realsense robopy-vr --hardware-head \
+    --follower-port /dev/ttyUSB1 --leader-port /dev/ttyUSB0 --camera realsense --host 0.0.0.0 --self-signed
+```
+
+ページのツインとミラー、録画ログの関節角は、頭以外は起動姿勢のままです（リーダ追従の腕の角度を URDF に
+直すには校正済み joint map が要るため）。実機の動きは頭部カメラの映像と 1 人称動画で確認してください。
+
 API から同じ構成を組む例が `examples/robot/rakuda_vr_head_camera.py` です。引数なしでは模擬バスと
 テストパターンで動くので、実機なしでも配線を確認できます（`--follower-port` で実機、`--serve` でページを
 配信）。

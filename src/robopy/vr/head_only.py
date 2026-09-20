@@ -17,6 +17,12 @@ puts into the head tracker: the URDF's sign for the joint (derived from the
 model) times the motor's measured ``direction`` when the configuration has
 one, ``+1`` otherwise -- so a head that turns the wrong way is fixed with
 ``--head-signs``, not by editing code.
+
+With a leader (master) arm on its own bus, every other follower motor
+follows the leader exactly as position teleoperation does -- the leader's
+present position, in encoder counts, becomes the follower's goal -- while
+the two head motors keep following the headset.  The leader's own head
+readings are ignored.
 """
 
 from __future__ import annotations
@@ -24,7 +30,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping, Tuple
+from typing import Any, Dict, Iterable, Mapping, Tuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -32,7 +38,16 @@ from numpy.typing import NDArray
 from .backend import BackendReport, TeleopCommand
 from .head_tracking import HeadJointMapping
 
-__all__ = ["HeadMotor", "HeadOnlyFollowerBackend", "head_motor_mapping"]
+__all__ = [
+    "LEADER_GRIP_HOLD_COUNT",
+    "HeadMotor",
+    "HeadOnlyFollowerBackend",
+    "head_motor_mapping",
+]
+
+#: Goal written to the leader's gripper motors so they spring back when
+#: released, as position teleoperation does (``RakudaPairSys.teleoperate_step``).
+LEADER_GRIP_HOLD_COUNT = 2400
 
 
 @dataclass(frozen=True)
@@ -123,6 +138,14 @@ class HeadOnlyFollowerBackend:
             identity poses without.
         rest_positions_rad: Model angles to report for every joint the head
             does not move (the arms as they stand), zeros otherwise.
+        leader_bus: The leader (master) arm's bus, or ``None``.  With it, the
+            leader's present positions are copied to the follower's other
+            motors on every step, as position teleoperation does.
+        leader_to_follower: ``{leader_motor: follower_motor}``; identity over
+            the leader's motors by default.
+        follower_writable: Follower motors that may be written from the
+            leader (the torque-enabled ones); all of them by default.  The
+            head motors are never written from the leader.
     """
 
     name = "hardware"
@@ -136,10 +159,30 @@ class HeadOnlyFollowerBackend:
         pitch: HeadMotor,
         tcp_frames: Mapping[str, str] | None = None,
         rest_positions_rad: Mapping[str, float] | None = None,
+        leader_bus: Any | None = None,
+        leader_to_follower: Mapping[str, str] | None = None,
+        follower_writable: Iterable[str] | None = None,
     ) -> None:
         from robopy.motor.dynamixel_control_table import XControlTable
 
         self._bus = bus
+        self._leader = leader_bus
+        self._leader_names: list[str] = []
+        self._leader_map: Dict[str, str] = {}
+        self._leader_goals: Dict[str, float] = {}
+        if leader_bus is not None:
+            self._leader_names = list(leader_bus.motors)
+            mapping = dict(leader_to_follower or {n: n for n in self._leader_names})
+            writable = set(follower_writable) if follower_writable is not None else set(bus.motors)
+            head = {yaw.motor, pitch.motor}
+            self._leader_map = {
+                leader: follower
+                for leader, follower in mapping.items()
+                if leader in self._leader_names
+                and follower in bus.motors
+                and follower in writable
+                and follower not in head
+            }
         self._model = model
         self._motors = {"yaw": yaw, "pitch": pitch}
         self._by_name = {yaw.motor: yaw, pitch.motor: pitch}
@@ -225,7 +268,19 @@ class HeadOnlyFollowerBackend:
                 units = float(min(motor.counts_per_revolution - 1, max(0, round(units))))
             goals[name] = units
         if command.arm_target is not None or command.gripper_targets_rad:
-            warnings.append("arms and grippers are not driven in head-only mode")
+            warnings.append(
+                "arms and grippers follow the leader, not the controllers, in head-only mode"
+                if self._leader is not None
+                else "arms and grippers are not driven in head-only mode"
+            )
+        if self._leader is not None and self._leader_map:
+            leader = self._leader.sync_read(self._present_item, self._leader_names)
+            self._leader_goals = {
+                follower: float(leader[name])
+                for name, follower in self._leader_map.items()
+                if name in leader
+            }
+            goals.update(self._leader_goals)
         if goals:
             self._bus.sync_write(self._goal_item, goals)
             self._goals.update(goals)
@@ -261,4 +316,10 @@ class HeadOnlyFollowerBackend:
             },
             "writes": self._writes,
             "warnings": list(self._last_warnings),
+            "leader": None
+            if self._leader is None
+            else {
+                "follower_motors": sorted(self._leader_map.values()),
+                "last_goals": dict(self._leader_goals),
+            },
         }

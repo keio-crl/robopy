@@ -176,9 +176,11 @@ def build_parser() -> argparse.ArgumentParser:
     hw.add_argument(
         "--hardware-head",
         action="store_true",
-        help="drive ONLY the real follower's two head motors from the headset, straight on "
-        "the bus: no leader, no control system, no arm motion, no joint calibration needed. "
-        "The pose at start is taken as looking ahead. THE HEAD WILL MOVE.",
+        help="drive the real follower's two head motors from the headset, straight on the "
+        "bus: no control system, no joint calibration needed; the pose at start is taken "
+        "as looking ahead. Alone, nothing else moves. With --leader-port (or leader_port "
+        "in the config) every other joint follows the leader arm as in position "
+        "teleoperation. THE ROBOT WILL MOVE.",
     )
     hw.add_argument(
         "--head-signs",
@@ -357,6 +359,24 @@ def _parse_grippers(
     return out
 
 
+def _hold_leader_grippers(leader: Any) -> None:
+    """Give the leader's torque-enabled grippers their spring-back goal."""
+    from robopy.motor.dynamixel_control_table import XControlTable
+
+    from .head_only import LEADER_GRIP_HOLD_COUNT
+
+    enabled = leader.config.leader_torque_enabled
+    grippers = [
+        name
+        for name in getattr(leader, "GRIPPER_MOTORS", ("l_arm_grip", "r_arm_grip"))
+        if enabled is None or name in enabled
+    ]
+    if grippers:
+        leader.motors.sync_write(
+            XControlTable.GOAL_POSITION, {name: LEADER_GRIP_HOLD_COUNT for name in grippers}
+        )
+
+
 def _parse_signs(text: str, parser: argparse.ArgumentParser) -> Tuple[int, int] | None:
     if text.strip().lower() == "auto":
         return None
@@ -526,6 +546,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     bundle = loaded.bundle
     pair = None
     follower = None
+    leader = None
     head_motors: Any = None
     try:
         # -- backend --------------------------------------------------------
@@ -573,6 +594,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             follower = RakudaFollower(cfg)
             follower.connect()
             head_motors = _head_motors(args, parser, cfg, model)
+            leader_bus = None
+            if cfg.leader_port:
+                from robopy.config.robot_config.rakuda_config import RAKUDA_MOTOR_MAPPING
+                from robopy.robots.rakuda.rakuda_leader import RakudaLeader
+
+                print(
+                    f"  leader on {cfg.leader_port}: every joint but the head follows it "
+                    "(position teleoperation); the head follows the headset."
+                )
+                leader = RakudaLeader(cfg)
+                leader.connect()
+                leader_bus = leader.motors
+                _hold_leader_grippers(leader)
+            writable = cfg.follower_torque_enabled
             backend = HeadOnlyFollowerBackend(
                 follower.motors,
                 model=model,
@@ -580,6 +615,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 pitch=head_motors[1],
                 tcp_frames=bundle.tcp_frames,
                 rest_positions_rad=_start_pose(args, parser, model.movable_joint_names),
+                leader_bus=leader_bus,
+                leader_to_follower=RAKUDA_MOTOR_MAPPING if leader_bus is not None else None,
+                follower_writable=None if writable is None else list(writable),
             )
             print(
                 "  head motors at start: "
@@ -771,6 +809,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print("stopping control:", "; ".join(pair.stop_control()))
             finally:
                 pair.disconnect()
+        if leader is not None:
+            leader.disconnect()
         if follower is not None:
             follower.disconnect()  # the follower's own convention: torque off on the way out
         loaded.cleanup()
