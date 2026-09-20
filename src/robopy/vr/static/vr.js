@@ -8,12 +8,13 @@
 //   * draws the robot "twin" from the poses the server sends, so the operator
 //     can see the machine's configuration next to the camera image.
 //
-// Controls (Meta Quest Touch):
-//   grip (squeeze)          clutch: while held, that hand follows the controller
+// Controls (Meta Quest Touch; the clutch button comes from the server's hello,
+// default A / X):
+//   A / X (thumb)           clutch: while held, that arm follows the controller
 //   trigger                 gripper (only when its travel is configured)
 //   both thumbstick clicks  re-centre (headset forward = robot front)
-//   A / X                   toggle "image follows head"
-//   B / Y                   toggle the robot twin
+//   B / Y                   toggle "image follows head"
+//   page checkbox           show / hide the robot twin
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/STLLoader.js';
 import { OrbitControls } from 'three/addons/OrbitControls.js';
@@ -36,6 +37,7 @@ const state = {
   controllers: {},       // index -> {handedness, grip, source}
   buttonsPrev: { left: {}, right: {} },
   cameraLocked: true,
+  clutchButton: 'a',     // 'a' (A/X), 'grip' or 'stick'; from hello
   frames: 0, lastFrameBytes: 0,
   connected: false,
 };
@@ -154,6 +156,16 @@ function setTwinOffset(offset) {
   robotGroup.matrix.copy(XR_FROM_ROBOT).multiply(t);
 }
 
+// Server-computed placement: the robot base at `p` (robot axes from the WebXR
+// floor origin) turned by `yaw` about +Z, so the twin's head sits where the
+// operator's head was at re-centring and faces their forward.
+function setTwinPose(twin) {
+  if (!twin) return;
+  const t = new THREE.Matrix4().makeTranslation(twin.p[0], twin.p[1], twin.p[2]);
+  const r = new THREE.Matrix4().makeRotationZ(twin.yaw);
+  robotGroup.matrix.copy(XR_FROM_ROBOT).multiply(t).multiply(r);
+}
+
 async function loadMeshes(model) {
   const loader = new STLLoader();
   const overlay = $('#overlay');
@@ -240,7 +252,10 @@ async function onHello(msg) {
   $('#arms-on').checked = msg.arms_enabled;
   if (msg.arms && msg.arms.left) $('#pos-scale').value = msg.arms.left.position_scale.toFixed(2);
   sizeImagePlane(msg.camera_fov_deg || 69);
-  setTwinOffset(msg.twin_offset_m || [0, 0, 1]);
+  state.clutchButton = msg.clutch_button || 'a';
+  if (msg.twin_offset_m) setTwinOffset(msg.twin_offset_m);
+  else if (msg.twin) setTwinPose(msg.twin);
+  else setTwinOffset([0, 0, 1]);   // until the first re-centre places it
   if (first && msg.model) await loadMeshes(msg.model);
   if (first) { connectCamera(); }
   renderStatus();
@@ -249,6 +264,7 @@ async function onHello(msg) {
 function onState(msg) {
   state.lastState = msg;
   if (msg.t != null) state.lastRttMs = performance.now() - msg.t;
+  if (msg.twin) setTwinPose(msg.twin);
   if (msg.geometries) applyPoses(msg.geometries);
   if (msg.tcp) for (const [side, pose] of Object.entries(msg.tcp)) { const f = tcpFrames[side]; if (f) placeObject(f, pose); }
   renderStatus();
@@ -339,9 +355,11 @@ function controllerEntry(frame, refSpace, source) {
   const gp = source.gamepad;
   const b = (k) => (gp && gp.buttons[k] ? gp.buttons[k] : null);
   const entry = xrPose(pose.transform);
-  entry.clutch = !!(b(1) && b(1).pressed);
   entry.trigger = b(0) ? b(0).value : 0;
-  entry.buttons = { a: !!(b(4) && b(4).pressed), b: !!(b(5) && b(5).pressed), stick: !!(b(3) && b(3).pressed) };
+  // xr-standard gamepad: 0 trigger, 1 squeeze (grip), 3 thumbstick click,
+  // 4 A/X, 5 B/Y.
+  entry.buttons = { a: !!(b(4) && b(4).pressed), b: !!(b(5) && b(5).pressed), stick: !!(b(3) && b(3).pressed), grip: !!(b(1) && b(1).pressed) };
+  entry.clutch = !!entry.buttons[state.clutchButton];
   entry.axes = gp ? [gp.axes[2] || 0, gp.axes[3] || 0] : [0, 0];
   return entry;
 }
@@ -350,8 +368,7 @@ function handleButtons(side, entry) {
   if (!entry) return;
   const prev = state.buttonsPrev[side];
   const now = entry.buttons;
-  if (now.a && !prev.a) setImageLocked(!state.cameraLocked);
-  if (now.b && !prev.b) { $('#twin-on').checked = !$('#twin-on').checked; robotGroup.visible = $('#twin-on').checked; }
+  if (now.b && !prev.b) setImageLocked(!state.cameraLocked);
   state.buttonsPrev[side] = { ...now };
 }
 
@@ -412,7 +429,7 @@ function renderStatus() {
       for (const n of m.notes) lines.push(`          note: ${n}`);
     } else lines.push('head      off (no tracker)');
     if (h.arms) {
-      lines.push(`arms      scale ${h.arms.left.position_scale}  orientation ${h.arms.left.orientation_enabled ? 'on' : 'off'}  grippers L:${h.arms.left.gripper_available ? 'on' : 'unmeasured'} R:${h.arms.right.gripper_available ? 'on' : 'unmeasured'}`);
+      lines.push(`arms      ${h.arms.left.mapping} mapping  clutch ${h.clutch_button === 'a' ? 'A/X' : h.clutch_button}  scale ${h.arms.left.position_scale}  orientation ${h.arms.left.orientation_enabled ? 'on' : 'off'}  grippers L:${h.arms.left.gripper_available ? 'on' : 'unmeasured'} R:${h.arms.right.gripper_available ? 'on' : 'unmeasured'}`);
     } else lines.push('arms      off (no teleop)');
   }
   if (s) {
@@ -425,7 +442,8 @@ function renderStatus() {
     for (const side of ['left', 'right']) {
       const a = (s.arms || {})[side];
       if (!a) continue;
-      lines.push(`${side.padEnd(9)} ${a.tracked ? (a.clutched ? 'CLUTCHED - following' : 'idle (squeeze grip to drive)') : 'controller not tracked'}${a.gripper_rad != null ? `  gripper ${(a.gripper_rad * DEG).toFixed(0)}°` : ''}`);
+      const hint = { a: side === 'left' ? 'hold X' : 'hold A', grip: 'squeeze grip', stick: 'click stick' }[state.clutchButton] || 'hold the clutch';
+      lines.push(`${side.padEnd(9)} ${a.tracked ? (a.clutched ? 'CLUTCHED - following' : `idle (${hint} to drive)`) : 'controller not tracked'}${a.gripper_rad != null ? `  gripper ${(a.gripper_rad * DEG).toFixed(0)}°` : ''}`);
     }
     if (s.ik) {
       const e = s.ik.errors || {};

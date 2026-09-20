@@ -77,7 +77,7 @@ from .xr_math import OperatorFrame, xr_pose_to_robot
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["TeleopSession", "VRServer", "VRServerConfig", "serve_vr"]
+__all__ = ["TeleopSession", "VRServer", "VRServerConfig", "head_anchor_position", "serve_vr"]
 
 _STATIC_DIR = Path(__file__).parent / "static"
 
@@ -93,9 +93,19 @@ class VRServerConfig:
         camera_fov_deg: Horizontal field of view the page uses to size the
             camera image.  The default is the Intel RealSense D435 colour
             sensor's data-sheet value; it is *not* a calibration of this camera.
-        twin_offset_m: Where the page draws the robot's base relative to the
-            operator's re-centred origin (x forward, y left, z up).  Purely
-            visual; the teleoperation is relative and does not depend on it.
+        twin_offset_m: Where the page draws the robot's base, in robot axes
+            (x forward, y left, z up) from the WebXR floor origin, or ``None``
+            to place the twin so that the robot's head anchor sits where the
+            operator's head was at re-centring -- the operator then stands in
+            the robot and, with the absolute arm mapping, the twin's hands
+            come to their own.  Purely visual either way.
+        arm_anchor_frame: Model frame whose position is the robot's head
+            anchor for the absolute arm mapping; ``"auto"`` takes
+            ``head_camera_link`` when the model has it.  Ignored when both
+            arms use the relative mapping.
+        clutch_button: Which controller button the page treats as the clutch:
+            ``"a"`` (A on the right, X on the left; the thumb), ``"grip"``
+            (the squeeze) or ``"stick"`` (the thumbstick click).
         head_enabled: Whether the head follows the headset at session start.
         arms_enabled: Whether the arms follow the controllers at session start.
     """
@@ -103,7 +113,9 @@ class VRServerConfig:
     state_hz: float = 30.0
     teleop_timeout_s: float = 5.0
     camera_fov_deg: float = 69.0
-    twin_offset_m: Tuple[float, float, float] = (0.0, 0.0, 1.0)
+    twin_offset_m: Tuple[float, float, float] | None = None
+    arm_anchor_frame: str = "auto"
+    clutch_button: str = "a"
     head_enabled: bool = True
     arms_enabled: bool = True
 
@@ -112,6 +124,54 @@ class VRServerConfig:
             raise ValueError("state_hz and teleop_timeout_s must be positive.")
         if not 10.0 <= self.camera_fov_deg <= 170.0:
             raise ValueError("camera_fov_deg must be within [10, 170].")
+        if self.clutch_button not in ("a", "grip", "stick"):
+            raise ValueError("clutch_button must be 'a', 'grip' or 'stick'.")
+
+
+#: Frames tried, in order, for the robot's head anchor when none is named.
+HEAD_ANCHOR_FRAMES: Tuple[str, ...] = ("head_camera_link", "head_link", "head")
+
+
+def head_anchor_position(
+    bundle: ModelBundle,
+    joints: Mapping[str, float],
+    head_tracker: HeadTracker | None,
+    frame: str = "auto",
+) -> NDArray[np.float64]:
+    """Position of the robot's head anchor in the base frame.
+
+    Computed at ``joints`` with the head joints at the forward-looking neutral
+    of ``head_tracker`` (when given), so the anchor does not depend on where
+    the head happens to point.
+
+    Args:
+        bundle: The model.
+        joints: Current joint positions, radians.
+        head_tracker: Supplies the head joints' neutral angles, or ``None``.
+        frame: A model frame, or ``"auto"``.
+
+    Raises:
+        ValueError: The frame is unknown (or none of the automatic candidates
+            exists).
+    """
+    model = bundle.model
+    if frame == "auto":
+        found = next((f for f in HEAD_ANCHOR_FRAMES if model.has_frame(f)), None)
+        if found is None:
+            raise ValueError(
+                f"no head anchor frame among {HEAD_ANCHOR_FRAMES}; name one with "
+                "arm_anchor_frame (--arm-anchor) or use the relative arm mapping"
+            )
+        frame = found
+    elif not model.has_frame(frame):
+        raise ValueError(f"arm anchor frame {frame!r} is not in the model")
+    positions = dict(joints)
+    if head_tracker is not None:
+        m = head_tracker.mapping
+        positions[m.yaw_joint] = m.yaw_neutral_rad
+        positions[m.pitch_joint] = m.pitch_neutral_rad
+    q = model.q_from_positions(positions, require_all=False)
+    return np.asarray(model.frame_pose(q, frame)[:3, 3], dtype=np.float64).copy()
 
 
 def _pose_entry(entry: Any) -> NDArray[np.float64] | None:
@@ -171,6 +231,13 @@ class TeleopSession:
         self._last_head: Dict[str, Any] = {}
         self._last_arms: Dict[str, Any] = {}
         self._last_report: Any = None
+        self.robot_anchor_m: NDArray[np.float64] | None = None
+        if arm_teleop is not None and arm_teleop.needs_anchor:
+            if bundle is None:
+                raise ValueError("the absolute arm mapping needs the model bundle for its anchor")
+            self.robot_anchor_m = head_anchor_position(
+                bundle, backend.joint_positions(), head_tracker, config.arm_anchor_frame
+            )
         if head_tracker is not None:
             head_tracker.reset(backend.joint_positions())
 
@@ -187,7 +254,14 @@ class TeleopSession:
             "head_enabled": self.head_enabled,
             "arms_enabled": self.arms_enabled,
             "camera_fov_deg": self.config.camera_fov_deg,
-            "twin_offset_m": list(self.config.twin_offset_m),
+            "twin_offset_m": None
+            if self.config.twin_offset_m is None
+            else list(self.config.twin_offset_m),
+            "twin": self._twin_pose(),
+            "clutch_button": self.config.clutch_button,
+            "robot_anchor_m": None
+            if self.robot_anchor_m is None
+            else [float(v) for v in self.robot_anchor_m],
             "state_hz": self.config.state_hz,
             "backend_info": self.backend.describe(),
         }
@@ -231,10 +305,34 @@ class TeleopSession:
                         setattr(arm.config, key, value)
         return self.hello()
 
+    def _recentre_operator(self, head_robot: NDArray[np.float64]) -> None:
+        """Re-centre the operator frame and re-anchor the absolute arm mapping."""
+        self.operator.recenter(head_robot)
+        if self.arm_teleop is not None and self.robot_anchor_m is not None:
+            self.arm_teleop.set_anchor(self.robot_anchor_m, self.operator.head_position_m)
+
+    def _twin_pose(self) -> Dict[str, Any] | None:
+        """Where the page should draw the robot: ``{"p", "yaw"}`` in robot axes.
+
+        With an explicit ``twin_offset_m`` the page places the twin itself.
+        Otherwise the twin is placed so its head anchor coincides with the
+        operator's head at re-centring, facing the operator's forward.
+        """
+        if (
+            self.config.twin_offset_m is not None
+            or self.robot_anchor_m is None
+            or not self.operator.recentred
+        ):
+            return None
+        base_op = np.eye(4)
+        base_op[:3, 3] = self.operator.head_position_m - self.robot_anchor_m
+        base = self.operator.from_operator(base_op)
+        return {"p": [float(v) for v in base[:3, 3]], "yaw": self.operator.yaw_offset_rad}
+
     def _recenter(self, now_s: float) -> Dict[str, Any]:
         if self._last_head_robot is None:
             return {"type": "error", "message": "no head pose received yet; cannot re-centre"}
-        self.operator.recenter(self._last_head_robot)
+        self._recentre_operator(self._last_head_robot)
         head_op = self.operator.to_operator(self._last_head_robot)
         if self.head_tracker is not None:
             self.head_tracker.recenter(head_op[:3, :3])
@@ -251,7 +349,7 @@ class TeleopSession:
         if head_robot is not None:
             self._last_head_robot = head_robot
             if not self.operator.recentred:
-                self.operator.recenter(head_robot)
+                self._recentre_operator(head_robot)
             head_op = self.operator.to_operator(head_robot)
             if self.head_tracker is not None and self.head_enabled:
                 torso_joint = self.head_tracker.mapping.torso_joint
@@ -347,7 +445,9 @@ class TeleopSession:
             "operator": {
                 "recentred": self.operator.recentred,
                 "yaw_offset_rad": self.operator.yaw_offset_rad,
+                "head_height_m": self.operator.head_height_m,
             },
+            "twin": self._twin_pose(),
             "head_enabled": self.head_enabled,
             "arms_enabled": self.arms_enabled,
             "backend": self.backend.name,
@@ -528,7 +628,11 @@ class VRServer(ViewerServer):
                     "state_hz": self.vr_config.state_hz,
                     "teleop_timeout_s": self.vr_config.teleop_timeout_s,
                     "camera_fov_deg": self.vr_config.camera_fov_deg,
-                    "twin_offset_m": list(self.vr_config.twin_offset_m),
+                    "twin_offset_m": None
+                    if self.vr_config.twin_offset_m is None
+                    else list(self.vr_config.twin_offset_m),
+                    "arm_anchor_frame": self.vr_config.arm_anchor_frame,
+                    "clutch_button": self.vr_config.clutch_button,
                 },
             }
 

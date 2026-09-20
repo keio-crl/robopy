@@ -44,7 +44,12 @@ from robopy.vr.arm_teleop import ArmTeleopConfig, DualArmTeleop  # noqa: E402
 from robopy.vr.backend import ControlSystemBackend, SimulationBackend, TeleopCommand  # noqa: E402
 from robopy.vr.camera import FrameStreamer, SyntheticFrameSource  # noqa: E402
 from robopy.vr.head_tracking import HeadJointMapping, HeadTracker, HeadTrackingConfig  # noqa: E402
-from robopy.vr.server import TeleopSession, VRServer, VRServerConfig  # noqa: E402
+from robopy.vr.server import (  # noqa: E402
+    TeleopSession,
+    VRServer,
+    VRServerConfig,
+    head_anchor_position,
+)
 
 from .test_vr_transport import RawClient  # noqa: E402
 
@@ -85,37 +90,140 @@ def bundle(synthetic_urdf: Path) -> ModelBundle:
     return ModelBundle.load(synthetic_urdf, soft_limits=SOFT_LIMITS)
 
 
+def xr_point(p_robot: Any) -> list[float]:
+    """A robot-axes point (x forward, y left, z up) as WebXR coordinates."""
+    x, y, z = (float(v) for v in p_robot)
+    return [-y, z, -x]
+
+
 def make_session(
     bundle: ModelBundle,
     *,
     arms: bool = True,
     head_tracking: bool = True,
     state_hz: float = 1000.0,
+    mapping: str = "relative",
+    config: VRServerConfig | None = None,
 ) -> Tuple[TeleopSession, SimulationBackend]:
     ik = IKSetup(bundle, config_overrides=STREAMING_IK_OVERRIDES)
     backend = SimulationBackend(bundle, ik)
     tracker = None
     if head_tracking:
-        mapping = HeadJointMapping.from_model(
+        head_mapping = HeadJointMapping.from_model(
             bundle.model,
             "head_yaw_dof",
             "head_pitch_dof",
             camera_frame="head_camera_link",
             torso_joint="torso_yaw_dof",
         )
-        tracker = HeadTracker(mapping, HeadTrackingConfig(filter_hz=None, max_rate_rad_s=100.0))
+        tracker = HeadTracker(
+            head_mapping, HeadTrackingConfig(filter_hz=None, max_rate_rad_s=100.0)
+        )
     teleop = None
     if arms:
-        fast = ArmTeleopConfig(max_speed_m_s=100.0, max_angular_speed_rad_s=100.0)
+        fast = ArmTeleopConfig(
+            mapping=mapping,  # type: ignore[arg-type]
+            max_speed_m_s=100.0,
+            max_angular_speed_rad_s=100.0,
+        )
         teleop = DualArmTeleop(fast, fast)
     session = TeleopSession(
         backend,
         head_tracker=tracker,
         arm_teleop=teleop,
-        config=VRServerConfig(state_hz=state_hz),
+        config=config or VRServerConfig(state_hz=state_hz),
         bundle=bundle,
     )
     return session, backend
+
+
+class TestAbsoluteMapping:
+    """The operator's head stands in for the robot's; a pressed arm goes to the controller."""
+
+    def test_hello_and_state_carry_the_anchor_clutch_and_twin(self, bundle: ModelBundle) -> None:
+        session, backend = make_session(bundle, mapping="absolute")
+        expected = head_anchor_position(
+            bundle, backend.joint_positions(), session.head_tracker, "head_camera_link"
+        )
+        hello = session.handle({"type": "hello"}, 0.0)
+        assert hello is not None
+        assert hello["clutch_button"] == "a"
+        assert hello["arms"]["left"]["mapping"] == "absolute"
+        assert hello["robot_anchor_m"] == pytest.approx(list(expected))
+        assert hello["twin_offset_m"] is None and hello["twin"] is None  # not re-centred yet
+        state = session.handle({"type": "pose", "head": HEAD0, "left": None, "right": None}, 0.1)
+        assert state is not None
+        assert state["operator"]["recentred"] and state["operator"]["head_height_m"] == 1.6
+        # The twin's head anchor is drawn where the headset is: base = head - anchor.
+        assert state["twin"]["yaw"] == pytest.approx(0.0)
+        assert state["twin"]["p"] == pytest.approx(list(np.array([0.0, 0.0, 1.6]) - expected))
+        assert hello["arms"]["left"]["anchor"] is None
+        assert session.arm_teleop is not None
+        assert session.arm_teleop.describe()["left"]["anchor"]["operator_m"] == [0.0, 0.0, 1.6]
+
+    def test_twin_follows_a_yawed_recentre(self, bundle: ModelBundle) -> None:
+        session, _ = make_session(bundle, mapping="absolute")
+        # The operator faces WebXR +X (a quarter turn to the right of -Z) from (1, 1.6, 2).
+        turned = {"p": [1.0, 1.6, 2.0], "q": q_about("y", -math.pi / 2)}
+        state = session.handle({"type": "pose", "head": turned, "left": None, "right": None}, 0.0)
+        assert state is not None
+        anchor = np.asarray(session.robot_anchor_m)
+        yaw = state["twin"]["yaw"]
+        p = np.asarray(state["twin"]["p"])
+        # Head in robot axes: (-z, -x, y) = (-2, -1, 1.6).  The base is placed so
+        # that anchor, turned by the operator's yaw, lands on the head.
+        c, s_ = math.cos(yaw), math.sin(yaw)
+        Rz = np.array([[c, -s_, 0.0], [s_, c, 0.0], [0.0, 0.0, 1.0]])
+        assert np.allclose(p + Rz @ anchor, [-2.0, -1.0, 1.6], atol=1e-9)
+        assert yaw == pytest.approx(-math.pi / 2)
+
+    def test_explicit_twin_offset_disables_the_automatic_placement(
+        self, bundle: ModelBundle
+    ) -> None:
+        cfg = VRServerConfig(state_hz=1000.0, twin_offset_m=(0.0, 0.0, 1.0))
+        session, _ = make_session(bundle, mapping="absolute", config=cfg)
+        hello = session.handle({"type": "hello"}, 0.0)
+        assert hello is not None and hello["twin_offset_m"] == [0.0, 0.0, 1.0]
+        state = session.handle({"type": "pose", "head": HEAD0, "left": None, "right": None}, 0.1)
+        assert state is not None and state["twin"] is None
+
+    def test_a_pressed_arm_goes_to_where_the_controller_is(self, bundle: ModelBundle) -> None:
+        session, backend = make_session(bundle, mapping="absolute")
+        session.handle({"type": "pose", "head": HEAD0, "left": None, "right": None}, 0.0)
+        anchor = np.asarray(session.robot_anchor_m)
+        head = np.array([0.0, 0.0, 1.6])
+        start = backend.hand_pose("left")[:3, 3].copy()
+        # Put the controller where the robot's hand "is" in the operator's body,
+        # 4 cm further forward.  Nothing about the controller's motion matters:
+        # it is held still and the hand comes to it.
+        controller_robot = head + (start - anchor) + np.array([0.04, 0.0, 0.0])
+        entry = {"p": xr_point(controller_robot), "q": [0, 0, 0, 1], "clutch": True, "trigger": 0.0}
+        t = 0.0
+        for _ in range(100):
+            t += 1.0 / 60.0
+            state = session.handle({"type": "pose", "head": HEAD0, "left": entry, "right": None}, t)
+        assert state is not None
+        assert state["arms"]["left"]["clutched"] and state["ik"]["commandable"]
+        target = state["arms"]["left"]["target"]["p"]
+        assert target == pytest.approx(list(start + [0.04, 0.0, 0.0]), abs=1e-9)
+        moved = backend.hand_pose("left")[:3, 3] - start
+        assert moved[0] == pytest.approx(0.04, abs=0.006)
+        assert abs(moved[1]) < 0.01 and abs(moved[2]) < 0.01
+        # The other arm was never pressed: held, its joints untouched by the solver.
+        assert not state["arms"]["right"]["enabled"]
+
+    def test_config_validation_and_anchor_lookup(self, bundle: ModelBundle) -> None:
+        with pytest.raises(ValueError, match="clutch_button"):
+            VRServerConfig(clutch_button="trigger")
+        joints = {n: 0.0 for n in bundle.model.movable_joint_names}
+        auto = head_anchor_position(bundle, joints, None, "auto")
+        named = head_anchor_position(bundle, joints, None, "head_camera_link")
+        assert np.allclose(auto, named)
+        with pytest.raises(ValueError, match="not in the model"):
+            head_anchor_position(bundle, joints, None, "no_such_frame")
+        cfg = VRServerConfig(arm_anchor_frame="no_such_frame")
+        with pytest.raises(ValueError, match="not in the model"):
+            make_session(bundle, mapping="absolute", config=cfg)
 
 
 class TestTeleopSession:

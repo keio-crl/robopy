@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
+import shutil
 import ssl
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, Sequence, Tuple
@@ -51,6 +54,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--cert", type=Path, help="TLS certificate (PEM); WebXR needs a secure context"
     )
     net.add_argument("--key", type=Path, help="TLS private key (PEM)")
+    net.add_argument(
+        "--self-signed",
+        action="store_true",
+        help="serve HTTPS with a self-signed certificate, generating it with openssl when "
+        "the files do not exist yet (default cert.pem/key.pem in the current directory, or "
+        "--cert/--key). The headset's browser will ask once to accept it.",
+    )
     net.add_argument(
         "--open-browser", action="store_true", help="open the page in a desktop browser"
     )
@@ -102,6 +112,28 @@ def build_parser() -> argparse.ArgumentParser:
     arms = parser.add_argument_group("arms")
     arms.add_argument("--no-arms", action="store_true", help="do not drive the arms")
     arms.add_argument(
+        "--mapping",
+        choices=["absolute", "relative"],
+        default="absolute",
+        help="absolute (default): while the clutch is held the hand goes to where the "
+        "controller is, with the operator's head at the robot's head; relative: only the "
+        "controller's motion since the press is applied",
+    )
+    arms.add_argument(
+        "--arm-anchor",
+        default="auto",
+        metavar="FRAME",
+        help="model frame that stands for the robot's head in the absolute mapping "
+        "(auto: head_camera_link when present)",
+    )
+    arms.add_argument(
+        "--clutch",
+        choices=["a", "grip", "stick"],
+        default="a",
+        help="controller button held to drive an arm: a (A on the right, X on the left; "
+        "default), grip (the squeeze) or stick (the thumbstick click)",
+    )
+    arms.add_argument(
         "--position-scale", type=float, default=1.0, help="robot metres per operator metre"
     )
     arms.add_argument("--no-orientation", action="store_true", help="translation-only hand targets")
@@ -140,12 +172,108 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--twin-offset",
-        default="0,0,1.0",
+        default="auto",
         metavar="X,Y,Z",
-        help="where the page draws the robot base relative to the operator (m, robot axes)",
+        help="where the page draws the robot base (m, robot axes from the WebXR floor "
+        "origin). Default auto: the robot's head where the operator's head was at "
+        "re-centring, so the twin's hands and the operator's agree",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser
+
+
+#: Where distributions keep the OpenSSL configuration.  Some ``openssl`` builds
+#: are compiled with a prefix that does not exist on the machine (e.g. a binary
+#: in /usr/bin looking for /usr/local/ssl/openssl.cnf); ``openssl req`` then
+#: fails even though a perfectly good config sits in one of these places.
+OPENSSL_CONF_CANDIDATES: Tuple[str, ...] = (
+    "/etc/ssl/openssl.cnf",
+    "/usr/lib/ssl/openssl.cnf",
+    "/etc/pki/tls/openssl.cnf",
+    "/usr/local/etc/openssl/openssl.cnf",
+    "/opt/homebrew/etc/openssl@3/openssl.cnf",
+)
+
+SELF_SIGNED_HINT = (
+    "generate one with\n"
+    "  openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 "
+    '-subj "/CN=robopy"\n'
+    "or pass --self-signed to let robopy-vr do it"
+)
+
+
+def generate_self_signed_certificate(
+    cert: Path, key: Path, *, days: int = 365, common_name: str = "robopy"
+) -> None:
+    """Write a self-signed certificate and key with ``openssl``.
+
+    WebXR only runs in a secure context, so a headset on the LAN needs HTTPS
+    even for a simulation.  The certificate is for the browser to accept once,
+    nothing more.  When the ``openssl`` binary cannot find its own configuration
+    (a broken compile-time prefix) the command is retried with the first config
+    found in :data:`OPENSSL_CONF_CANDIDATES`.
+
+    Raises:
+        RuntimeError: ``openssl`` is not installed or failed both times.
+    """
+    if shutil.which("openssl") is None:
+        raise RuntimeError("openssl is not installed; cannot generate a self-signed certificate")
+    command = [
+        "openssl",
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-keyout",
+        str(key),
+        "-out",
+        str(cert),
+        "-days",
+        str(days),
+        "-subj",
+        f"/CN={common_name}",
+    ]
+    cert.parent.mkdir(parents=True, exist_ok=True)
+    key.parent.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode == 0:
+        return
+    fallback = next((c for c in OPENSSL_CONF_CANDIDATES if Path(c).is_file()), None)
+    if "openssl.cnf" in result.stderr and fallback is not None and "OPENSSL_CONF" not in os.environ:
+        env = dict(os.environ, OPENSSL_CONF=fallback)
+        retry = subprocess.run(command, capture_output=True, text=True, env=env)
+        if retry.returncode == 0:
+            print(f"  note: openssl could not find its config; used OPENSSL_CONF={fallback}")
+            return
+        result = retry
+    raise RuntimeError("openssl failed to generate the certificate:\n" + result.stderr.strip())
+
+
+def _resolve_tls(
+    args: argparse.Namespace, parser: argparse.ArgumentParser
+) -> Tuple[Path, Path] | None:
+    """The certificate and key to serve with, or ``None`` for plain HTTP.
+
+    Checked before the model is loaded so a missing file stops the command at
+    once, with the way out, instead of a traceback after the start-up banner.
+    """
+    if (args.cert is None) != (args.key is None):
+        parser.error("--cert and --key go together")
+    if args.cert is None and not args.self_signed:
+        return None
+    cert = args.cert if args.cert is not None else Path("cert.pem")
+    key = args.key if args.key is not None else Path("key.pem")
+    missing = [str(p) for p in (cert, key) if not p.is_file()]
+    if missing and args.self_signed:
+        try:
+            generate_self_signed_certificate(cert, key)
+        except RuntimeError as exc:
+            parser.error(str(exc))
+        print(f"Self-signed certificate written: {cert} / {key}")
+    elif missing:
+        parser.error(f"TLS file(s) not found: {', '.join(missing)}\n{SELF_SIGNED_HINT}")
+    return cert, key
 
 
 def _parse_triplet(
@@ -237,8 +365,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
-    if (args.cert is None) != (args.key is None):
-        parser.error("--cert and --key go together")
+    tls = _resolve_tls(args, parser)
     if args.hardware and not args.config:
         parser.error("--hardware needs --config so the page shows the model the controller uses")
     if args.no_head and args.no_arms:
@@ -364,6 +491,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
                 configs = {
                     side: ArmTeleopConfig(
+                        mapping=args.mapping,
                         position_scale=args.position_scale,
                         orientation_enabled=not args.no_orientation,
                         max_speed_m_s=args.max_hand_speed,
@@ -382,6 +510,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         print(
                             f"  {side} gripper: travel not given (--gripper); trigger does nothing."
                         )
+                clutch_name = {"a": "A / X", "grip": "grip", "stick": "thumbstick click"}[
+                    args.clutch
+                ]
+                print(f"Arms: {args.mapping} mapping; hold {clutch_name} to drive an arm.")
 
         if head_tracker is None and arm_teleop is None:
             print("Nothing to teleoperate.", file=sys.stderr)
@@ -400,9 +532,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         camera = _make_camera(args, caption)
         ssl_context = None
-        if args.cert is not None:
+        if tls is not None:
             ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-            ssl_context.load_cert_chain(str(args.cert), str(args.key))
+            ssl_context.load_cert_chain(str(tls[0]), str(tls[1]))
 
         server = VRServer(
             bundle,
@@ -417,7 +549,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             config=VRServerConfig(
                 state_hz=args.state_hz,
                 camera_fov_deg=args.camera_fov,
-                twin_offset_m=_parse_triplet(args.twin_offset, parser, "--twin-offset"),
+                twin_offset_m=None
+                if args.twin_offset == "auto"
+                else _parse_triplet(args.twin_offset, parser, "--twin-offset"),
+                arm_anchor_frame=args.arm_anchor,
+                clutch_button=args.clutch,
             ),
         )
         serve_vr(server, open_browser=args.open_browser)

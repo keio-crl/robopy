@@ -1,12 +1,21 @@
 """Controller poses -> Cartesian arm targets, with a clutch.
 
-Each controller drives one arm *relatively*: while the operator squeezes the
-grip (the clutch), the controller's displacement and rotation since the squeeze
-began are applied to the hand's pose captured at that moment.  Releasing the
-clutch freezes the target (the solver then holds the hand) and lets the
-operator reposition their own arm without moving the robot's.  This is the
-usual scheme for a headset because absolute mapping would require the
-operator's shoulders to coincide with the robot's -- they never do.
+Each controller drives one arm only while its clutch button is held; released,
+the target freezes and the solver holds the hand.  Two mappings exist:
+
+* ``"absolute"`` (the default): the operator's head and the robot's head are
+  made to coincide -- the headset position at re-centring maps to a reference
+  point on the robot's head (see :meth:`ArmTeleop.set_anchor`) -- and while
+  the clutch is held the hand target *is* the controller's position in that
+  correspondence, scaled about the head.  Pressing the button therefore pulls
+  the hand towards where the controller is, at the slew-limited speed; the
+  operator sees the twin's hands come to their own.  The orientation is still
+  applied relatively, as the rotation of the controller since the press: the
+  grip's axes and a two-axis wrist's TCP have no natural correspondence.
+* ``"relative"``: the controller's displacement and rotation since the press
+  are applied to the hand's pose captured at that moment; pressing moves
+  nothing.  Used when the operator's and the robot's reach differ so much that
+  an absolute correspondence is not usable.
 
 The trigger drives the gripper *only* when the gripper's open and closed
 angles have been measured on the machine and put in the configuration; with
@@ -19,7 +28,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, Mapping, Tuple
+from typing import Any, Dict, Literal, Mapping, Tuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -43,7 +52,11 @@ class ArmTeleopConfig:
     """Per-arm teleoperation tunables.
 
     Attributes:
-        position_scale: Robot metres per operator metre while clutched.
+        mapping: ``"absolute"`` (hand target = controller position about the
+            head anchor) or ``"relative"`` (displacement since the press).
+            See the module docstring.
+        position_scale: Robot metres per operator metre while clutched.  In
+            absolute mapping the scaling is about the head anchor.
         orientation_enabled: Whether the controller's rotation drives the
             hand's orientation.  With a two-axis wrist a translation-only
             mapping is often the usable one; see the orientation weight of
@@ -59,6 +72,7 @@ class ArmTeleopConfig:
         gripper_closed_rad: Measured gripper angle at trigger 1, or ``None``.
     """
 
+    mapping: Literal["absolute", "relative"] = "absolute"
     position_scale: float = 1.0
     orientation_enabled: bool = True
     max_speed_m_s: float = 0.6
@@ -70,6 +84,8 @@ class ArmTeleopConfig:
     gripper_closed_rad: float | None = None
 
     def __post_init__(self) -> None:
+        if self.mapping not in ("absolute", "relative"):
+            raise ValueError("mapping must be 'absolute' or 'relative'.")
         if not 0.0 < self.position_scale <= 5.0:
             raise ValueError("position_scale must be within (0, 5].")
         if self.max_speed_m_s <= 0.0 or self.max_angular_speed_rad_s <= 0.0:
@@ -144,7 +160,7 @@ class ArmCommand:
 
 
 class ArmTeleop:
-    """Clutch-based relative teleoperation of one arm."""
+    """Clutch-based teleoperation of one arm (absolute or relative mapping)."""
 
     def __init__(self, side: str, config: ArmTeleopConfig | None = None) -> None:
         """Bind the teleoperator to one side.
@@ -162,6 +178,8 @@ class ArmTeleop:
         self._hand0: NDArray[np.float64] | None = None
         self._target: NDArray[np.float64] | None = None
         self._last_time: float | None = None
+        self._robot_anchor: NDArray[np.float64] | None = None
+        self._operator_anchor: NDArray[np.float64] | None = None
 
     @property
     def clutched(self) -> bool:
@@ -172,6 +190,33 @@ class ArmTeleop:
     def target(self) -> NDArray[np.float64] | None:
         """The latched hand target, if any."""
         return None if self._target is None else self._target.copy()
+
+    @property
+    def anchor(self) -> Tuple[NDArray[np.float64], NDArray[np.float64]] | None:
+        """``(robot_anchor_m, operator_anchor_m)`` of the absolute mapping, if set."""
+        if self._robot_anchor is None or self._operator_anchor is None:
+            return None
+        return self._robot_anchor.copy(), self._operator_anchor.copy()
+
+    def set_anchor(self, robot_anchor_m: Any, operator_anchor_m: Any) -> None:
+        """Make two points correspond: one on the robot, one on the operator.
+
+        The absolute mapping sends the controller position ``p`` (operator
+        frame) to the hand target ``robot + scale * (p - operator)``.  The
+        natural choice is the robot's head (its camera, say) for ``robot`` and
+        the headset position at re-centring for ``operator``: the operator
+        then stands "inside" the robot, and their hands and the robot's agree.
+
+        Args:
+            robot_anchor_m: ``(3,)`` point in the robot's base frame.
+            operator_anchor_m: ``(3,)`` point in the operator frame.
+        """
+        robot = np.asarray(robot_anchor_m, dtype=np.float64).reshape(3)
+        operator = np.asarray(operator_anchor_m, dtype=np.float64).reshape(3)
+        if not (np.all(np.isfinite(robot)) and np.all(np.isfinite(operator))):
+            raise ValueError("Anchor points must be finite.")
+        self._robot_anchor = robot.copy()
+        self._operator_anchor = operator.copy()
 
     def release(self) -> None:
         """Disengage the clutch (the target stays latched as a hold)."""
@@ -198,8 +243,15 @@ class ArmTeleop:
 
         Returns:
             The :class:`ArmCommand` for this step.
+
+        Raises:
+            RuntimeError: Absolute mapping with no anchor (see :meth:`set_anchor`).
         """
         c = self.config
+        if c.mapping == "absolute" and self._robot_anchor is None:
+            raise RuntimeError(
+                f"{self.side} arm: absolute mapping needs set_anchor() before update()."
+            )
         gripper = None if sample is None else c.gripper_target(sample.trigger)
         if sample is None or sample.pose is None:
             released = self._clutched
@@ -238,9 +290,15 @@ class ArmTeleop:
         assert self._controller0 is not None and self._hand0 is not None
         assert self._target is not None
         desired = np.eye(4)
-        desired[:3, 3] = self._hand0[:3, 3] + c.position_scale * (
-            pose[:3, 3] - self._controller0[:3, 3]
-        )
+        if c.mapping == "absolute":
+            assert self._robot_anchor is not None and self._operator_anchor is not None
+            desired[:3, 3] = self._robot_anchor + c.position_scale * (
+                pose[:3, 3] - self._operator_anchor
+            )
+        else:
+            desired[:3, 3] = self._hand0[:3, 3] + c.position_scale * (
+                pose[:3, 3] - self._controller0[:3, 3]
+            )
         if c.orientation_enabled:
             desired[:3, :3] = pose[:3, :3] @ self._controller0[:3, :3].T @ self._hand0[:3, :3]
         else:
@@ -294,6 +352,13 @@ class ArmTeleop:
             }
         return {
             "side": self.side,
+            "mapping": self.config.mapping,
+            "anchor": None
+            if self._robot_anchor is None or self._operator_anchor is None
+            else {
+                "robot_m": [float(v) for v in self._robot_anchor],
+                "operator_m": [float(v) for v in self._operator_anchor],
+            },
             "clutched": self._clutched,
             "target": target,
             "position_scale": self.config.position_scale,
@@ -366,6 +431,16 @@ class DualArmTeleop:
         self.arms = {"left": ArmTeleop("left", left), "right": ArmTeleop("right", right)}
         self.torso_policy = torso_policy
         self.target_ttl_s = target_ttl_s
+
+    @property
+    def needs_anchor(self) -> bool:
+        """Whether either arm uses the absolute mapping (and so needs an anchor)."""
+        return any(arm.config.mapping == "absolute" for arm in self.arms.values())
+
+    def set_anchor(self, robot_anchor_m: Any, operator_anchor_m: Any) -> None:
+        """Set both arms' anchor; see :meth:`ArmTeleop.set_anchor`."""
+        for arm in self.arms.values():
+            arm.set_anchor(robot_anchor_m, operator_anchor_m)
 
     def release_all(self) -> None:
         """Disengage both clutches, e.g. when the operator's stream stops."""
