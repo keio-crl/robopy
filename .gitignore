@@ -33,3 +33,6 @@ data/
 # robopy-vr --self-signed writes these into the working directory
 cert.pem
 key.pem
+
+# robopy-vr session recordings and their videos
+recordings/

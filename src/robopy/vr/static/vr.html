@@ -18,6 +18,8 @@
   #vr-bar { display:flex; gap:.6rem; align-items:center; padding:.4rem .8rem; flex-wrap:wrap; }
   #vr-bar button.primary { background:#ff9f43; color:#1c2027; font-weight:600; }
   #vr-bar button[disabled] { opacity:.45; }
+  #vr-bar button.rec { color:#ff7b72; }
+  #vr-bar button.rec.on { background:#ff7b72; color:#1c2027; font-weight:600; }
   #vr-status { font-family: ui-monospace, monospace; font-size:.8rem; white-space:pre; line-height:1.35;
                padding:.5rem .8rem; border-top:1px solid #2a2f38; max-height:34vh; overflow:auto; }
   #vr-status .ok { color:#7bd88f; } #vr-status .warn { color:#ffcf6b; } #vr-status .bad { color:#ff7b72; }
@@ -42,7 +44,10 @@
   <button id="recenter" title="Take the current headset direction as the robot's front (also: click both thumbsticks)">Re-centre</button>
   <label><input type="checkbox" id="head-on" checked> head</label>
   <label><input type="checkbox" id="arms-on" checked> arms</label>
+  <button id="record" class="rec" title="Record the session on the server; videos are rendered when you stop (also: B / Y in VR)">&#9679; Record</button>
   <label><input type="checkbox" id="twin-on" checked> robot twin</label>
+  <label><input type="checkbox" id="mirror-on" checked> mirror</label>
+  <label>at <input id="mirror-dist" type="number" class="num short" value="1.5" step="0.1" min="0.5" max="5"> m</label>
   <label><input type="checkbox" id="cam-lock" checked> image follows head</label>
   <label>scale <input id="pos-scale" type="number" class="num short" value="1.0" step="0.1" min="0.1" max="5"></label>
   <span id="xr-support" class="hint"></span>

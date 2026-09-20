@@ -86,6 +86,7 @@ audio = ["pyaudio>=0.2.14"]
 [project.scripts]
 robopy-viewer = "robopy.viewer.__main__:main"
 robopy-vr = "robopy.vr.__main__:main"
+robopy-vr-render = "robopy.vr.render:main"
 robopy-models = "robopy.models:main"
 robopy-rakuda-mjcf = "robopy.sim.mjcf_export:main"
 

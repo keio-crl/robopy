@@ -178,6 +178,20 @@ def build_parser() -> argparse.ArgumentParser:
         "origin). Default auto: the robot's head where the operator's head was at "
         "re-centring, so the twin's hands and the operator's agree",
     )
+    rec = parser.add_argument_group("recording")
+    rec.add_argument(
+        "--record-dir",
+        type=Path,
+        default=Path("recordings"),
+        help="where session recordings and their videos go (default: ./recordings)",
+    )
+    rec.add_argument("--no-record", action="store_true", help="disable recording")
+    rec.add_argument(
+        "--no-render",
+        action="store_true",
+        help="keep the recording log but do not render videos after each recording "
+        "(render later with robopy-vr-render)",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser
 
@@ -554,8 +568,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 else _parse_triplet(args.twin_offset, parser, "--twin-offset"),
                 arm_anchor_frame=args.arm_anchor,
                 clutch_button=args.clutch,
+                record_dir=None if args.no_record else args.record_dir,
+                render_videos=not args.no_render,
             ),
         )
+        if not args.no_record:
+            renderer = "off (--no-render)"
+            if not args.no_render:
+                try:
+                    import mujoco  # noqa: F401
+
+                    renderer = "MuJoCo"
+                except ImportError:
+                    renderer = "UNAVAILABLE: install mujoco (uv run --with mujoco ...)"
+            print(
+                f"Recording: B / Y or the page's Record button; files in "
+                f"{args.record_dir.resolve()}; video renderer {renderer}"
+            )
         serve_vr(server, open_browser=args.open_browser)
     finally:
         if pair is not None:

@@ -13,8 +13,13 @@
 //   A / X (thumb)           clutch: while held, that arm follows the controller
 //   trigger                 gripper (only when its travel is configured)
 //   both thumbstick clicks  re-centre (headset forward = robot front)
-//   B / Y                   toggle "image follows head"
-//   page checkbox           show / hide the robot twin
+//   B / Y                   start / stop recording on the server
+//   page checkboxes         robot twin, its mirror, "image follows head"
+//
+// The mirror: the twin is drawn again, reflected in a vertical plane a
+// chosen distance in front of the robot's head, so the operator -- who stands
+// inside the twin -- sees the machine face them as in a mirror, left on the
+// left.
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/STLLoader.js';
 import { OrbitControls } from 'three/addons/OrbitControls.js';
@@ -38,6 +43,8 @@ const state = {
   buttonsPrev: { left: {}, right: {} },
   cameraLocked: true,
   clutchButton: 'a',     // 'a' (A/X), 'grip' or 'stick'; from hello
+  mirrorOn: true, mirrorDistance: 1.5,
+  recording: null,       // server's recorder state (from hello / state)
   frames: 0, lastFrameBytes: 0,
   connected: false,
 };
@@ -79,6 +86,10 @@ const robotGroup = new THREE.Group();     // twin placement (offset in robot fra
 robotGroup.matrixAutoUpdate = false;
 scene.add(robotGroup);
 const tcpFrames = {};                     // side -> AxesHelper inside robotGroup
+const mirrorGroup = new THREE.Group();    // the twin reflected in a plane ahead of it
+mirrorGroup.matrixAutoUpdate = false;
+scene.add(mirrorGroup);
+const mirrorMeshes = [];                  // same indices as state.meshes
 
 // Camera image: a plane 1.5 m ahead, sized by the horizontal FOV.
 const IMAGE_DISTANCE = 1.5;
@@ -148,12 +159,27 @@ function placeObject(obj, pose) {
 
 function applyPoses(poses) {
   state.lastPoses = poses;
-  poses.forEach((pose, i) => { const obj = state.meshes[i]; if (obj) placeObject(obj, pose); });
+  poses.forEach((pose, i) => {
+    const obj = state.meshes[i]; if (obj) placeObject(obj, pose);
+    const m = mirrorMeshes[i]; if (m) placeObject(m, pose);
+  });
+}
+
+// Reflection of the twin in the vertical plane x = d (robot axes), d being the
+// head anchor's x plus the chosen distance: x' = 2d - x.  A negative-scale
+// matrix flips the winding; three.js renders it correctly.
+function updateMirror() {
+  const anchor = (state.hello && state.hello.robot_anchor_m) || [0, 0, 0];
+  const d = anchor[0] + state.mirrorDistance;
+  const reflect = new THREE.Matrix4().makeTranslation(2 * d, 0, 0).multiply(new THREE.Matrix4().makeScale(-1, 1, 1));
+  mirrorGroup.matrix.copy(robotGroup.matrix).multiply(reflect);
+  mirrorGroup.visible = state.mirrorOn;
 }
 
 function setTwinOffset(offset) {
   const t = new THREE.Matrix4().makeTranslation(offset[0], offset[1], offset[2]);
   robotGroup.matrix.copy(XR_FROM_ROBOT).multiply(t);
+  updateMirror();
 }
 
 // Server-computed placement: the robot base at `p` (robot axes from the WebXR
@@ -164,6 +190,7 @@ function setTwinPose(twin) {
   const t = new THREE.Matrix4().makeTranslation(twin.p[0], twin.p[1], twin.p[2]);
   const r = new THREE.Matrix4().makeRotationZ(twin.yaw);
   robotGroup.matrix.copy(XR_FROM_ROBOT).multiply(t).multiply(r);
+  updateMirror();
 }
 
 async function loadMeshes(model) {
@@ -174,9 +201,12 @@ async function loadMeshes(model) {
   const material = new THREE.MeshStandardMaterial({ color: 0xb8bec8, roughness: 0.6, metalness: 0.15 });
   const attach = (i, obj) => {
     state.meshes[i] = obj;
+    const twin = obj.clone();
+    mirrorMeshes[i] = twin;
     const pose = state.lastPoses && state.lastPoses[i];
-    if (pose) placeObject(obj, pose);
+    if (pose) { placeObject(obj, pose); placeObject(twin, pose); }
     robotGroup.add(obj);
+    mirrorGroup.add(twin);
   };
   const jobs = model.geometries.map((g, i) => new Promise((resolve) => {
     if (g.shape.type !== 'mesh') {
@@ -231,6 +261,7 @@ function connectTeleop() {
     state.received += 1;
     if (msg.type === 'hello') onHello(msg);
     else if (msg.type === 'state') onState(msg);
+    else if (msg.type === 'recording') { state.recording = msg.recording; renderStatus(); }
     else if (msg.type === 'error') { setStatus(`server error: ${msg.message}`, 'bad'); console.warn(msg.message); }
   };
   ws.onclose = () => {
@@ -253,6 +284,9 @@ async function onHello(msg) {
   if (msg.arms && msg.arms.left) $('#pos-scale').value = msg.arms.left.position_scale.toFixed(2);
   sizeImagePlane(msg.camera_fov_deg || 69);
   state.clutchButton = msg.clutch_button || 'a';
+  state.recording = msg.recording || null;
+  imagePlane.visible = msg.camera_available !== false;
+  $('#record').disabled = !msg.recording;
   if (msg.twin_offset_m) setTwinOffset(msg.twin_offset_m);
   else if (msg.twin) setTwinPose(msg.twin);
   else setTwinOffset([0, 0, 1]);   // until the first re-centre places it
@@ -265,9 +299,25 @@ function onState(msg) {
   state.lastState = msg;
   if (msg.t != null) state.lastRttMs = performance.now() - msg.t;
   if (msg.twin) setTwinPose(msg.twin);
+  if (msg.recording !== undefined) state.recording = msg.recording;
   if (msg.geometries) applyPoses(msg.geometries);
   if (msg.tcp) for (const [side, pose] of Object.entries(msg.tcp)) { const f = tcpFrames[side]; if (f) placeObject(f, pose); }
   renderStatus();
+}
+
+function toggleRecording() { send({ type: 'record', action: 'toggle' }); }
+
+function recordingLine() {
+  const r = state.recording;
+  if (!r) return 'recording  off (server started without a recording directory)';
+  const mmss = (s) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
+  if (r.active) return `recording  ● REC ${mmss(r.seconds)}  (${r.frames} frames; B / Y or the button stops)`;
+  const rd = r.render;
+  if (rd && rd.status === 'rendering') return `recording  rendering video… ${Math.round(rd.progress * 100)}%`;
+  if (rd && rd.status === 'done') return `recording  saved ${rd.outputs.map((p) => p.split('/').pop()).join(', ')} in ${r.directory}`;
+  if (rd && rd.status === 'failed') return `recording  render FAILED: ${rd.error}  (log kept: ${r.last_recording})`;
+  if (r.last_recording) return `recording  saved ${r.last_recording}`;
+  return 'recording  idle (B / Y or the button starts)';
 }
 
 function send(obj) {
@@ -368,7 +418,7 @@ function handleButtons(side, entry) {
   if (!entry) return;
   const prev = state.buttonsPrev[side];
   const now = entry.buttons;
-  if (now.b && !prev.b) setImageLocked(!state.cameraLocked);
+  if (now.b && !prev.b) toggleRecording();
   state.buttonsPrev[side] = { ...now };
 }
 
@@ -432,6 +482,11 @@ function renderStatus() {
       lines.push(`arms      ${h.arms.left.mapping} mapping  clutch ${h.clutch_button === 'a' ? 'A/X' : h.clutch_button}  scale ${h.arms.left.position_scale}  orientation ${h.arms.left.orientation_enabled ? 'on' : 'off'}  grippers L:${h.arms.left.gripper_available ? 'on' : 'unmeasured'} R:${h.arms.right.gripper_available ? 'on' : 'unmeasured'}`);
     } else lines.push('arms      off (no teleop)');
   }
+  lines.push(recordingLine());
+  const recBtn = $('#record');
+  const active = !!(state.recording && state.recording.active);
+  recBtn.textContent = active ? '\u25a0 Stop' : '\u25cf Record';
+  recBtn.classList.toggle('on', active);
   if (s) {
     const hd = s.head || {};
     lines.push(`operator  ${s.operator.recentred ? 'recentred' : 'NOT recentred'}  head ${s.head_enabled ? 'on' : 'off'}  arms ${s.arms_enabled ? 'on' : 'off'}`);
@@ -479,6 +534,12 @@ $('#recenter').addEventListener('click', () => send({ type: 'recenter' }));
 $('#head-on').addEventListener('change', (e) => send({ type: 'set', head_enabled: e.target.checked }));
 $('#arms-on').addEventListener('change', (e) => send({ type: 'set', arms_enabled: e.target.checked }));
 $('#twin-on').addEventListener('change', (e) => { robotGroup.visible = e.target.checked; });
+$('#mirror-on').addEventListener('change', (e) => { state.mirrorOn = e.target.checked; updateMirror(); });
+$('#mirror-dist').addEventListener('change', (e) => {
+  const v = parseFloat(e.target.value);
+  if (Number.isFinite(v) && v > 0) { state.mirrorDistance = v; updateMirror(); }
+});
+$('#record').addEventListener('click', toggleRecording);
 $('#cam-lock').addEventListener('change', (e) => setImageLocked(e.target.checked));
 $('#pos-scale').addEventListener('change', (e) => {
   const v = parseFloat(e.target.value);
