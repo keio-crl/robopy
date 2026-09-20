@@ -75,7 +75,7 @@ states, _ = env.reset()
 ```
 
 インストールは [`rakuda.lift_block` のページ](rakuda_lift_block.md#1-インストール) と同じで、
-`pip install -e ".[roboverse]"` だけです。RoboVerse 側の変更は要りません。
+`pip install -e ".[sim]"` だけです。RoboVerse 側の変更は要りません。
 
 テーブルの MJCF は生成物なのでリポジトリに入っていますが、作り直すこともできます。
 

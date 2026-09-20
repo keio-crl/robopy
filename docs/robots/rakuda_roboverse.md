@@ -7,8 +7,9 @@ robopy は MetaSim の `metasim.packages` エントリポイントで自身の�
 インストールするだけで `get_robot("rakuda")` と `rakuda.*` のタスク名が解決されます。
 
 ```bash
-# RoboVerse が入っている環境で
-pip install -e ".[roboverse]"
+# RoboVerse が入っている環境で（MetaSim は PyPI に無いので、この環境が前提です。
+# robopy 側に roboverse extra はありません: uv のロックが解決できなくなるためです）
+pip install -e ".[sim]"
 
 python -c "from metasim.utils.setup_util import get_robot; print(get_robot('rakuda').mjcf_path)"
 ```

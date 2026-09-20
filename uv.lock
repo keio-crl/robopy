@@ -2885,6 +2885,9 @@ kinematics = [
 realsense = [
     { name = "pyrealsense2" },
 ]
+sim = [
+    { name = "mujoco" },
+]
 spacemouse = [
     { name = "pyspacemouse" },
 ]
@@ -2935,6 +2938,7 @@ requires-dist = [
     { name = "imageio", specifier = ">=2.37.0" },
     { name = "librosa", specifier = ">=0.11.0" },
     { name = "matplotlib", specifier = ">=3.10.3" },
+    { name = "mujoco", marker = "extra == 'sim'", specifier = ">=3.2" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "opencv-python", specifier = ">=4.10" },
     { name = "pin", marker = "extra == 'kinematics'", specifier = ">=3.2.0" },
@@ -2950,7 +2954,7 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "xarm-python-sdk", specifier = ">=1.17.0" },
 ]
-provides-extras = ["audio", "realsense", "spacemouse", "kinematics"]
+provides-extras = ["audio", "realsense", "spacemouse", "kinematics", "sim"]
 
 [package.metadata.requires-dev]
 audio = [{ name = "pyaudio", specifier = ">=0.2.14" }]

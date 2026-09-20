@@ -43,13 +43,12 @@ kinematics = [
 # the exported MJCF is committed, so simulating the robot needs whatever the
 # simulator itself brings.
 sim = ["mujoco>=3.2"]
-# Everything needed to put the Rakuda into a RoboVerse scene and step it.
-# MetaSim finds robopy's content pack through the entry point below, so this
-# extra exists only to pull the simulator in; `pip install robopy` alone is
-# enough when MetaSim and MuJoCo are already in the environment.
-roboverse = [
-    "roboverse-metasim[mujoco]>=1.0.0b0",
-]
+# RoboVerse / MetaSim is not on PyPI (it is installed from the RoboVerse
+# checkout, which also pins Python < 3.13), so there is deliberately no
+# `roboverse` extra: an extra naming `roboverse-metasim` made `uv lock` and
+# `uv sync` fail for the whole project.  MetaSim finds robopy's content pack
+# through the entry point below, so `pip install robopy` (plus the `sim`
+# extra for MuJoCo) into the RoboVerse environment is the whole setup.
 
 [dependency-groups]
 dev = [

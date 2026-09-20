@@ -3,7 +3,7 @@
 Skipped wholesale when MetaSim is not installed, which is the normal state of a
 robopy checkout -- RoboVerse brings its own environment.  Install into it with::
 
-    pip install -e ".[roboverse]"
+    pip install -e ".[sim]"
 """
 
 from __future__ import annotations
