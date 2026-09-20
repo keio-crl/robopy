@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 import os
 import shutil
 import ssl
@@ -72,7 +73,11 @@ def build_parser() -> argparse.ArgumentParser:
     cam.add_argument(
         "--camera",
         default="synthetic",
-        help="synthetic (default), none, or opencv:<index|/dev/videoN|url>",
+        help="synthetic (default), none, opencv:<index|/dev/videoN|url>, or "
+        "realsense[:index] (the colour stream of an Intel RealSense; needs pyrealsense2)",
+    )
+    cam.add_argument(
+        "--camera-size", default="640x480", metavar="WxH", help="RealSense colour stream size"
     )
     cam.add_argument("--camera-fps", type=float, default=30.0)
     cam.add_argument("--jpeg-quality", type=int, default=75)
@@ -157,6 +162,26 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="drive the real follower via .robopy/rakuda/config.yaml (needs --config and a "
         "control section in cartesian_teleop mode). THE ROBOT WILL MOVE.",
+    )
+    hw.add_argument(
+        "--hardware-head",
+        action="store_true",
+        help="drive ONLY the real follower's two head motors from the headset, straight on "
+        "the bus: no leader, no control system, no arm motion, no joint calibration needed. "
+        "The pose at start is taken as looking ahead. THE HEAD WILL MOVE.",
+    )
+    hw.add_argument(
+        "--head-signs",
+        default="auto",
+        metavar="YAW,PITCH",
+        help="--hardware-head: motor direction per headset direction, e.g. -1,1. auto: the "
+        "URDF's sign times the configured motor direction (+1 unless measured)",
+    )
+    hw.add_argument(
+        "--head-range",
+        default="60,35",
+        metavar="YAW,PITCH",
+        help="--hardware-head: degrees of travel allowed either side of the start pose",
     )
     hw.add_argument("--leader-port", default=None, help="leader serial port (config default)")
     hw.add_argument("--follower-port", default=None, help="follower serial port (config default)")
@@ -321,6 +346,68 @@ def _parse_grippers(
     return out
 
 
+def _parse_signs(text: str, parser: argparse.ArgumentParser) -> Tuple[int, int] | None:
+    if text.strip().lower() == "auto":
+        return None
+    try:
+        yaw, pitch = (int(v) for v in text.split(","))
+    except ValueError:
+        parser.error(f"--head-signs expects YAW,PITCH as +1/-1 or auto, got {text!r}")
+    if yaw not in (1, -1) or pitch not in (1, -1):
+        parser.error("--head-signs values must be 1 or -1")
+    return yaw, pitch
+
+
+def _head_motors(
+    args: argparse.Namespace, parser: argparse.ArgumentParser, cfg: Any, model: Any
+) -> Tuple[Any, Any]:
+    """The two head motors for ``--hardware-head``, with what the config knows of them."""
+    from robopy.config.robot_config.rakuda_config import RAKUDA_HEAD_MOTOR_NAMES
+
+    from .head_only import HeadMotor
+
+    try:
+        yaw_range, pitch_range = (float(v) for v in args.head_range.split(","))
+    except ValueError:
+        parser.error(f"--head-range expects YAW,PITCH degrees, got {args.head_range!r}")
+    if yaw_range <= 0 or pitch_range <= 0:
+        parser.error("--head-range values must be positive")
+    yaw_joint, pitch_joint = _infer_head_joints(list(model.movable_joint_names), parser)
+    # The model's forward-looking neutral, so the page's twin shows the head
+    # where the start pose is taken to be; the URDF zero is turned aside.
+    neutral: Dict[str, float] = {}
+    try:
+        from .head_tracking import HeadJointMapping
+
+        camera = "head_camera_link" if model.has_frame("head_camera_link") else None
+        neutral = HeadJointMapping.from_model(
+            model, yaw_joint, pitch_joint, camera_frame=camera
+        ).neutral_positions()
+    except ValueError:
+        pass
+    calibration = {}
+    if cfg.control is not None:
+        calibration = dict(cfg.control.follower_joint_calibration)
+    motors = []
+    for motor_name, urdf_joint, travel in zip(
+        RAKUDA_HEAD_MOTOR_NAMES, (yaw_joint, pitch_joint), (yaw_range, pitch_range)
+    ):
+        spec = calibration.get(motor_name)
+        direction = 1 if spec is None or spec.direction is None else int(spec.direction)
+        if spec is not None and spec.urdf_joint:
+            urdf_joint = spec.urdf_joint
+        motors.append(
+            HeadMotor(
+                motor=motor_name,
+                urdf_joint=urdf_joint,
+                urdf_neutral_rad=float(neutral.get(urdf_joint, 0.0)),
+                direction=direction,
+                range_rad=math.radians(travel),
+            )
+        )
+    return motors[0], motors[1]
+
+
 def _infer_head_joints(names: Sequence[str], parser: argparse.ArgumentParser) -> Tuple[str, str]:
     head = [n for n in names if "head" in n]
     yaw = [n for n in head if "yaw" in n]
@@ -366,9 +453,26 @@ def _make_camera(args: argparse.Namespace, caption: Any) -> Any:
     elif spec.startswith("opencv:"):
         raw = str(args.camera)[len("opencv:") :]
         source = OpenCVFrameSource(int(raw) if raw.isdigit() else raw)
+    elif spec == "realsense" or spec.startswith("realsense:"):
+        from .camera import RealsenseFrameSource
+
+        index = int(spec.partition(":")[2] or 0)
+        try:
+            width, height = (int(v) for v in str(args.camera_size).lower().split("x"))
+        except ValueError:
+            raise SystemExit(f"--camera-size expects WxH, got {args.camera_size!r}") from None
+        try:
+            source = RealsenseFrameSource(
+                index, width=width, height=height, fps=int(args.camera_fps)
+            )
+        except ImportError as exc:
+            raise SystemExit(
+                f"--camera realsense needs pyrealsense2 (uv sync --extra realsense): {exc}"
+            ) from exc
     else:
         raise SystemExit(
-            f"--camera must be synthetic, none or opencv:<source>, got {args.camera!r}"
+            "--camera must be synthetic, none, opencv:<source> or realsense[:index], "
+            f"got {args.camera!r}"
         )
     encoder = JpegEncoder(args.jpeg_quality, max_width=args.camera_max_width)
     return FrameStreamer(source, fps=args.camera_fps, encoder=encoder)
@@ -382,6 +486,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     tls = _resolve_tls(args, parser)
     if args.hardware and not args.config:
         parser.error("--hardware needs --config so the page shows the model the controller uses")
+    if args.hardware and args.hardware_head:
+        parser.error("--hardware and --hardware-head are different things; pick one")
+    if args.hardware_head:
+        args.no_arms = True  # by definition
     if args.no_head and args.no_arms:
         parser.error("--no-head with --no-arms leaves nothing to teleoperate")
 
@@ -390,12 +498,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     from .arm_teleop import ArmTeleopConfig, DualArmTeleop
     from .backend import ControlSystemBackend, SimulationBackend
+    from .head_only import HeadOnlyFollowerBackend, head_motor_mapping
     from .head_tracking import HeadJointMapping, HeadTracker, HeadTrackingConfig
     from .server import VRServer, VRServerConfig, serve_vr
 
     loaded = load_model(args, parser, ik_overrides=STREAMING_IK_OVERRIDES)
     bundle = loaded.bundle
     pair = None
+    follower = None
+    head_motors: Any = None
     try:
         # -- backend --------------------------------------------------------
         if args.hardware:
@@ -421,6 +532,40 @@ def main(argv: Sequence[str] | None = None) -> int:
             system = pair.start_control()
             backend: Any = ControlSystemBackend(system, target_ttl_s=args.target_ttl)
             model = system.model
+        elif args.hardware_head:
+            from robopy.config.dotrobopy import apply_rakuda_dotconfig
+            from robopy.config.robot_config.rakuda_config import RakudaConfig
+            from robopy.robots.rakuda.rakuda_follower import RakudaFollower
+
+            base = RakudaConfig(leader_port="", follower_port=args.follower_port or "")
+            cfg = apply_rakuda_dotconfig(base)
+            if args.follower_port:
+                cfg.follower_port = args.follower_port
+            if not cfg.follower_port:
+                parser.error(
+                    "--hardware-head needs --follower-port (or follower_port in the config)"
+                )
+            model = bundle.model
+            print(
+                "HARDWARE HEAD MODE: connecting to the follower; only head_yaw and head_pitch "
+                "will be written. The arms keep whatever torque the config gives them."
+            )
+            follower = RakudaFollower(cfg)
+            follower.connect()
+            head_motors = _head_motors(args, parser, cfg, model)
+            backend = HeadOnlyFollowerBackend(
+                follower.motors,
+                model=model,
+                yaw=head_motors[0],
+                pitch=head_motors[1],
+                tcp_frames=bundle.tcp_frames,
+                rest_positions_rad=_start_pose(args, parser, model.movable_joint_names),
+            )
+            print(
+                "  head motors at start: "
+                + ", ".join(f"{k}={v:.0f}" for k, v in backend.start_units.items())
+                + " (this pose is 'looking ahead'; re-centre in the headset facing the same way)"
+            )
         else:
             model = bundle.model
             start = _start_pose(args, parser, model.movable_joint_names)
@@ -463,8 +608,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                     pitch_joint,
                     camera_frame=camera_frame,
                     camera_forward_axis=args.camera_forward_axis,
-                    torso_joint=torso_joint,
+                    torso_joint=None if args.hardware_head else torso_joint,
                 )
+                if args.hardware_head:
+                    # Motor space: radians from the start pose, no torso term.
+                    urdf_mapping = mapping
+                    mapping = head_motor_mapping(
+                        head_motors[0],
+                        head_motors[1],
+                        yaw_sign_urdf=urdf_mapping.yaw_sign,
+                        pitch_sign_urdf=urdf_mapping.pitch_sign,
+                        sign_overrides=_parse_signs(args.head_signs, parser),
+                    )
             except ValueError as exc:
                 print(f"Head tracking disabled: {exc}", file=sys.stderr)
             else:
@@ -596,6 +751,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print("stopping control:", "; ".join(pair.stop_control()))
             finally:
                 pair.disconnect()
+        if follower is not None:
+            follower.disconnect()  # the follower's own convention: torque off on the way out
         loaded.cleanup()
     return 0
 

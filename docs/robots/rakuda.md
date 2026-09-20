@@ -385,9 +385,47 @@ uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem
 
 # 実機（.robopy/rakuda/config.yaml の control.mode: cartesian_teleop が必要。ロボットが動きます）
 uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem --config --hardware
+
+# 実機の頭だけ（腕は動かさない）＋頭部 RealSense の投影。制御系も校正も不要
+uv run --extra kinematics robopy-vr --hardware-head --follower-port /dev/ttyUSB1 --camera realsense \
+    --host 0.0.0.0 --self-signed
 ```
 
 Quest のブラウザで `https://<PCのIP>:8766/vr` を開き、**Enter VR** を押します。
+
+### 実機の頭だけを動かし、頭部 RealSense を投影する（`--hardware-head`） {: #vr-head-only }
+
+腕は一切動かさず、ヘッドセットの向きで `head_yaw` / `head_pitch` の 2 モータだけを動かし、頭部の
+RealSense の映像をヘッドセットに投影するデモです。`--hardware` と違って制御系（双腕IK・リーダ・校正済み
+joint map）を起動せず、フォロワのバスに直接、モータの生カウントで書きます。校正値（`zero_count` 等）は
+不要で、**起動時の頭の姿勢を「正面」**とし、ヘッドセットでリセンターした向きに対応させます。
+
+```bash
+uv sync --extra kinematics --extra realsense     # pyrealsense2 を入れる（一度だけ）
+uv run --frozen --extra kinematics robopy-vr --hardware-head --follower-port /dev/ttyUSB1 \
+    --camera realsense --host 0.0.0.0 --self-signed
+```
+
+- 起動時に頭の 2 モータの現在値を読み、それを基準に `--head-range`（既定 yaw ±60°、pitch ±35°）の範囲で
+  動かします。頭以外のモータには何も書きません。フォロワの他の関節のトルクは `.robopy/rakuda/config.yaml` の
+  `follower.torque_enabled` に従います（既定は全関節ON＝腕はその場で保持。`[head_yaw, head_pitch]` にすると
+  腕は脱力）。終了時は従来どおりフォロワ全体のトルクを切ります。
+- **軸の向き**: 既定はURDFから導いた符号にモータの `direction`（config の `follower_joint_calibration` に
+  あれば）を掛けたものです。実機で頭が逆に回る場合は `--head-signs -1,1` のように yaw, pitch の符号を
+  指定してください（測定値なのでコードでは推定しません）。
+- **カメラ**: `--camera realsense`（複数台なら `realsense:1`）で色ストリームを配信します。`--camera-size`
+  と `--camera-fps` で解像度とレートを、`--camera-fov` で投影サイズを変えられます。D435 の色カメラの
+  水平画角 69° が既定です。
+- ページのツイン／ミラーは、頭だけがモータの読み値に従って動き、腕は起動姿勢のまま描かれます。録画も
+  同様に使えます。
+
+API から同じ構成を組む例が `examples/robot/rakuda_vr_head_camera.py` です。引数なしでは模擬バスと
+テストパターンで動くので、実機なしでも配線を確認できます（`--follower-port` で実機、`--serve` でページを
+配信）。
+
+```bash
+uv run --frozen --extra kinematics python examples/robot/rakuda_vr_head_camera.py
+```
 
 ### セキュアコンテキスト（HTTPS）
 

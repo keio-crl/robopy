@@ -30,6 +30,7 @@ __all__ = [
     "JpegEncoder",
     "OpenCVFrameSource",
     "SyntheticFrameSource",
+    "RealsenseFrameSource",
     "to_bgr_uint8",
 ]
 
@@ -205,6 +206,62 @@ class CallableFrameSource:
         """Release the underlying device, if a closer was given."""
         if self._close is not None:
             self._close()
+
+
+class RealsenseFrameSource:
+    """The colour stream of an Intel RealSense, through :class:`RealsenseCamera`.
+
+    The camera's own capture thread keeps the newest frame; :meth:`read`
+    returns it, or ``None`` when no new frame arrived within ``timeout_ms``
+    (the streamer then simply keeps the previous picture).  Needs the
+    ``realsense`` extra (``pyrealsense2``).
+
+    Args:
+        index: Which RealSense, in the order ``pyrealsense2`` lists them.
+        width: Colour stream width.
+        height: Colour stream height.
+        fps: Colour stream rate.
+        timeout_ms: How long :meth:`read` waits for a new frame.
+    """
+
+    def __init__(
+        self,
+        index: int = 0,
+        *,
+        width: int = 640,
+        height: int = 480,
+        fps: int = 30,
+        timeout_ms: float = 100.0,
+    ) -> None:
+        from robopy.config.sensor_config.visual_config.camera_config import (
+            RealsenseCameraConfig,
+        )
+        from robopy.sensors.visual.realsense_camera import RealsenseCamera
+
+        config = RealsenseCameraConfig(
+            name=f"realsense{index}",
+            index=index,
+            width=width,
+            height=height,
+            fps=fps,
+            color_mode="rgb",
+            is_depth_camera=False,
+        )
+        self._camera: Any = RealsenseCamera(config=config)
+        self._camera.connect()
+        self._timeout_ms = timeout_ms
+
+    def read(self) -> NDArray[np.uint8] | None:
+        """The newest colour frame as BGR ``uint8``, or ``None`` if none is new."""
+        try:
+            frame = self._camera.async_read(timeout_ms=self._timeout_ms)
+        except TimeoutError:
+            return None
+        return to_bgr_uint8(frame, color="rgb")
+
+    def close(self) -> None:
+        """Stop the pipeline."""
+        self._camera.disconnect()
 
 
 class JpegEncoder:
