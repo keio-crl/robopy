@@ -129,6 +129,7 @@ class _MotorRegisters:
     voltage_dv: int = 120
     fault: SimulatedMotorFault = SimulatedMotorFault.NONE
     profile_velocity: int = 0
+    velocity_limit_raw: int = 200  # 0.229 rpm per count, as on the X series
     profile_acceleration: int = 0
     drive_mode: int = 0
     homing_offset: int = 0
@@ -475,6 +476,8 @@ class SimulatedDynamixelBus:
             registers.drive_mode = value
         elif item is XControlTable.HOMING_OFFSET:
             registers.homing_offset = value
+        elif item is XControlTable.VELOCITY_LIMIT:
+            registers.velocity_limit_raw = int(value)
         elif item is XControlTable.PROFILE_VELOCITY:
             registers.profile_velocity = value
         elif item is XControlTable.PROFILE_ACCELERATION:
@@ -501,6 +504,7 @@ class SimulatedDynamixelBus:
             XControlTable.DRIVE_MODE: registers.drive_mode,
             XControlTable.HOMING_OFFSET: registers.homing_offset,
             XControlTable.PROFILE_VELOCITY: registers.profile_velocity,
+            XControlTable.VELOCITY_LIMIT: registers.velocity_limit_raw,
             XControlTable.PROFILE_ACCELERATION: registers.profile_acceleration,
             XControlTable.PRESENT_POSITION: self._rad_to_count(
                 registers, registers.joint.position_rad

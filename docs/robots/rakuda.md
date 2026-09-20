@@ -644,6 +644,43 @@ multi-turn位置は `[-pi, pi]` へ折り返しません。`zero_count` は
 `control.allow_hardware_current_output` は既定で `false` です。上記が測定され
 `validated: true` になるまで、バイラテラルモードは `configure()` で拒否されます。
 
+### 校正コマンド（`robopy-rakuda-calibrate`）
+
+上の表のうちバイラテラルに必要な関節ごとの値を、実機で測って `.robopy/rakuda/config.yaml` の `control:`
+セクションに書き込むコマンドです。数値はすべて機械から読むか操作者が測るもので、データシートからは
+何も埋めません。
+
+```bash
+uv run robopy-rakuda-calibrate --leader-port /dev/ttyUSB1 --follower-port /dev/ttyUSB0
+uv run robopy-rakuda-calibrate --simulate     # 模擬バスと自動操作者で流れを見る
+```
+
+対象は既定で胴体＋両腕の 13 モータ（`--motors` で絞れます。頭とグリッパは結合対象外なので指定できません）。
+リーダ、フォロワの順に、各腕で次を行います。**対象モータのトルクは切れる**ので腕を支えてください。
+
+1. **レジスタ読み取り**（自動）: モデル、`DRIVE_MODE`、`HOMING_OFFSET`、`VELOCITY_LIMIT`（→ `max_velocity_rad_s`）、
+   `CURRENT_LIMIT`（その `--current-fraction`、既定 0.5 倍 → `current_limit_a`）。
+2. **モータ ↔ URDF 関節の対応**: チェーン順の提案を表示し、Enter で確定、違えば入力します（名前からの推定は
+   しません）。
+3. **ゼロ点**: 指示された基準姿勢（`--zero-pose` の文、既定はモデルのゼロ姿勢）に手で合わせて Enter →
+   `zero_count`。
+4. **向き**: 関節ごとに、モデルが正とする向きへ手で動かす → カウントの増減から `direction`。
+5. **可動域**: 両端へ手で動かして Enter ずつ → `lower_limit_rad` / `upper_limit_rad`。
+6. **トルク定数**（任意、`--no-torque-constant` で省略）: 関節軸を水平・リンクを水平にして保持させ、
+   無負荷時と既知の質量 `m` を腕長 `r` に吊るした時の保持電流の差から
+   `torque_constant_nm_per_a = m g r / |I_load − I_free|`。
+
+すべて揃った関節だけ `validated: true` になり `bilateral.coupled_motors` に入ります（片腕でも欠ければ結合
+しません）。`--allow-current` を付けたときだけ、かつ結合関節がすべて完全なときだけ
+`allow_hardware_current_output: true` を書きます。既存の `control:` のゲイン・周期・モデル設定は保持し、
+`leader.torque_enabled` / `follower.torque_enabled` は結合関節を含むよう広げ、元のファイルは
+`config.yaml.bak-<日時>` に残します（コメントは失われます）。書いた後に通常のローダで読み戻し、
+`JointMap.require("hardware")` を通ることを確認してから成功を報告します。
+
+`bilateral.allow_uncompensated` は既定 `false` のままです。電流制御には腕ごとの検証済み重力補償モデルも
+必要で、これはこのコマンドでは測れません。重力が載らない関節だけを結合するなら、承知のうえで `true` に
+してください。
+
 
 ### モデルの配置（`robopy/models/rakuda/`、パッケージ同梱）
 
