@@ -540,12 +540,21 @@ def render_recording(
     frames = resample(document["frames"], settings.fps)
     directory = Path(out_dir) if out_dir is not None else recording.parent
     directory.mkdir(parents=True, exist_ok=True)
+    # A real head camera was recorded: that *is* the first-person view.
+    camera_video = document.get("camera_video")
+    recorded: Dict[str, Path] = {}
+    if camera_video and (recording.parent / camera_video).is_file():
+        recorded["first_person"] = recording.parent / camera_video
+    to_render = [v for v in views if v not in recorded]
     renderer = RakudaVideoRenderer(neutral, settings)
     outputs: List[Path] = []
-    total = len(frames) * len(views)
+    total = len(frames) * max(1, len(to_render))
     done = 0
     try:
         for view in views:
+            if view in recorded:
+                outputs.append(recorded[view])
+                continue
             path = directory / f"{recording.stem}_{view}.mp4"
             writer = open_video_writer(path, settings.fps, settings.width, settings.height)
             try:

@@ -58,8 +58,10 @@ def main(argv: List[str] | None = None) -> int:
     add_model_arguments(parser)
     parser.add_argument("--follower-port", default=None, help="real follower; simulated otherwise")
     parser.add_argument("--camera", default="synthetic", help="synthetic, none, realsense[:i]")
-    parser.add_argument("--camera-rotate", type=int, default=0, help="0/90/180/270 clockwise")
-    parser.add_argument("--head-signs", default="auto", help="YAW,PITCH motor signs, or auto")
+    parser.add_argument("--camera-rotate", type=int, default=180, help="0/90/180/270 clockwise")
+    parser.add_argument(
+        "--head-signs", default="1,-1", help="YAW,PITCH motor signs (lab default), or auto"
+    )
     parser.add_argument("--serve", action="store_true", help="serve the WebXR page (no script)")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8766)

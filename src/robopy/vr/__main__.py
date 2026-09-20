@@ -84,8 +84,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--camera-rotate",
         type=int,
         choices=[0, 90, 180, 270],
-        default=0,
-        help="rotate the picture clockwise, e.g. 180 for a camera mounted upside down",
+        default=180,
+        help="rotate the picture clockwise. Default 180: the lab's Rakuda carries its "
+        "RealSense upside down. 0 for an upright camera",
     )
     cam.add_argument("--jpeg-quality", type=int, default=75)
     cam.add_argument("--camera-max-width", type=int, default=960, help="downscale wider frames")
@@ -179,10 +180,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hw.add_argument(
         "--head-signs",
-        default="auto",
+        default="1,-1",
         metavar="YAW,PITCH",
-        help="--hardware-head: motor direction per headset direction, e.g. -1,1. auto: the "
-        "URDF's sign times the configured motor direction (+1 unless measured)",
+        help="--hardware-head: motor direction per headset direction. Default 1,-1, as "
+        "measured on the lab's Rakuda (both head motors turn against their URDF axes). "
+        "auto: the URDF's sign times the configured motor direction",
     )
     hw.add_argument(
         "--head-range",

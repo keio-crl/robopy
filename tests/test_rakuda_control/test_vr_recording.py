@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -143,6 +144,62 @@ class TestSessionRecording:
         session.close()  # the operator left: the recording is finished, not lost
         assert not session.recorder.active
         assert session.recorder.describe()["last_recording"] is not None
+
+
+class TestCameraTap:
+    def test_camera_stream_becomes_the_first_person_video(self, tmp_path: Path) -> None:
+        import cv2
+
+        from robopy.vr.camera import FrameStreamer, JpegEncoder, SyntheticFrameSource
+        from robopy.vr.recording import CameraTap
+        from robopy.vr.render import load_recording, render_recording
+
+        streamer = FrameStreamer(SyntheticFrameSource(64, 48), fps=60.0, encoder=JpegEncoder(80))
+        streamer.start()
+        try:
+            rec = SessionRecorder(tmp_path, camera=CameraTap(streamer, fps=20.0))
+            rec.start({"joint_names": ["a"]}, 0.0)
+            for i in range(6):
+                rec.add({"q": [0.1 * i]}, 0.05 * i)
+                time.sleep(0.05)
+            path = rec.stop(0.3)
+        finally:
+            streamer.stop()
+        assert path is not None
+        doc = load_recording(path)
+        video = path.parent / doc["camera_video"]
+        assert video.name == f"{path.stem}_first_person.mp4" and video.is_file()
+        cap = cv2.VideoCapture(str(video))
+        frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        ok, image = cap.read()
+        cap.release()
+        assert ok and image.shape == (48, 64, 3) and 3 <= frames <= 12
+        assert rec.describe()["camera_frames"] == frames
+        if HAS_MUJOCO:
+            # The renderer keeps the camera video as the first-person view.
+            outputs = render_recording(
+                path,
+                settings=RenderSettings(fps=10.0, width=160, height=120),
+                views=("first_person",),
+            )
+            assert outputs == [video]
+            assert cv2.VideoCapture(str(video)).get(cv2.CAP_PROP_FRAME_COUNT) == frames
+
+    def test_a_failing_tap_does_not_break_the_recording(self, tmp_path: Path) -> None:
+        from robopy.vr.recording import CameraTap
+
+        class Dead:
+            @property
+            def latest(self) -> Any:
+                raise RuntimeError("camera exploded")
+
+        rec = SessionRecorder(tmp_path, camera=CameraTap(Dead(), fps=50.0))
+        rec.start({}, 0.0)
+        time.sleep(0.1)
+        path = rec.stop(0.1)
+        assert path is not None and json.loads(path.read_text())["camera_video"] is None
+        with pytest.raises(ValueError):
+            CameraTap(Dead(), fps=0.0)
 
 
 class TestRenderHelpers:

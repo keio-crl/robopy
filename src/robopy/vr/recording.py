@@ -31,7 +31,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Sequence
 
-__all__ = ["RECORDING_FORMAT", "SessionRecorder"]
+__all__ = ["RECORDING_FORMAT", "CameraTap", "SessionRecorder"]
 
 RECORDING_FORMAT = "robopy-vr-recording/1"
 
@@ -40,6 +40,106 @@ logger = logging.getLogger(__name__)
 #: Called with the finished recording and a progress callback (0..1); returns
 #: the files it produced.
 Renderer = Callable[[Path, Callable[[float], None]], Sequence[Path]]
+
+
+class CameraTap:
+    """Write the camera stream to an MP4 while a recording runs.
+
+    With a real camera on the head, the first-person video should be what
+    the camera saw, not a rendering.  The tap samples the streamer's newest
+    JPEG at a fixed rate from the moment the recording starts (so the video's
+    clock is the recording's), decodes it and hands it to the same H.264
+    writer the renderer uses.  Frames are held when the camera is slower
+    than the video rate, as the renderer does with the pose log.
+
+    Args:
+        streamer: The :class:`~robopy.vr.camera.FrameStreamer` being served.
+        fps: Video rate.
+    """
+
+    def __init__(self, streamer: Any, *, fps: float = 30.0) -> None:
+        if fps <= 0.0:
+            raise ValueError("fps must be positive.")
+        self.streamer = streamer
+        self.fps = fps
+        self._thread: threading.Thread | None = None
+        self._stop = threading.Event()
+        self._path: Path | None = None
+        self._frames = 0
+        self._error: str | None = None
+
+    @property
+    def path(self) -> Path | None:
+        """The file being (or last) written."""
+        return self._path
+
+    @property
+    def frames(self) -> int:
+        """Frames written so far."""
+        return self._frames
+
+    def start(self, path: Path) -> None:
+        """Begin writing to ``path``."""
+        if self._thread is not None and self._thread.is_alive():
+            raise RuntimeError("the camera tap is already running")
+        self._path = path
+        self._frames = 0
+        self._error = None
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, name="vr-camera-tap", daemon=True)
+        self._thread.start()
+
+    def stop(self, timeout_s: float = 5.0) -> Dict[str, Any]:
+        """Finish the file and report ``{"path", "frames", "error"}``."""
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout_s)
+        return {
+            "path": None if self._path is None else str(self._path),
+            "frames": self._frames,
+            "error": self._error,
+        }
+
+    def _run(self) -> None:
+        import cv2
+        import numpy as np
+
+        from .render import open_video_writer
+
+        assert self._path is not None
+        writer = None
+        decoded = None
+        seq = 0
+        period = 1.0 / self.fps
+        started = time.monotonic()
+        tick = 0
+        try:
+            while not self._stop.is_set():
+                latest = self.streamer.latest
+                if latest is not None and latest.seq != seq:
+                    image = cv2.imdecode(np.frombuffer(latest.data, np.uint8), cv2.IMREAD_COLOR)
+                    if image is not None:
+                        decoded = np.ascontiguousarray(image[:, :, ::-1])  # BGR -> RGB
+                        seq = latest.seq
+                if decoded is not None:
+                    if writer is None:
+                        h, w = decoded.shape[:2]
+                        writer = open_video_writer(self._path, self.fps, w, h)
+                    writer.write(decoded)
+                    self._frames += 1
+                tick += 1
+                delay = started + tick * period - time.monotonic()
+                if delay > 0.0:
+                    self._stop.wait(delay)
+        except Exception as exc:  # noqa: BLE001 - reported, never raised into the loop
+            logger.exception("camera tap failed")
+            self._error = f"{type(exc).__name__}: {exc}"
+        finally:
+            if writer is not None:
+                try:
+                    writer.close()
+                except Exception as exc:  # noqa: BLE001
+                    self._error = self._error or f"{type(exc).__name__}: {exc}"
 
 
 class SessionRecorder:
@@ -54,15 +154,25 @@ class SessionRecorder:
         render: Optional renderer run in a background thread after each
             recording is written.  Its failures are reported, never raised
             into the teleop loop.
+        camera: Optional :class:`CameraTap`; the camera stream is then written
+            as ``<recording>_first_person.mp4`` while recording, and the
+            renderer leaves that view alone.
         prefix: File name prefix.
     """
 
     def __init__(
-        self, directory: Path, *, render: Renderer | None = None, prefix: str = "rakuda-vr"
+        self,
+        directory: Path,
+        *,
+        render: Renderer | None = None,
+        camera: CameraTap | None = None,
+        prefix: str = "rakuda-vr",
     ) -> None:
         self.directory = Path(directory)
         self.prefix = prefix
         self._render = render
+        self._camera = camera
+        self._stem = ""
         self._lock = threading.Lock()
         self._active = False
         self._started_s = 0.0
@@ -91,9 +201,14 @@ class SessionRecorder:
             if not self._active:
                 self._active = True
                 self._started_s = now_s
-                self._started_at = datetime.now().astimezone().isoformat(timespec="seconds")
+                started_at = datetime.now().astimezone()
+                self._started_at = started_at.isoformat(timespec="seconds")
+                self._stem = f"{self.prefix}-{started_at.strftime('%Y%m%d-%H%M%S')}"
                 self._metadata = dict(metadata)
                 self._frames = []
+                if self._camera is not None:
+                    self.directory.mkdir(parents=True, exist_ok=True)
+                    self._camera.start(self.directory / f"{self._stem}_first_person.mp4")
             return self._describe_locked()
 
     def add(self, frame: Mapping[str, Any], now_s: float) -> None:
@@ -118,13 +233,23 @@ class SessionRecorder:
             frames, metadata = self._frames, self._metadata
             self._frames = []
             duration = round(now_s - self._started_s, 4)
-            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            path = self.directory / f"{self.prefix}-{stamp}.json"
+            path = self.directory / f"{self._stem}.json"
+            camera_video = None
+            if self._camera is not None:
+                tap = self._camera.stop()
+                if tap["frames"] and tap["path"] and tap["error"] is None:
+                    camera_video = Path(tap["path"]).name
+                    logger.info("camera video written: %s (%d frames)", tap["path"], tap["frames"])
+                else:
+                    logger.warning(
+                        "camera video not kept (%d frames, %s)", tap["frames"], tap["error"]
+                    )
             document = {
                 "format": RECORDING_FORMAT,
                 "started_at": self._started_at,
                 "duration_s": duration,
                 **metadata,
+                "camera_video": camera_video,
                 "frames": frames,
             }
             self.directory.mkdir(parents=True, exist_ok=True)
@@ -168,6 +293,7 @@ class SessionRecorder:
             "active": self._active,
             "frames": len(self._frames) if self._active else 0,
             "seconds": seconds,
+            "camera_frames": None if self._camera is None else self._camera.frames,
             "directory": str(self.directory),
             "last_recording": None if self._last_path is None else str(self._last_path),
             "render": None if self._render_state is None else dict(self._render_state),

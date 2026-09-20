@@ -410,13 +410,16 @@ uv run --frozen --extra kinematics robopy-vr --hardware-head --follower-port /de
   動かします。頭以外のモータには何も書きません。フォロワの他の関節のトルクは `.robopy/rakuda/config.yaml` の
   `follower.torque_enabled` に従います（既定は全関節ON＝腕はその場で保持。`[head_yaw, head_pitch]` にすると
   腕は脱力）。終了時は従来どおりフォロワ全体のトルクを切ります。
-- **軸の向き**: 既定はURDFから導いた符号にモータの `direction`（config の `follower_joint_calibration` に
-  あれば）を掛けたものです。実機で頭が逆に回る場合は `--head-signs -1,1` のように yaw, pitch の符号を
-  指定してください（測定値なのでコードでは推定しません）。
+- **軸の向き**: 既定 `--head-signs 1,-1` は研究室の Rakuda で測った値です（頭の 2 モータとも URDF の軸と
+  逆向きに回る）。別の機体で逆に回る場合は `--head-signs -1,1` のように yaw, pitch の符号を指定してください。
+  `--head-signs auto` にすると URDF から導いた符号に config の `direction` を掛けた値になります。
 - **カメラ**: `--camera realsense`（複数台なら `realsense:1`）で色ストリームを配信します。`--camera-size`
   と `--camera-fps` で解像度とレートを、`--camera-fov` で投影サイズを変えられます。D435 の色カメラの
-  水平画角 69° が既定です。カメラが上下逆に取り付けられている場合は `--camera-rotate 180`
-  （90 / 270 も可）で画像を回してから配信します。
+  水平画角 69° が既定です。研究室の Rakuda は RealSense が上下逆に付いているので `--camera-rotate` の既定は
+  180 です（正立なら 0、90 / 270 も可）。回転は配信・録画の両方に効きます。
+- **録画**: 実カメラ（`realsense` / `opencv:`）を使っているときは、録画中にそのカメラの画像を
+  `*_first_person.mp4` に直接書き、描画時は MuJoCo の 1 人称ではなくそれを 1 人称動画として扱います。
+  3 人称は従来どおり MuJoCo で描きます。テストパターン（`synthetic`）のときは従来どおり MuJoCo の 1 人称です。
 - **配信が止まったとき**: RealSense からフレームが 5 秒来なければパイプラインを再起動し、カメラ用の
   WebSocket が切れればページが自動で再接続します（再接続中は画像が灰色になります）。status 欄の
   `camera ... last N s ago` で最終フレームからの経過時間が見えます。
@@ -490,7 +493,8 @@ WebXR は https か localhost でしか動きません。方法は 2 つあり�
 
 - `*_third_person.mp4`: 正面やや上からの 3 人称視点。コントローラの位置を球で描き（押している側は緑、
   離している側は灰色）、押している手先から目標への線を引きます。
-- `*_first_person.mp4`: ロボットの頭部カメラ（`head_camera_link`、光軸は頭の中立姿勢から導出）の 1 人称視点。
+- `*_first_person.mp4`: 1 人称視点。実カメラを配信しているときはそのカメラの画像そのもの（録画中に書かれる）、
+  シミュレーションではロボットの頭部カメラ（`head_camera_link`、光軸は頭の中立姿勢から導出）の描画。
 
 進捗と保存先はページの status 欄／VR 内の HUD に出ます。描画には MuJoCo が必要です（無ければログだけが
 残り、後から描画できます）。動画は `ffmpeg`（libx264 付き。Ubuntu なら `apt install ffmpeg`）があれば

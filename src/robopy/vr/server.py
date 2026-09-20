@@ -65,9 +65,9 @@ from robopy.viewer.server import IKSetup, ViewerServer, _Handler
 
 from .arm_teleop import ControllerSample, DualArmTeleop
 from .backend import TeleopBackend, TeleopCommand
-from .camera import FrameStreamer
+from .camera import FrameStreamer, SyntheticFrameSource
 from .head_tracking import HeadTracker
-from .recording import SessionRecorder
+from .recording import CameraTap, SessionRecorder
 from .websocket import (
     OP_TEXT,
     WebSocket,
@@ -723,7 +723,11 @@ class VRServer(ViewerServer):
                 def render(path: Path, progress: Callable[[float], None]) -> List[Path]:
                     return render_recording(path, progress=progress)
 
-            self.recorder = SessionRecorder(self.vr_config.record_dir, render=render)
+            tap = None
+            if self.camera is not None and not isinstance(self.camera.source, SyntheticFrameSource):
+                # A real camera: its pictures become the first-person video.
+                tap = CameraTap(self.camera)
+            self.recorder = SessionRecorder(self.vr_config.record_dir, render=render, camera=tap)
 
     @property
     def url(self) -> str:
