@@ -166,6 +166,12 @@ class HeadOnlyFollowerBackend:
             thread, that falls behind the headset's 60 Hz and the head lags
             further with every message.  ``False`` writes inline, for tests.
         rate_hz: The bus thread's rate.
+        home_units: ``{motor: units}`` the head is moved to by :meth:`home`
+            (the reset position, in the bus's units); ``None`` keeps the
+            pose the head has when the backend is built.
+        home_timeout_s: How long :meth:`home` waits for the head to arrive.
+        home_tolerance: Distance from the home position, in units, that counts
+            as arrived.
     """
 
     name = "hardware"
@@ -186,6 +192,9 @@ class HeadOnlyFollowerBackend:
         target_ttl_s: float = 0.25,
         threaded: bool = True,
         rate_hz: float = 50.0,
+        home_units: Mapping[str, float] | None = None,
+        home_timeout_s: float = 3.0,
+        home_tolerance: float = 8.0,
     ) -> None:
         from robopy.motor.dynamixel_control_table import XControlTable
 
@@ -234,6 +243,12 @@ class HeadOnlyFollowerBackend:
         self._present_item = XControlTable.PRESENT_POSITION
         # Calibrated buses speak degrees; bare ones speak encoder counts.
         self._degrees = bool(getattr(bus, "calibration", None))
+        self._home = None if home_units is None else {k: float(v) for k, v in home_units.items()}
+        self._home_timeout_s = home_timeout_s
+        self._home_tolerance = home_tolerance
+        self._homed = home_units is None
+        self._homing: Dict[str, float] | None = None
+        self._homing_done = threading.Event()
         self._start = self._read_present()
         self._present = dict(self._start)
         self._goals: Dict[str, float] = {}
@@ -328,6 +343,8 @@ class HeadOnlyFollowerBackend:
                 self._last_write_s = command.stamp_s
                 # The loop owns the bus: no read-back; the goal stands in for it.
                 self._present.update(goals)
+        elif not self._homed:
+            warnings.append("head not homed yet; targets dropped")
         elif self._threaded:
             if goals:
                 with self._lock:
@@ -347,6 +364,74 @@ class HeadOnlyFollowerBackend:
         report.warnings = warnings
         return report
 
+    def set_start_units(self, units: Mapping[str, float]) -> None:
+        """Declare the start pose (after the head was homed by other means)."""
+        with self._lock:
+            for motor, value in units.items():
+                if motor in self._by_name:
+                    self._start[motor] = float(value)
+                    self._present[motor] = float(value)
+            self._homed = True
+
+    @property
+    def homed(self) -> bool:
+        """Whether the head has been put at (or has timed out reaching) its reset position."""
+        return self._homed
+
+    def home(self, timeout_s: float | None = None) -> Dict[str, Any]:
+        """Move the head to its reset position and make that the start pose.
+
+        Done when the operator connects, before any headset target is issued.
+        Head goals posted meanwhile are dropped.  With no ``home_units`` (or
+        once homed, or with a control system owning the bus) nothing moves.
+
+        Args:
+            timeout_s: Overrides the configured wait.
+
+        Returns:
+            ``{"moved": bool, "arrived": bool, "start": {...}}``.
+        """
+        if self._home is None or self._homed or self._system is not None:
+            return {"moved": False, "arrived": self._homed, "start": self.start_units}
+        wait = self._home_timeout_s if timeout_s is None else timeout_s
+        targets = {
+            motor: float(self._clip_units(self._by_name[motor], units))
+            for motor, units in self._home.items()
+            if motor in self._by_name
+        }
+        self._homing_done.clear()
+        with self._lock:
+            self._homing = targets
+            self._pending.clear()
+        if self._threaded:
+            self._ensure_thread()
+            arrived = self._homing_done.wait(wait)
+        else:
+            deadline = time.monotonic() + wait
+            arrived = False
+            while not arrived and time.monotonic() < deadline:
+                self.step()
+                arrived = self._homing_done.is_set()
+                if not arrived:
+                    time.sleep(self._period_s)
+        with self._lock:
+            self._homing = None
+            self._start = dict(self._present)
+            for motor, units in targets.items():
+                self._start[motor] = units  # the goal it was sent to, arrived or not
+                self._present[motor] = self._start[motor]
+            self._homed = True
+        if not arrived:
+            logger.warning(
+                "head did not reach its reset position within %.1f s; carrying on from it", wait
+            )
+        return {"moved": True, "arrived": arrived, "start": self.start_units}
+
+    def _clip_units(self, motor: HeadMotor, units: float) -> float:
+        if self._degrees:
+            return units
+        return float(min(motor.counts_per_revolution - 1, max(0, round(units))))
+
     def step(self, head_goals: Mapping[str, float] | None = None) -> None:
         """One bus cycle: read the leader, write the follower once.
 
@@ -365,8 +450,13 @@ class HeadOnlyFollowerBackend:
         """
         started = time.perf_counter()
         with self._lock:
-            goals = dict(self._pending if head_goals is None else head_goals)
-            self._pending.clear()
+            homing = None if self._homing is None else dict(self._homing)
+            if homing is not None:
+                goals = dict(homing)  # headset goals wait until the head is home
+                self._pending.clear()
+            else:
+                goals = dict(self._pending if head_goals is None else head_goals)
+                self._pending.clear()
         if self._leader is not None and self._leader_map:
             leader = self._leader.sync_read(self._present_item, self._leader_names)
             leader_goals = {
@@ -381,7 +471,18 @@ class HeadOnlyFollowerBackend:
             self._bus.sync_write(self._goal_item, goals)
             with self._lock:
                 self._writes += 1
-                self._present.update({k: v for k, v in goals.items() if k in self._by_name})
+                if homing is None:
+                    self._present.update({k: v for k, v in goals.items() if k in self._by_name})
+        if homing is not None:
+            # The one time the head is read back: to know it has arrived.
+            present = self._read_present()
+            with self._lock:
+                self._present.update(present)
+            if all(
+                abs(present.get(m, float("inf")) - u) <= self._home_tolerance
+                for m, u in homing.items()
+            ):
+                self._homing_done.set()
         self._cycles += 1
         elapsed_ms = (time.perf_counter() - started) * 1e3
         self._cycle_ms = (
@@ -457,6 +558,8 @@ class HeadOnlyFollowerBackend:
             },
             "writes": self._writes,
             "warnings": list(self._last_warnings),
+            "home": None if self._home is None else dict(self._home),
+            "homed": self._homed,
             "bus_thread": None
             if not self._threaded
             else {

@@ -202,6 +202,67 @@ class TestCameraTap:
             CameraTap(Dead(), fps=0.0)
 
 
+class TestOperatorView:
+    @staticmethod
+    def _jpeg(shade: int) -> bytes:
+        import cv2
+
+        ok, buf = cv2.imencode(".jpg", np.full((48, 64, 3), shade, dtype=np.uint8))
+        assert ok
+        return bytes(buf)
+
+    def test_pushed_frames_become_the_operator_view_video(self, tmp_path: Path) -> None:
+        import cv2
+
+        from robopy.vr.recording import CameraTap, PushedFrames
+        from robopy.vr.render import load_recording, render_recording
+
+        pushed = PushedFrames()
+        assert pushed.latest is None
+        rec = SessionRecorder(tmp_path, operator_view=CameraTap(pushed, fps=20.0))
+        rec.push_operator_frame(self._jpeg(10))  # not recording: ignored
+        assert pushed.pushed == 0
+        rec.start({"joint_names": ["a"]}, 0.0)
+        for i in range(6):
+            rec.push_operator_frame(self._jpeg(40 * i))
+            rec.add({"q": [0.0]}, 0.05 * i)
+            time.sleep(0.05)
+        path = rec.stop(0.3)
+        assert path is not None and pushed.pushed == 6
+        doc = load_recording(path)
+        video = path.parent / doc["operator_view_video"]
+        assert video.name == f"{path.stem}_operator_view.mp4" and video.is_file()
+        cap = cv2.VideoCapture(str(video))
+        frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        ok, image = cap.read()
+        cap.release()
+        assert ok and image.shape == (48, 64, 3) and 3 <= frames <= 12
+        assert doc["camera_video"] is None
+        if HAS_MUJOCO:
+            outputs = render_recording(
+                path,
+                settings=RenderSettings(fps=10.0, width=160, height=120),
+                views=("third_person",),
+            )
+            assert outputs[-1] == video  # reported alongside the rendered views
+
+    def test_session_forwards_operator_frames_only_while_recording(
+        self, bundle: ModelBundle, tmp_path: Path
+    ) -> None:
+        from robopy.vr.recording import CameraTap, PushedFrames
+
+        pushed = PushedFrames()
+        session, _ = make_session(bundle)
+        session.recorder = SessionRecorder(tmp_path, operator_view=CameraTap(pushed, fps=20.0))
+        session.take_operator_frame(self._jpeg(1))
+        assert pushed.pushed == 0
+        session.handle({"type": "record", "action": "start"}, 0.0)
+        session.take_operator_frame(self._jpeg(2))
+        assert pushed.pushed == 1
+        assert session.handle({"type": "record"}, 0.1)["recording"]["operator_frames"] >= 0  # type: ignore[index]
+        session.handle({"type": "record", "action": "stop"}, 0.2)
+
+
 class TestRenderHelpers:
     def test_gl_backend_defaults_to_egl_on_headless_linux(
         self, monkeypatch: pytest.MonkeyPatch

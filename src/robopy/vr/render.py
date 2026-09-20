@@ -575,6 +575,9 @@ def render_recording(
             outputs.append(path)
     finally:
         renderer.close()
+    operator_video = document.get("operator_view_video")
+    if operator_video and (recording.parent / operator_video).is_file():
+        outputs.append(recording.parent / operator_video)
     return outputs
 
 

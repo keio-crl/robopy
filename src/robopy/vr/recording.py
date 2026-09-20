@@ -27,11 +27,12 @@ import json
 import logging
 import threading
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Sequence
 
-__all__ = ["RECORDING_FORMAT", "CameraTap", "SessionRecorder"]
+__all__ = ["RECORDING_FORMAT", "CameraTap", "PushedFrames", "SessionRecorder"]
 
 RECORDING_FORMAT = "robopy-vr-recording/1"
 
@@ -40,6 +41,39 @@ logger = logging.getLogger(__name__)
 #: Called with the finished recording and a progress callback (0..1); returns
 #: the files it produced.
 Renderer = Callable[[Path, Callable[[float], None]], Sequence[Path]]
+
+
+@dataclass(frozen=True)
+class _PushedFrame:
+    seq: int
+    data: bytes
+    stamp_s: float
+
+
+class PushedFrames:
+    """A frame source fed by :meth:`push` -- the operator's view, sent by the page.
+
+    Looks like a :class:`~robopy.vr.camera.FrameStreamer` to :class:`CameraTap`
+    (``latest`` with ``seq`` and ``data``), so the same tap writes it to video.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._latest: _PushedFrame | None = None
+        self.pushed = 0
+
+    def push(self, data: bytes) -> None:
+        """Take one JPEG."""
+        with self._lock:
+            seq = 1 if self._latest is None else self._latest.seq + 1
+            self._latest = _PushedFrame(seq, bytes(data), time.monotonic())
+            self.pushed += 1
+
+    @property
+    def latest(self) -> _PushedFrame | None:
+        """The newest frame, if any."""
+        with self._lock:
+            return self._latest
 
 
 class CameraTap:
@@ -157,6 +191,9 @@ class SessionRecorder:
         camera: Optional :class:`CameraTap`; the camera stream is then written
             as ``<recording>_first_person.mp4`` while recording, and the
             renderer leaves that view alone.
+        operator_view: Optional :class:`CameraTap` over a :class:`PushedFrames`
+            that the page feeds with what the headset shows; written as
+            ``<recording>_operator_view.mp4`` while recording.
         prefix: File name prefix.
     """
 
@@ -166,12 +203,14 @@ class SessionRecorder:
         *,
         render: Renderer | None = None,
         camera: CameraTap | None = None,
+        operator_view: CameraTap | None = None,
         prefix: str = "rakuda-vr",
     ) -> None:
         self.directory = Path(directory)
         self.prefix = prefix
         self._render = render
         self._camera = camera
+        self._operator = operator_view
         self._stem = ""
         self._lock = threading.Lock()
         self._active = False
@@ -206,10 +245,21 @@ class SessionRecorder:
                 self._stem = f"{self.prefix}-{started_at.strftime('%Y%m%d-%H%M%S')}"
                 self._metadata = dict(metadata)
                 self._frames = []
-                if self._camera is not None:
+                if self._camera is not None or self._operator is not None:
                     self.directory.mkdir(parents=True, exist_ok=True)
+                if self._camera is not None:
                     self._camera.start(self.directory / f"{self._stem}_first_person.mp4")
+                if self._operator is not None:
+                    self._operator.start(self.directory / f"{self._stem}_operator_view.mp4")
             return self._describe_locked()
+
+    def push_operator_frame(self, data: bytes) -> None:
+        """Take one JPEG of the operator's view from the page (ignored when not recording)."""
+        if self._operator is None or not self._active:
+            return
+        source = self._operator.streamer
+        if hasattr(source, "push"):
+            source.push(data)
 
     def add(self, frame: Mapping[str, Any], now_s: float) -> None:
         """Append one pose step (ignored when not recording)."""
@@ -244,12 +294,23 @@ class SessionRecorder:
                     logger.warning(
                         "camera video not kept (%d frames, %s)", tap["frames"], tap["error"]
                     )
+            operator_video = None
+            if self._operator is not None:
+                tap = self._operator.stop()
+                if tap["frames"] and tap["path"] and tap["error"] is None:
+                    operator_video = Path(tap["path"]).name
+                    logger.info("operator view written: %s (%d frames)", tap["path"], tap["frames"])
+                else:
+                    logger.info(
+                        "operator view not kept (%d frames, %s)", tap["frames"], tap["error"]
+                    )
             document = {
                 "format": RECORDING_FORMAT,
                 "started_at": self._started_at,
                 "duration_s": duration,
                 **metadata,
                 "camera_video": camera_video,
+                "operator_view_video": operator_video,
                 "frames": frames,
             }
             self.directory.mkdir(parents=True, exist_ok=True)
@@ -294,6 +355,7 @@ class SessionRecorder:
             "frames": len(self._frames) if self._active else 0,
             "seconds": seconds,
             "camera_frames": None if self._camera is None else self._camera.frames,
+            "operator_frames": None if self._operator is None else self._operator.frames,
             "directory": str(self.directory),
             "last_recording": None if self._last_path is None else str(self._last_path),
             "render": None if self._render_state is None else dict(self._render_state),

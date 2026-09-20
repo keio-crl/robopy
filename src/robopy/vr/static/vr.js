@@ -329,7 +329,7 @@ function recordingLine() {
   const r = state.recording;
   if (!r) return 'recording  off (server started without a recording directory)';
   const mmss = (s) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
-  if (r.active) return `recording  ● REC ${mmss(r.seconds)}  (${r.frames} frames; B / Y or the button stops)`;
+  if (r.active) return `recording  ● REC ${mmss(r.seconds)}  (${r.frames} frames, view ${state.operatorFrames || 0}; B / Y or the button stops)`;
   const rd = r.render;
   if (rd && rd.status === 'rendering') return `recording  rendering video… ${Math.round(rd.progress * 100)}%`;
   if (rd && rd.status === 'done') return `recording  saved ${rd.outputs.map((p) => p.split('/').pop()).join(', ')} in ${r.directory}`;
@@ -480,11 +480,63 @@ function previewPose(timeMs) {
   send({ type: 'pose', t: performance.now(), head: { p: [p.x, p.y, p.z], q: [q.x, q.y, q.z, q.w] }, left: null, right: null });
 }
 
+// --------------------------------------------------------------- operator view capture
+// While the server records, the scene is drawn again from the operator's
+// current viewpoint into an offscreen target, encoded as JPEG and sent over
+// the teleop socket, so the recording also holds what the headset showed
+// (twin, mirror, camera image, HUD).  Ten frames a second is plenty.
+const OPERATOR_VIEW_MS = 100;
+const OPERATOR_VIEW_W = 640, OPERATOR_VIEW_H = 480;
+const spectatorTarget = new THREE.WebGLRenderTarget(OPERATOR_VIEW_W, OPERATOR_VIEW_H);
+const spectatorCamera = new THREE.PerspectiveCamera(70, OPERATOR_VIEW_W / OPERATOR_VIEW_H, 0.01, 60);
+const spectatorPixels = new Uint8Array(OPERATOR_VIEW_W * OPERATOR_VIEW_H * 4);
+const spectatorCanvas = document.createElement('canvas');
+spectatorCanvas.width = OPERATOR_VIEW_W; spectatorCanvas.height = OPERATOR_VIEW_H;
+const spectatorCtx = spectatorCanvas.getContext('2d');
+const spectatorImage = spectatorCtx.createImageData(OPERATOR_VIEW_W, OPERATOR_VIEW_H);
+let lastOperatorViewMs = 0;
+let operatorViewBusy = false;
+state.operatorFrames = 0;
+
+function captureOperatorView(timeMs) {
+  if (!(state.recording && state.recording.active)) return;
+  if (operatorViewBusy || timeMs - lastOperatorViewMs < OPERATOR_VIEW_MS) return;
+  if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+  lastOperatorViewMs = timeMs;
+  // The operator's eye: `camera` carries the headset pose while presenting
+  // (three.js writes the XR pose into it) and the window's camera otherwise.
+  camera.updateMatrixWorld();
+  camera.matrixWorld.decompose(spectatorCamera.position, spectatorCamera.quaternion, spectatorCamera.scale);
+  spectatorCamera.updateMatrixWorld();
+  const xrWas = renderer.xr.enabled;
+  renderer.xr.enabled = false;
+  renderer.setRenderTarget(spectatorTarget);
+  renderer.render(scene, spectatorCamera);
+  renderer.readRenderTargetPixels(spectatorTarget, 0, 0, OPERATOR_VIEW_W, OPERATOR_VIEW_H, spectatorPixels);
+  renderer.setRenderTarget(null);
+  renderer.xr.enabled = xrWas;
+  // GL rows are bottom-up; flip into the image.
+  const row = OPERATOR_VIEW_W * 4;
+  for (let y = 0; y < OPERATOR_VIEW_H; y++) {
+    spectatorImage.data.set(spectatorPixels.subarray((OPERATOR_VIEW_H - 1 - y) * row, (OPERATOR_VIEW_H - y) * row), y * row);
+  }
+  spectatorCtx.putImageData(spectatorImage, 0, 0);
+  operatorViewBusy = true;
+  spectatorCanvas.toBlob((blob) => {
+    operatorViewBusy = false;
+    if (blob && state.ws && state.ws.readyState === WebSocket.OPEN && state.recording && state.recording.active) {
+      state.ws.send(blob);
+      state.operatorFrames += 1;
+    }
+  }, 'image/jpeg', 0.7);
+}
+
 renderer.setAnimationLoop((timeMs, frame) => {
   if (frame && renderer.xr.isPresenting) collectAndSend(frame, timeMs);
   else if (state.preview) previewPose(timeMs);
   if (!renderer.xr.isPresenting) controls.update();
   renderer.render(scene, camera);
+  captureOperatorView(timeMs);
 });
 
 // --------------------------------------------------------------- UI

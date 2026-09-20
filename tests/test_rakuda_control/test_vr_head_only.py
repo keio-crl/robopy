@@ -179,6 +179,72 @@ class TestLeaderFollowing:
         assert backend.describe()["leader"]["follower_motors"] == ["r_arm_sh_pitch1"]
 
 
+class TestHeadHoming:
+    def test_home_moves_the_head_first_and_becomes_the_start_pose(
+        self, bundle: ModelBundle
+    ) -> None:
+        bus = make_bus({"head_yaw": 1671, "head_pitch": 1772})
+        backend = make_backend(
+            bundle, bus, home_units={"head_yaw": 2048, "head_pitch": 2048}, home_timeout_s=0.05
+        )
+        assert not backend.homed
+        # Targets before homing are dropped, with a warning.
+        report = backend.apply(TeleopCommand(head_targets_rad={"head_yaw": 0.3}))
+        assert any("not homed" in w for w in report.warnings)
+        assert bus.registers("head_yaw").goal_position_count != 2048
+        # The simulated head does not move on its own (no stepping): the wait
+        # runs out, the goal stands, and the start pose is the home position.
+        result = backend.home()
+        assert result["moved"] and not result["arrived"]
+        assert bus.registers("head_yaw").goal_position_count == 2048
+        assert bus.registers("head_pitch").goal_position_count == 2048
+        assert backend.homed and backend.start_units == {"head_yaw": 2048.0, "head_pitch": 2048.0}
+        assert backend.home() == {"moved": False, "arrived": True, "start": backend.start_units}
+        # From now on targets are relative to the home position.
+        backend.apply(TeleopCommand(head_targets_rad={"head_yaw": 0.1}))
+        assert bus.registers("head_yaw").goal_position_count == round(2048 + 0.1 * COUNTS_PER_RAD)
+
+    def test_home_arrives_when_the_head_gets_there(self, bundle: ModelBundle) -> None:
+        bus = make_bus({"head_yaw": 2048, "head_pitch": 2048})
+        backend = make_backend(
+            bundle, bus, home_units={"head_yaw": 2050, "head_pitch": 2045}, home_timeout_s=1.0
+        )
+        result = backend.home()  # already within tolerance (8 counts)
+        assert result["moved"] and result["arrived"]
+        assert backend.describe()["home"] == {"head_yaw": 2050.0, "head_pitch": 2045.0}
+
+    def test_threaded_home_and_session_connect(self, bundle: ModelBundle) -> None:
+        bus = make_bus({"head_yaw": 2048, "head_pitch": 2048})
+        backend = make_backend(
+            bundle,
+            bus,
+            threaded=True,
+            rate_hz=200.0,
+            home_units={"head_yaw": 2044, "head_pitch": 2052},
+            home_timeout_s=1.0,
+        )
+        session = TeleopSession(
+            backend,
+            head_tracker=None,
+            arm_teleop=None,
+            config=VRServerConfig(state_hz=1000.0),
+            bundle=bundle,
+        )
+        # Connecting an operator homes the head before anything else.
+        assert backend.homed and backend.start_units == {"head_yaw": 2044.0, "head_pitch": 2052.0}
+        assert bus.registers("head_yaw").goal_position_count == 2044
+        session.close()
+        backend.close()
+
+    def test_without_home_the_start_pose_is_kept(self, bundle: ModelBundle) -> None:
+        bus = make_bus({"head_yaw": 1500, "head_pitch": 1600})
+        backend = make_backend(bundle, bus)
+        assert backend.homed and backend.home()["moved"] is False
+        assert backend.start_units == {"head_yaw": 1500.0, "head_pitch": 1600.0}
+        backend.set_start_units({"head_yaw": 1400})
+        assert backend.start_units["head_yaw"] == 1400.0
+
+
 class TestBusThread:
     def test_a_cycle_is_one_leader_read_and_one_follower_write(self, bundle: ModelBundle) -> None:
         follower = make_bus({"head_yaw": 2048, "head_pitch": 2048})

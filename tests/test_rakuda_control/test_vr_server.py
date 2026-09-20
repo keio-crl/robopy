@@ -558,6 +558,33 @@ class TestVRServer:
         assert _wait_until(lambda: server.session is None, 3.0)
         assert not server.arm_teleop.arms["left"].clutched
 
+    def test_binary_frames_reach_the_recorder(self, server: VRServer, tmp_path: Path) -> None:
+        import cv2
+        import numpy as np
+
+        from robopy.vr.recording import CameraTap, PushedFrames, SessionRecorder
+
+        pushed = PushedFrames()
+        server.recorder = SessionRecorder(tmp_path, operator_view=CameraTap(pushed, fps=20.0))
+        host, port = server.server_address[0], server.server_address[1]
+        client = RawClient(host, port, "/ws/teleop")
+        try:
+            client.send_json({"type": "hello"})
+            client.recv_json()
+            client.send_json({"type": "record", "action": "start"})
+            assert client.recv_json()["recording"]["active"]
+            ok, buf = cv2.imencode(".jpg", np.zeros((8, 8, 3), dtype=np.uint8))
+            assert ok
+            client.send(ws.OP_BINARY, bytes(buf))
+            client.send_json({"type": "record"})  # a status round trip orders the frame first
+            assert client.recv_json()["type"] == "recording"
+            assert pushed.pushed == 1
+            client.send_json({"type": "record", "action": "stop"})
+            assert not client.recv_json()["recording"]["active"]
+        finally:
+            client.close()
+            server.recorder = None
+
     def test_second_operator_is_refused(self, server: VRServer) -> None:
         host, port = server.server_address[0], server.server_address[1]
         first = RawClient(host, port, "/ws/teleop")

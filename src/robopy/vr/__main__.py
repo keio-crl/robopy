@@ -17,6 +17,7 @@ import shutil
 import ssl
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, Sequence, Tuple
 
@@ -189,6 +190,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="--hardware-head: motor direction per headset direction. Default 1,-1, as "
         "measured on the lab's Rakuda (both head motors turn against their URDF axes). "
         "auto: the URDF's sign times the configured motor direction",
+    )
+    hw.add_argument(
+        "--head-home",
+        default="2048,2048",
+        metavar="YAW,PITCH",
+        help="--hardware-head: encoder counts the head is moved to when the operator connects, "
+        "before any headset target; that pose is then 'looking ahead'. Default 2048,2048 "
+        "(mid travel). 'current' keeps whatever pose the head has at start",
     )
     hw.add_argument(
         "--head-range",
@@ -367,6 +376,29 @@ def _parse_grippers(
     return out
 
 
+def _home_head_before_loop(backend: Any, bus: Any) -> Dict[str, Any]:
+    """Put the head at its reset position with the bus still free (bilateral path).
+
+    The backend is built with a control system and so never touches the bus
+    itself; here the loop has not started yet, so the goals are written and
+    the head read back directly until it arrives or the wait runs out.
+    """
+    from robopy.motor.dynamixel_control_table import XControlTable
+
+    home = backend.describe()["home"]
+    if not home:
+        return {"moved": False}
+    bus.sync_write(XControlTable.GOAL_POSITION, {k: int(v) for k, v in home.items()})
+    deadline = time.monotonic() + 3.0
+    arrived = False
+    while time.monotonic() < deadline and not arrived:
+        time.sleep(0.05)
+        present = bus.sync_read(XControlTable.PRESENT_POSITION, list(home))
+        arrived = all(abs(float(present.get(k, 1e9)) - v) <= 8.0 for k, v in home.items())
+    backend.set_start_units(home)
+    return {"moved": True, "arrived": arrived, "start": home}
+
+
 def _hold_leader_grippers(leader: Any) -> None:
     """Give the leader's torque-enabled grippers their spring-back goal."""
     from robopy.motor.dynamixel_control_table import XControlTable
@@ -383,6 +415,18 @@ def _hold_leader_grippers(leader: Any) -> None:
         leader.motors.sync_write(
             XControlTable.GOAL_POSITION, {name: LEADER_GRIP_HOLD_COUNT for name in grippers}
         )
+
+
+def _parse_home(text: str, parser: argparse.ArgumentParser) -> Dict[str, float] | None:
+    from robopy.config.robot_config.rakuda_config import RAKUDA_HEAD_MOTOR_NAMES
+
+    if text.strip().lower() == "current":
+        return None
+    try:
+        yaw, pitch = (float(v) for v in text.split(","))
+    except ValueError:
+        parser.error(f"--head-home expects YAW,PITCH counts or current, got {text!r}")
+    return dict(zip(RAKUDA_HEAD_MOTOR_NAMES, (yaw, pitch)))
 
 
 def _parse_signs(text: str, parser: argparse.ArgumentParser) -> Tuple[int, int] | None:
@@ -604,6 +648,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             model = bundle.model
             head_motors = _head_motors(args, parser, cfg, model)
             rest = _start_pose(args, parser, model.movable_joint_names)
+            home = _parse_home(args.head_home, parser)
             if args.bilateral:
                 from robopy.robots.rakuda.rakuda_pair_sys import RakudaPairSys
 
@@ -633,7 +678,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     rest_positions_rad=rest,
                     control_system=system,
                     target_ttl_s=args.target_ttl,
+                    home_units=home,
                 )
+                # Home now, while the bus is still free: the loop owns it after start.
+                homed = _home_head_before_loop(backend, pair.follower.motors)
+                print(f"  head reset: {homed}")
                 pair.start_control(system)
             else:
                 from robopy.robots.rakuda.rakuda_follower import RakudaFollower
@@ -668,7 +717,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     leader_bus=leader_bus,
                     leader_to_follower=RAKUDA_MOTOR_MAPPING if leader_bus is not None else None,
                     follower_writable=None if writable is None else list(writable),
+                    home_units=home,
                 )
+                if home is not None:
+                    print(
+                        "  head reset position: "
+                        + ", ".join(f"{k}={v:.0f}" for k, v in home.items())
+                        + " (moved there when the operator connects, before tracking starts)"
+                    )
             head_backend = backend
             print(
                 "  head motors at start: "

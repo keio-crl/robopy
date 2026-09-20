@@ -67,8 +67,9 @@ from .arm_teleop import ControllerSample, DualArmTeleop
 from .backend import TeleopBackend, TeleopCommand
 from .camera import FrameStreamer, SyntheticFrameSource
 from .head_tracking import HeadTracker
-from .recording import CameraTap, SessionRecorder
+from .recording import CameraTap, PushedFrames, SessionRecorder
 from .websocket import (
+    OP_BINARY,
     OP_TEXT,
     WebSocket,
     WebSocketClosed,
@@ -257,6 +258,14 @@ class TeleopSession:
             self.robot_anchor_m = head_anchor_position(
                 bundle, backend.joint_positions(), head_tracker, config.arm_anchor_frame
             )
+        # A backend that can put the head at its reset position does so now,
+        # before any target is issued: the operator has just connected, and
+        # what they re-centre on must be a known pose, not wherever the head
+        # was left.  (Simulated and Cartesian-hardware backends have no such
+        # step; the bilateral path homes before its loop takes the bus.)
+        home = getattr(backend, "home", None)
+        if callable(home):
+            home()
         if head_tracker is not None:
             head_tracker.reset(backend.joint_positions())
 
@@ -354,6 +363,11 @@ class TeleopSession:
         elif action != "status":
             return {"type": "error", "message": f"unknown record action {action!r}"}
         return {"type": "recording", "recording": self.recorder.describe()}
+
+    def take_operator_frame(self, data: bytes) -> None:
+        """A JPEG of the operator's view from the page; kept while recording."""
+        if self.recorder is not None:
+            self.recorder.push_operator_frame(data)
 
     def _record_frame(self, now_s: float) -> None:
         """Append this pose step to the recorder (cheap when not recording)."""
@@ -736,7 +750,12 @@ class VRServer(ViewerServer):
             ):
                 # A real camera: its pictures become the first-person video.
                 tap = CameraTap(self.camera)
-            self.recorder = SessionRecorder(self.vr_config.record_dir, render=render, camera=tap)
+            self.recorder = SessionRecorder(
+                self.vr_config.record_dir,
+                render=render,
+                camera=tap,
+                operator_view=CameraTap(PushedFrames(), fps=15.0),
+            )
 
     @property
     def url(self) -> str:
@@ -829,6 +848,11 @@ class VRServer(ViewerServer):
                 except (WebSocketError, socket.timeout, TimeoutError, OSError) as exc:
                     logger.info("VR operator stream ended: %s", exc)
                     break
+                if message.opcode == OP_BINARY:
+                    # A JPEG of what the headset shows, for the recording.
+                    with self._lock:
+                        session.take_operator_frame(message.data)
+                    continue
                 if message.opcode != OP_TEXT:
                     continue
                 try:
