@@ -264,3 +264,135 @@ class TestRealsenseFrameSource:
             and calls[-1] == "disconnect"
         )
         assert to_bgr_uint8(np.zeros((3, 2, 2)), color="rgb").shape == (2, 2, 3)
+
+
+class TestBilateralHead:
+    """The arms coupled by the bilateral controller; the head through its loop."""
+
+    COUPLED = ("torso_yaw", "r_arm_sh_pitch1", "l_arm_sh_pitch1")
+
+    def _system(self) -> Any:
+        from robopy.config.robot_config.rakuda_config import (
+            RakudaBilateralConfig,
+            RakudaControlConfig,
+            RakudaJointCalibrationSpec,
+        )
+        from robopy.robots.rakuda.rakuda_control import RakudaControlSystem
+
+        calibration = {
+            name: RakudaJointCalibrationSpec(
+                direction=1,
+                zero_count=2048,
+                lower_limit_rad=-2.0,
+                upper_limit_rad=2.0,
+                max_velocity_rad_s=3.0,
+                torque_constant_nm_per_a=1.5,
+                current_limit_a=1.0,
+                validated=True,
+            )
+            for name in self.COUPLED
+        }
+        config = RakudaControlConfig(
+            mode="bilateral_joint",
+            control_period_s=0.002,
+            leader_joint_calibration=dict(calibration),
+            follower_joint_calibration=dict(calibration),
+            bilateral=RakudaBilateralConfig(
+                coupled_motors=list(self.COUPLED),
+                stiffness_nm_per_rad=2.0,
+                damping_nm_s_per_rad=0.05,
+                max_torque_nm=1.0,
+                max_torque_rate_nm_s=50.0,
+                ramp_time_s=0.2,
+                velocity_filter_hz=50.0,
+                leader_current_limit_a={n: 0.5 for n in self.COUPLED},
+                follower_current_limit_a={n: 1.0 for n in self.COUPLED},
+                allow_uncompensated=True,
+            ),
+            allow_hardware_current_output=True,
+        )
+        leader = make_bus({"torso_yaw": 2048})
+        follower = make_bus({"head_yaw": 2048, "head_pitch": 2048})
+        system = RakudaControlSystem.from_buses(
+            config,
+            leader,
+            follower,
+            leader_torque_enabled=list(self.COUPLED),
+            follower_torque_enabled=list(self.COUPLED) + ["head_yaw", "head_pitch"],
+        )
+        return system, leader, follower
+
+    def test_head_goals_are_written_by_the_control_loop(self, bundle: ModelBundle) -> None:
+        system, leader, follower = self._system()
+        system.configure()
+        system.align()
+        backend = make_backend(bundle, follower, control_system=system, target_ttl_s=0.5)
+        assert backend.describe()["mode"] == "head_only+bilateral"
+        system.prepare_running()
+        head_before = follower.registers("head_yaw").goal_position_count
+        report = backend.apply(TeleopCommand(head_targets_rad={"head_yaw": 0.2, "head_pitch": 0.0}))
+        assert report.warnings == []
+        # Not written yet: the backend never touches the bus while the loop owns it.
+        assert follower.registers("head_yaw").goal_position_count == head_before
+        assert system.report()["direct_goal_counts"]["goals"] == {
+            "head_yaw": round(2048 + 0.2 * COUNTS_PER_RAD),
+            "head_pitch": 2048,
+        }
+        dt = system.loop.control_period_s
+        for _ in range(5):
+            leader.joint("torso_yaw").position_rad = 0.2
+            leader.step(dt)
+            follower.step(dt)
+            system.loop.run_once(dt)
+        assert follower.registers("head_yaw").goal_position_count == round(
+            2048 + 0.2 * COUNTS_PER_RAD
+        )
+        assert system.report()["direct_goal_counts"]["writes"] == 5
+        # The coupling is in charge of the torso: current mode, with a torque command.
+        assert follower.registers("torso_yaw").operating_mode == 0
+        assert follower.registers("torso_yaw").goal_current_raw != 0
+        # The twin reports the commanded head pose (nothing is read back).
+        assert backend.joint_positions()["head_yaw_dof"] == pytest.approx(0.2, abs=1e-3)
+        system.stop()
+
+    def test_goal_counts_are_refused_for_coupled_motors_and_other_modes(
+        self, bundle: ModelBundle
+    ) -> None:
+        system, _, follower = self._system()
+        with pytest.raises(ValueError, match="bilateral coupling"):
+            system.set_direct_goal_counts({"torso_yaw": 2048})
+        with pytest.raises(ValueError, match="not a follower motor"):
+            system.set_direct_goal_counts({"nope": 2048})
+        with pytest.raises(ValueError, match="non-finite"):
+            system.set_direct_goal_counts({"head_yaw": float("nan")})
+        with pytest.raises(ValueError):
+            make_backend(bundle, follower, control_system=system, leader_bus=make_bus())
+        from robopy.robots.rakuda.rakuda_control import RakudaControlSystem
+
+        cartesian = RakudaControlSystem.__new__(RakudaControlSystem)
+        from robopy.control.types import ControlMode
+
+        cartesian._mode = ControlMode.CARTESIAN_TELEOP
+        with pytest.raises(RuntimeError, match="bilateral_joint"):
+            cartesian.set_direct_goal_counts({"head_yaw": 2048})
+
+    def test_expired_goals_stop_being_written(self, bundle: ModelBundle) -> None:
+        import time
+
+        system, leader, follower = self._system()
+        system.configure()
+        system.align()
+        backend = make_backend(bundle, follower, control_system=system, target_ttl_s=0.02)
+        system.prepare_running()
+        backend.apply(TeleopCommand(head_targets_rad={"head_yaw": 0.1}))
+        dt = system.loop.control_period_s
+        leader.step(dt)
+        follower.step(dt)
+        system.loop.run_once(dt)
+        assert system.report()["direct_goal_counts"]["writes"] == 1
+        time.sleep(0.03)
+        leader.step(dt)
+        follower.step(dt)
+        system.loop.run_once(dt)
+        assert system.report()["direct_goal_counts"]["writes"] == 1  # expired: not rewritten
+        system.stop()

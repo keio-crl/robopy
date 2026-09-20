@@ -146,6 +146,14 @@ class HeadOnlyFollowerBackend:
         follower_writable: Follower motors that may be written from the
             leader (the torque-enabled ones); all of them by default.  The
             head motors are never written from the leader.
+        control_system: A running bilateral
+            :class:`~robopy.robots.rakuda.rakuda_control.RakudaControlSystem`.
+            The bus then belongs to its loop: head goals go through its
+            ``set_direct_goal_counts()`` and are written by that loop, nothing
+            is read back, and the leader is the coupling's business, not this
+            backend's.  The start pose is read here, so build the backend
+            *before* the system starts.
+        target_ttl_s: Validity of the goals handed to the control system.
     """
 
     name = "hardware"
@@ -162,9 +170,17 @@ class HeadOnlyFollowerBackend:
         leader_bus: Any | None = None,
         leader_to_follower: Mapping[str, str] | None = None,
         follower_writable: Iterable[str] | None = None,
+        control_system: Any | None = None,
+        target_ttl_s: float = 0.25,
     ) -> None:
         from robopy.motor.dynamixel_control_table import XControlTable
 
+        if control_system is not None and leader_bus is not None:
+            raise ValueError("With a control system the leader is coupled by it; drop leader_bus.")
+        if target_ttl_s <= 0.0:
+            raise ValueError("target_ttl_s must be positive.")
+        self._system = control_system
+        self._ttl = target_ttl_s
         self._bus = bus
         self._leader = leader_bus
         self._leader_names: list[str] = []
@@ -281,12 +297,25 @@ class HeadOnlyFollowerBackend:
                 if name in leader
             }
             goals.update(self._leader_goals)
-        if goals:
+        if goals and self._system is not None:
+            if self._degrees:
+                warnings.append("a calibrated bus cannot be driven through the control system")
+            else:
+                self._system.set_direct_goal_counts(
+                    {k: int(v) for k, v in goals.items()}, ttl_s=self._ttl
+                )
+                self._goals.update(goals)
+                self._writes += 1
+                self._last_write_s = command.stamp_s
+                # The loop owns the bus: no read-back; the goal stands in for it.
+                self._present.update(goals)
+        elif goals:
             self._bus.sync_write(self._goal_item, goals)
             self._goals.update(goals)
             self._writes += 1
             self._last_write_s = command.stamp_s
-        self._present.update(self._read_present())
+        if self._system is None:
+            self._present.update(self._read_present())
         self._last_warnings = warnings
         report = BackendReport(joints=self.joint_positions())
         report.hand_poses = {side: self.hand_pose(side) for side in ("left", "right")}
@@ -301,7 +330,11 @@ class HeadOnlyFollowerBackend:
         """JSON-friendly status."""
         return {
             "name": self.name,
-            "mode": "head_only",
+            "mode": "head_only+bilateral"
+            if self._system is not None
+            else "head_only+leader"
+            if self._leader is not None
+            else "head_only",
             "units": "deg" if self._degrees else "counts",
             "motors": {
                 m.motor: {

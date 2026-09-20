@@ -126,3 +126,17 @@ class TestLabDefaults:
             build_parser().parse_args(["--camera-rotate", "0", "--head-signs", "auto"]).head_signs
             == "auto"
         )
+
+
+class TestBilateralFlag:
+    def test_bilateral_needs_hardware_head(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from robopy.vr.__main__ import main
+
+        with pytest.raises(SystemExit) as exc:
+            main(["--bilateral"])
+        assert exc.value.code == 2
+        assert "--bilateral goes with --hardware-head" in capsys.readouterr().err
+        args = build_parser().parse_args(
+            ["--hardware-head", "--bilateral", "--leader-port", "/dev/x"]
+        )
+        assert args.bilateral and args.leader_port == "/dev/x"

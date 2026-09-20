@@ -441,6 +441,20 @@ uv run --extra kinematics --extra realsense robopy-vr --hardware-head \
 ページのツインとミラー、録画ログの関節角は、頭以外は起動姿勢のままです（リーダ追従の腕の角度を URDF に
 直すには校正済み joint map が要るため）。実機の動きは頭部カメラの映像と 1 人称動画で確認してください。
 
+**バイラテラル**: さらに `--bilateral` を付けると、腕はリーダの位置を写すのではなく
+[バイラテラル関節制御](#制御モード双腕ik-バイラテラル)（仮想ばね・ダンパ、電流制御）で結合され、頭はヘッドセットに
+追従します。制御系（`RakudaControlSystem`）を `bilateral_joint` モードで起動するので、`.robopy/rakuda/config.yaml` の
+`control:` セクション（結合する関節の校正値、`bilateral:` のゲイン、`allow_hardware_current_output: true`）が
+そのまま必要です。`control.mode` はこのフラグで `bilateral_joint` に上書きされます。制御系が動いている間はバスの
+書き込み権を制御ループが持つため、頭の目標は制御系の `set_direct_goal_counts()` に渡し、制御ループが自分の
+周期の中で書きます（別スレッドからバスに触ることはありません）。頭のモータは結合の対象外（位置モードのまま）で、
+リーダ側の頭は無視されます。
+
+```bash
+uv run --extra kinematics --extra realsense robopy-vr --hardware-head --bilateral \
+    --follower-port /dev/ttyUSB1 --leader-port /dev/ttyUSB0 --camera realsense --host 0.0.0.0 --self-signed
+```
+
 API から同じ構成を組む例が `examples/robot/rakuda_vr_head_camera.py` です。引数なしでは模擬バスと
 テストパターンで動くので、実機なしでも配線を確認できます（`--follower-port` で実機、`--serve` でページを
 配信）。

@@ -196,6 +196,14 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="YAW,PITCH",
         help="--hardware-head: degrees of travel allowed either side of the start pose",
     )
+    hw.add_argument(
+        "--bilateral",
+        action="store_true",
+        help="--hardware-head with a leader: couple the arms with the bilateral joint "
+        "controller (the config's control: section, mode forced to bilateral_joint; needs "
+        "the measured calibration and allow_hardware_current_output) instead of copying the "
+        "leader's positions. The head still follows the headset. THE ROBOT WILL MOVE.",
+    )
     hw.add_argument("--leader-port", default=None, help="leader serial port (config default)")
     hw.add_argument("--follower-port", default=None, help="follower serial port (config default)")
 
@@ -530,6 +538,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--hardware and --hardware-head are different things; pick one")
     if args.hardware_head:
         args.no_arms = True  # by definition
+    if args.bilateral and not args.hardware_head:
+        parser.error("--bilateral goes with --hardware-head")
     if args.no_head and args.no_arms:
         parser.error("--no-head with --no-arms leaves nothing to teleoperate")
 
@@ -575,50 +585,89 @@ def main(argv: Sequence[str] | None = None) -> int:
             model = system.model
         elif args.hardware_head:
             from robopy.config.dotrobopy import apply_rakuda_dotconfig
-            from robopy.config.robot_config.rakuda_config import RakudaConfig
-            from robopy.robots.rakuda.rakuda_follower import RakudaFollower
+            from robopy.config.robot_config.rakuda_config import (
+                RAKUDA_MOTOR_MAPPING,
+                RakudaConfig,
+            )
 
             base = RakudaConfig(leader_port="", follower_port=args.follower_port or "")
             cfg = apply_rakuda_dotconfig(base)
             if args.follower_port:
                 cfg.follower_port = args.follower_port
+            if args.leader_port:
+                cfg.leader_port = args.leader_port
             if not cfg.follower_port:
                 parser.error(
                     "--hardware-head needs --follower-port (or follower_port in the config)"
                 )
             model = bundle.model
-            print(
-                "HARDWARE HEAD MODE: connecting to the follower; only head_yaw and head_pitch "
-                "will be written. The arms keep whatever torque the config gives them."
-            )
-            follower = RakudaFollower(cfg)
-            follower.connect()
             head_motors = _head_motors(args, parser, cfg, model)
-            leader_bus = None
-            if cfg.leader_port:
-                from robopy.config.robot_config.rakuda_config import RAKUDA_MOTOR_MAPPING
-                from robopy.robots.rakuda.rakuda_leader import RakudaLeader
+            rest = _start_pose(args, parser, model.movable_joint_names)
+            if args.bilateral:
+                from robopy.robots.rakuda.rakuda_pair_sys import RakudaPairSys
+
+                if not cfg.leader_port:
+                    parser.error("--bilateral needs --leader-port (or leader_port in the config)")
+                if cfg.control is None:
+                    parser.error(
+                        "--bilateral needs a control: section in .robopy/rakuda/config.yaml "
+                        "(calibration, bilateral gains, allow_hardware_current_output)"
+                    )
+                cfg.control.mode = "bilateral_joint"
+                print(
+                    "HARDWARE HEAD + BILATERAL: the arms are coupled to the leader by the "
+                    "bilateral joint controller; the head follows the headset through its loop."
+                )
+                pair = RakudaPairSys(cfg)
+                pair.connect()
+                _hold_leader_grippers(pair.leader)
+                system = pair.build_control_system()
+                # Built before the loop runs: it reads the head's start pose itself.
+                backend = HeadOnlyFollowerBackend(
+                    pair.follower.motors,
+                    model=model,
+                    yaw=head_motors[0],
+                    pitch=head_motors[1],
+                    tcp_frames=bundle.tcp_frames,
+                    rest_positions_rad=rest,
+                    control_system=system,
+                    target_ttl_s=args.target_ttl,
+                )
+                pair.start_control(system)
+            else:
+                from robopy.robots.rakuda.rakuda_follower import RakudaFollower
 
                 print(
-                    f"  leader on {cfg.leader_port}: every joint but the head follows it "
-                    "(position teleoperation); the head follows the headset."
+                    "HARDWARE HEAD MODE: connecting to the follower; only head_yaw and head_pitch "
+                    "will be written from the headset. The arms keep whatever torque the config "
+                    "gives them."
                 )
-                leader = RakudaLeader(cfg)
-                leader.connect()
-                leader_bus = leader.motors
-                _hold_leader_grippers(leader)
-            writable = cfg.follower_torque_enabled
-            backend = HeadOnlyFollowerBackend(
-                follower.motors,
-                model=model,
-                yaw=head_motors[0],
-                pitch=head_motors[1],
-                tcp_frames=bundle.tcp_frames,
-                rest_positions_rad=_start_pose(args, parser, model.movable_joint_names),
-                leader_bus=leader_bus,
-                leader_to_follower=RAKUDA_MOTOR_MAPPING if leader_bus is not None else None,
-                follower_writable=None if writable is None else list(writable),
-            )
+                follower = RakudaFollower(cfg)
+                follower.connect()
+                leader_bus = None
+                if cfg.leader_port:
+                    from robopy.robots.rakuda.rakuda_leader import RakudaLeader
+
+                    print(
+                        f"  leader on {cfg.leader_port}: every joint but the head follows it "
+                        "(position teleoperation); the head follows the headset."
+                    )
+                    leader = RakudaLeader(cfg)
+                    leader.connect()
+                    leader_bus = leader.motors
+                    _hold_leader_grippers(leader)
+                writable = cfg.follower_torque_enabled
+                backend = HeadOnlyFollowerBackend(
+                    follower.motors,
+                    model=model,
+                    yaw=head_motors[0],
+                    pitch=head_motors[1],
+                    tcp_frames=bundle.tcp_frames,
+                    rest_positions_rad=rest,
+                    leader_bus=leader_bus,
+                    leader_to_follower=RAKUDA_MOTOR_MAPPING if leader_bus is not None else None,
+                    follower_writable=None if writable is None else list(writable),
+                )
             print(
                 "  head motors at start: "
                 + ", ".join(f"{k}={v:.0f}" for k, v in backend.start_units.items())
