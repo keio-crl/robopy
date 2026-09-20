@@ -45,7 +45,7 @@ const state = {
   clutchButton: 'a',     // 'a' (A/X), 'grip' or 'stick'; from hello
   mirrorOn: true, mirrorDistance: 1.5,
   recording: null,       // server's recorder state (from hello / state)
-  frames: 0, lastFrameBytes: 0,
+  frames: 0, lastFrameBytes: 0, lastFrameMs: null, camConnected: false,
   connected: false,
 };
 window.__robopy_vr = state;
@@ -352,6 +352,7 @@ function connectCamera() {
   const ws = new WebSocket(wsUrl('/ws/camera'));
   ws.binaryType = 'blob';
   state.camWs = ws;
+  ws.onopen = () => { state.camConnected = true; };
   ws.onmessage = async (ev) => {
     if (typeof ev.data === 'string') {
       try { const m = JSON.parse(ev.data); if (m.type === 'camera' && m.fov_deg) sizeImagePlane(m.fov_deg); } catch (e) { /* ignore */ }
@@ -365,10 +366,17 @@ function connectCamera() {
       imageTexture.image = bitmap;
       imageTexture.needsUpdate = true;
       imageMaterial.color.set(0xffffff);
-      state.frames += 1; state.lastFrameBytes = ev.data.size;
+      state.frames += 1; state.lastFrameBytes = ev.data.size; state.lastFrameMs = performance.now();
     } catch (e) { console.warn('frame decode failed', e); }
   };
-  ws.onclose = () => { imageMaterial.color.set(0x444444); };
+  // A dropped camera socket is reconnected on its own; the picture greys
+  // out meanwhile so a stale frame is not mistaken for a live one.
+  ws.onclose = () => {
+    state.camConnected = false;
+    imageMaterial.color.set(0x444444);
+    setTimeout(() => { if (state.camWs === ws) connectCamera(); }, RECONNECT_MS);
+  };
+  ws.onerror = () => {};
 }
 
 // --------------------------------------------------------------- WebXR
@@ -526,7 +534,12 @@ function renderStatus() {
     }
     for (const w of s.warnings || []) lines.push(`warning   ${w}`);
   }
-  lines.push(`link      sent ${state.sent}  recv ${state.received}  rtt ${state.lastRttMs == null ? '—' : state.lastRttMs.toFixed(0) + 'ms'}  camera frames ${state.frames} (${(state.lastFrameBytes / 1024).toFixed(0)} kB)`);
+  const age = state.lastFrameMs == null ? null : (performance.now() - state.lastFrameMs) / 1000;
+  const cam = !state.camConnected ? 'camera socket down, reconnecting'
+    : age == null ? 'camera waiting for the first frame'
+    : age > 3 ? `camera STALLED ${age.toFixed(0)} s (${state.frames} frames)`
+    : `camera ${state.frames} frames, last ${age.toFixed(1)} s ago (${(state.lastFrameBytes / 1024).toFixed(0)} kB)`;
+  lines.push(`link      sent ${state.sent}  recv ${state.received}  rtt ${state.lastRttMs == null ? '—' : state.lastRttMs.toFixed(0) + 'ms'}  ${cam}`);
   const el = $('#vr-status');
   el.textContent = lines.join('\n');
   drawHud(lines.slice(0, 6));

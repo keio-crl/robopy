@@ -80,6 +80,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--camera-size", default="640x480", metavar="WxH", help="RealSense colour stream size"
     )
     cam.add_argument("--camera-fps", type=float, default=30.0)
+    cam.add_argument(
+        "--camera-rotate",
+        type=int,
+        choices=[0, 90, 180, 270],
+        default=0,
+        help="rotate the picture clockwise, e.g. 180 for a camera mounted upside down",
+    )
     cam.add_argument("--jpeg-quality", type=int, default=75)
     cam.add_argument("--camera-max-width", type=int, default=960, help="downscale wider frames")
     cam.add_argument(
@@ -475,7 +482,9 @@ def _make_camera(args: argparse.Namespace, caption: Any) -> Any:
             f"got {args.camera!r}"
         )
     encoder = JpegEncoder(args.jpeg_quality, max_width=args.camera_max_width)
-    return FrameStreamer(source, fps=args.camera_fps, encoder=encoder)
+    return FrameStreamer(
+        source, fps=args.camera_fps, encoder=encoder, rotate_deg=int(args.camera_rotate)
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:

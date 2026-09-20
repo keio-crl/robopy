@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import json
 import logging
+import select
 import socket
 import ssl
 import threading
@@ -849,27 +850,28 @@ class VRServer(ViewerServer):
             logger.info("VR operator disconnected; arms holding")
 
     def run_camera_socket(self, ws: WebSocket, connection: socket.socket) -> None:
-        """Push JPEG frames to one client as they are produced."""
+        """Push JPEG frames to one client as they are produced.
+
+        One thread does both directions on purpose.  The client sends nothing
+        but pings and a close, which are serviced when the socket becomes
+        readable; a second thread blocked in ``recv`` while this one sends
+        would use the same TLS connection from two threads at once, which
+        OpenSSL does not allow and which ended camera streams mid-session.
+        """
         if self.camera is None:
             ws.send_text(json.dumps({"type": "error", "message": "no camera in this session"}))
             ws.close(1011, "no camera")
             return
         self._camera_clients += 1
-        stop = threading.Event()
+        reason = "client closed"
 
-        def drain() -> None:
-            # The client sends nothing but pings/close; read them so a close
-            # frame is honoured promptly instead of on the next failed send.
-            try:
-                while not stop.is_set():
-                    ws.recv()
-            except (WebSocketError, OSError):
-                pass
-            finally:
-                stop.set()
+        def readable() -> bool:
+            pending = getattr(connection, "pending", None)
+            if pending is not None and pending():
+                return True
+            ready, _, _ = select.select([connection], [], [], 0.0)
+            return bool(ready)
 
-        reader = threading.Thread(target=drain, name="robopy-camera-ws-reader", daemon=True)
-        reader.start()
         try:
             ws.send_text(
                 json.dumps(
@@ -877,21 +879,26 @@ class VRServer(ViewerServer):
                         "type": "camera",
                         "fov_deg": self.vr_config.camera_fov_deg,
                         "source": type(self.camera.source).__name__,
+                        "rotate_deg": self.camera.rotate_deg,
                     }
                 )
             )
             last_seq = 0
-            while not stop.is_set():
-                frame = self.camera.wait_for(last_seq, 1.0)
+            while True:
+                if readable():
+                    ws.recv(control_only=True)  # answers pings; raises on close
+                frame = self.camera.wait_for(last_seq, 0.25)
                 if frame is None:
                     continue
                 last_seq = frame.seq
                 ws.send_binary(frame.data)
-        except WebSocketError:
+        except WebSocketClosed:
             pass
+        except (WebSocketError, OSError) as exc:
+            reason = f"{type(exc).__name__}: {exc}"
         finally:
-            stop.set()
             self._camera_clients -= 1
+            logger.info("camera client gone (%s); %d still watching", reason, self._camera_clients)
 
     def server_close(self) -> None:
         """Stop the camera thread along with the server."""

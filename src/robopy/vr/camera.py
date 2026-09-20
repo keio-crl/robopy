@@ -31,6 +31,7 @@ __all__ = [
     "OpenCVFrameSource",
     "SyntheticFrameSource",
     "RealsenseFrameSource",
+    "rotate_frame",
     "to_bgr_uint8",
 ]
 
@@ -222,6 +223,7 @@ class RealsenseFrameSource:
         height: Colour stream height.
         fps: Colour stream rate.
         timeout_ms: How long :meth:`read` waits for a new frame.
+        reconnect_after_s: Restart the pipeline after this long without a frame.
     """
 
     def __init__(
@@ -232,6 +234,7 @@ class RealsenseFrameSource:
         height: int = 480,
         fps: int = 30,
         timeout_ms: float = 100.0,
+        reconnect_after_s: float = 5.0,
     ) -> None:
         from robopy.config.sensor_config.visual_config.camera_config import (
             RealsenseCameraConfig,
@@ -250,18 +253,71 @@ class RealsenseFrameSource:
         self._camera: Any = RealsenseCamera(config=config)
         self._camera.connect()
         self._timeout_ms = timeout_ms
+        self.reconnect_after_s = reconnect_after_s
+        self.failures = 0
+        self.reconnects = 0
+        self._last_frame_s = time.monotonic()
 
     def read(self) -> NDArray[np.uint8] | None:
-        """The newest colour frame as BGR ``uint8``, or ``None`` if none is new."""
+        """The newest colour frame as BGR ``uint8``, or ``None`` if none is new.
+
+        Any failure of the device counts as "no frame"; after
+        ``reconnect_after_s`` without one the pipeline is restarted, since a
+        RealSense that stops delivering (USB hiccup, a dropped stream) does
+        not come back on its own.
+        """
         try:
             frame = self._camera.async_read(timeout_ms=self._timeout_ms)
-        except TimeoutError:
+        except Exception as exc:  # noqa: BLE001 - timeouts and device errors alike
+            self.failures += 1
+            if not isinstance(exc, TimeoutError):
+                logger.warning("RealSense read failed: %s", exc)
+            self._maybe_reconnect()
             return None
+        self._last_frame_s = time.monotonic()
         return to_bgr_uint8(frame, color="rgb")
+
+    def _maybe_reconnect(self) -> None:
+        if time.monotonic() - self._last_frame_s < self.reconnect_after_s:
+            return
+        self._last_frame_s = time.monotonic()  # one attempt per interval
+        self.reconnects += 1
+        logger.warning(
+            "RealSense: no frame for %.0f s; restarting the pipeline (attempt %d)",
+            self.reconnect_after_s,
+            self.reconnects,
+        )
+        try:
+            self._camera.disconnect()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("RealSense disconnect during restart: %s", exc)
+        try:
+            self._camera.connect()
+        except Exception as exc:  # noqa: BLE001
+            logger.error("RealSense restart failed: %s", exc)
 
     def close(self) -> None:
         """Stop the pipeline."""
         self._camera.disconnect()
+
+
+_ROTATIONS = {
+    90: cv2.ROTATE_90_CLOCKWISE,
+    180: cv2.ROTATE_180,
+    270: cv2.ROTATE_90_COUNTERCLOCKWISE,
+}
+
+
+def rotate_frame(frame: NDArray[np.uint8], degrees: int) -> NDArray[np.uint8]:
+    """Rotate an image clockwise by a multiple of 90 degrees (for a camera mounted askew)."""
+    degrees %= 360
+    if degrees == 0:
+        return frame
+    try:
+        code = _ROTATIONS[degrees]
+    except KeyError:
+        raise ValueError("degrees must be a multiple of 90.") from None
+    return np.ascontiguousarray(cv2.rotate(frame, code))
 
 
 class JpegEncoder:
@@ -323,13 +379,21 @@ class FrameStreamer:
     """
 
     def __init__(
-        self, source: FrameSource, *, fps: float = 30.0, encoder: JpegEncoder | None = None
+        self,
+        source: FrameSource,
+        *,
+        fps: float = 30.0,
+        encoder: JpegEncoder | None = None,
+        rotate_deg: int = 0,
     ) -> None:
         if fps <= 0.0:
             raise ValueError("fps must be positive.")
         self.source = source
         self.fps = float(fps)
         self.encoder = encoder or JpegEncoder()
+        if rotate_deg % 90 != 0:
+            raise ValueError("rotate_deg must be a multiple of 90.")
+        self.rotate_deg = rotate_deg % 360
         self._latest: EncodedFrame | None = None
         self._condition = threading.Condition()
         self._stop = threading.Event()
@@ -392,6 +456,8 @@ class FrameStreamer:
             self._read_failures += 1
             return None
         started = time.perf_counter()
+        if self.rotate_deg:
+            frame = rotate_frame(frame, self.rotate_deg)
         data, width, height = self.encoder.encode(frame)
         self._encode_seconds += time.perf_counter() - started
         with self._condition:
@@ -419,6 +485,7 @@ class FrameStreamer:
         return {
             "running": self.running,
             "fps_ceiling": self.fps,
+            "rotate_deg": self.rotate_deg,
             "frames": self._frames,
             "read_failures": self._read_failures,
             "mean_encode_ms": (1e3 * self._encode_seconds / self._frames if self._frames else None),
