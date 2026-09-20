@@ -146,6 +146,20 @@ class TestSessionRecording:
 
 
 class TestRenderHelpers:
+    def test_gl_backend_defaults_to_egl_on_headless_linux(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from robopy.vr.render import select_gl_backend
+
+        monkeypatch.delenv("MUJOCO_GL", raising=False)
+        monkeypatch.setattr("robopy.vr.render.sys.platform", "linux")
+        assert select_gl_backend() == "egl"
+        monkeypatch.setenv("MUJOCO_GL", "osmesa")
+        assert select_gl_backend() == "osmesa"  # an explicit choice is kept
+        monkeypatch.delenv("MUJOCO_GL")
+        monkeypatch.setattr("robopy.vr.render.sys.platform", "darwin")
+        assert select_gl_backend() is None
+
     def test_resample_holds_the_last_frame(self) -> None:
         frames: List[Dict[str, Any]] = [{"t": 0.0, "q": 0}, {"t": 0.4, "q": 1}, {"t": 0.45, "q": 2}]
         out = resample(frames, 10.0)  # instants 0.0 .. 0.4: frame 1 takes over at 0.4

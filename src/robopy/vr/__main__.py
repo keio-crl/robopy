@@ -575,12 +575,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not args.no_record:
             renderer = "off (--no-render)"
             if not args.no_render:
-                try:
-                    import mujoco  # noqa: F401
+                import importlib.util
 
-                    renderer = "MuJoCo"
-                except ImportError:
-                    renderer = "UNAVAILABLE: install mujoco (uv run --with mujoco ...)"
+                from .render import select_gl_backend
+
+                # Not imported here: MuJoCo picks its GL backend on first
+                # import, so that is left to the renderer, which sets it up.
+                if importlib.util.find_spec("mujoco") is None:
+                    renderer = "UNAVAILABLE: pip install mujoco"
+                else:
+                    renderer = f"MuJoCo (MUJOCO_GL={select_gl_backend() or 'default'})"
             print(
                 f"Recording: B / Y or the page's Record button; files in "
                 f"{args.record_dir.resolve()}; video renderer {renderer}"

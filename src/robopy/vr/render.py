@@ -22,6 +22,7 @@ import argparse
 import json
 import math
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Sequence, Tuple
@@ -31,7 +32,13 @@ from numpy.typing import NDArray
 
 from .recording import RECORDING_FORMAT
 
-__all__ = ["RenderSettings", "RakudaVideoRenderer", "render_recording", "main"]
+__all__ = [
+    "RenderSettings",
+    "RakudaVideoRenderer",
+    "render_recording",
+    "select_gl_backend",
+    "main",
+]
 
 VIEWS = ("third_person", "first_person")
 
@@ -75,12 +82,32 @@ class RenderSettings:
             raise ValueError("fps, width and height must be positive.")
 
 
+def select_gl_backend() -> str | None:
+    """Choose MuJoCo's GL backend before it is imported; returns the setting.
+
+    MuJoCo reads ``MUJOCO_GL`` once, when the package is first imported, and
+    its default on Linux is GLFW, which needs an X display.  The server is a
+    headless process (it runs in a terminal, often over SSH, while the
+    operator is in a headset), so on Linux the default here is EGL, which
+    renders off-screen on the GPU.  An explicit ``MUJOCO_GL`` is respected.
+    """
+    if "MUJOCO_GL" not in os.environ and sys.platform.startswith("linux"):
+        os.environ["MUJOCO_GL"] = "egl"
+    return os.environ.get("MUJOCO_GL")
+
+
 def _require_mujoco() -> Any:
+    backend = select_gl_backend()
     try:
         import mujoco
     except ImportError as exc:  # pragma: no cover - depends on the environment
         raise RuntimeError(
             "rendering needs MuJoCo: pip install mujoco, or uv run --with mujoco ..."
+        ) from exc
+    except Exception as exc:  # pragma: no cover - a GL backend that cannot start
+        raise RuntimeError(
+            f"MuJoCo could not start its {backend or 'default'} GL backend: {exc}. "
+            "Set MUJOCO_GL=egl (GPU, headless), osmesa (software) or glfw (needs a display)."
         ) from exc
     return mujoco
 
@@ -116,7 +143,6 @@ class RakudaVideoRenderer:
         mjcf: Path | None = None,
     ) -> None:
         mujoco = _require_mujoco()
-        os.environ.setdefault("MUJOCO_GL", "egl")
         self.settings = settings or RenderSettings()
         self.mujoco = mujoco
         spec = mujoco.MjSpec.from_file(str(mjcf or rakuda_mjcf_path()))
@@ -163,9 +189,16 @@ class RakudaVideoRenderer:
             for side in ("left", "right")
             if any(self.model.site(i).name == f"gripper_{side}" for i in range(self.model.nsite))
         }
-        self._renderer = mujoco.Renderer(
-            self.model, height=self.settings.height, width=self.settings.width
-        )
+        try:
+            self._renderer = mujoco.Renderer(
+                self.model, height=self.settings.height, width=self.settings.width
+            )
+        except Exception as exc:  # mujoco.FatalError is not an ImportError
+            raise RuntimeError(
+                f"MuJoCo could not create an off-screen GL context (MUJOCO_GL="
+                f"{os.environ.get('MUJOCO_GL', 'unset')}): {exc}. On a headless Linux box "
+                "use MUJOCO_GL=egl (GPU) or MUJOCO_GL=osmesa (software)."
+            ) from exc
         self._third = mujoco.MjvCamera()
         mujoco.mjv_defaultCamera(self._third)
         self._third.lookat[:] = [0.1, 0.0, 0.0]
