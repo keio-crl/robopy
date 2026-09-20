@@ -101,14 +101,16 @@ class TestHeadOnlyFollowerBackend:
             bundle, bus, yaw_direction=-1, rest_positions_rad={"torso_yaw_dof": 0.3}
         )
         backend.apply(TeleopCommand(head_targets_rad={"head_yaw": 0.2, "head_pitch": 0.0}))
-        for _ in range(400):  # let the simulated servo settle on the goal
-            bus.step(0.005)
-        backend.apply(TeleopCommand())  # a read, no write
+        # The head is never read back after the start pose: the commanded goal
+        # is what the twin shows, so one write is one bus transaction.
+        writes = bus.transaction_count
+        backend.apply(TeleopCommand())  # nothing to write, nothing to read
+        assert bus.transaction_count == writes
         joints = backend.joint_positions()
         assert joints["torso_yaw_dof"] == 0.3
         # Motor moved +0.2 rad; direction -1 => the model joint turned -0.2.
-        assert joints["head_yaw_dof"] == pytest.approx(-0.2, abs=0.01)
-        assert joints["head_pitch_dof"] == pytest.approx(0.1, abs=0.01)  # neutral, unmoved
+        assert joints["head_yaw_dof"] == pytest.approx(-0.2, abs=2e-3)  # one count of rounding
+        assert joints["head_pitch_dof"] == pytest.approx(0.1, abs=1e-9)  # neutral, unmoved
         assert backend.describe()["motors"]["head_yaw"]["goal"] == round(
             2048 + 0.2 * COUNTS_PER_RAD
         )
@@ -178,6 +180,20 @@ class TestLeaderFollowing:
 
 
 class TestBusThread:
+    def test_a_cycle_is_one_leader_read_and_one_follower_write(self, bundle: ModelBundle) -> None:
+        follower = make_bus({"head_yaw": 2048, "head_pitch": 2048})
+        leader = make_bus({"torso_yaw": 1200})
+        backend = make_backend(bundle, follower, leader_bus=leader)
+        f0, l0 = follower.transaction_count, leader.transaction_count
+        backend.apply(TeleopCommand(head_targets_rad={"head_yaw": 0.1, "head_pitch": 0.0}))
+        assert (follower.transaction_count - f0, leader.transaction_count - l0) == (1, 1)
+        goals = backend.describe()["leader"]["last_goals"]
+        assert "head_yaw" not in goals and "head_pitch" not in goals and len(goals) == 3
+        # Fifteen on the real machine: seventeen leader motors minus the head.
+        from robopy.config.robot_config.rakuda_config import RAKUDA_MOTOR_MAPPING
+
+        assert len([m for m in RAKUDA_MOTOR_MAPPING if m not in ("head_yaw", "head_pitch")]) == 15
+
     def test_apply_only_posts_and_the_thread_does_the_bus_work(self, bundle: ModelBundle) -> None:
         import time
 

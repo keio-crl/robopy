@@ -9,9 +9,10 @@ measured calibration it requires (``zero_count`` and friends) has to exist.
 :class:`HeadOnlyFollowerBackend` talks to the follower bus directly, in the
 motors' own units (encoder counts, or the bus's calibrated degrees when a
 calibration is loaded): it reads where the two head motors are when it
-starts, takes that as the pose the operator re-centres on, and while
-teleoperating writes ``start + headset angle`` to those two motors, clamped
-to a travel around the start pose.  No other motor is ever written.  The
+starts -- the only time it reads them -- takes that as the pose the operator
+re-centres on, and while teleoperating writes ``start + headset angle`` to
+those two motors, clamped to a travel around the start pose.  No other
+motor is ever written from the headset.  The
 sign of each axis relative to the headset is what :func:`head_motor_mapping`
 puts into the head tracker: the URDF's sign for the joint (derived from the
 model) times the motor's measured ``direction`` when the configuration has
@@ -165,8 +166,6 @@ class HeadOnlyFollowerBackend:
             thread, that falls behind the headset's 60 Hz and the head lags
             further with every message.  ``False`` writes inline, for tests.
         rate_hz: The bus thread's rate.
-        present_read_every: Read the head's present position (for the
-            twin) every this many cycles rather than every cycle.
     """
 
     name = "hardware"
@@ -187,7 +186,6 @@ class HeadOnlyFollowerBackend:
         target_ttl_s: float = 0.25,
         threaded: bool = True,
         rate_hz: float = 50.0,
-        present_read_every: int = 10,
     ) -> None:
         from robopy.motor.dynamixel_control_table import XControlTable
 
@@ -195,13 +193,12 @@ class HeadOnlyFollowerBackend:
             raise ValueError("With a control system the leader is coupled by it; drop leader_bus.")
         if target_ttl_s <= 0.0:
             raise ValueError("target_ttl_s must be positive.")
-        if rate_hz <= 0.0 or present_read_every <= 0:
-            raise ValueError("rate_hz and present_read_every must be positive.")
+        if rate_hz <= 0.0:
+            raise ValueError("rate_hz must be positive.")
         self._system = control_system
         self._ttl = target_ttl_s
         self._threaded = threaded and control_system is None
         self._period_s = 1.0 / rate_hz
-        self._present_read_every = present_read_every
         self._lock = threading.Lock()
         self._pending: Dict[str, float] = {}
         self._thread: threading.Thread | None = None
@@ -276,7 +273,7 @@ class HeadOnlyFollowerBackend:
         return dict(self._start)
 
     def joint_positions(self) -> Dict[str, float]:
-        """Model angles: rest values, with the head joints as last measured."""
+        """Model angles: rest values, with the head joints as last commanded."""
         out = dict(self._rest)
         with self._lock:
             present = dict(self._present)
@@ -319,14 +316,6 @@ class HeadOnlyFollowerBackend:
                 if self._leader is not None
                 else "arms and grippers are not driven in head-only mode"
             )
-        if self._leader is not None and self._leader_map:
-            leader = self._leader.sync_read(self._present_item, self._leader_names)
-            self._leader_goals = {
-                follower: float(leader[name])
-                for name, follower in self._leader_map.items()
-                if name in leader
-            }
-            goals.update(self._leader_goals)
         if goals and self._system is not None:
             if self._degrees:
                 warnings.append("a calibrated bus cannot be driven through the control system")
@@ -359,7 +348,13 @@ class HeadOnlyFollowerBackend:
         return report
 
     def step(self, head_goals: Mapping[str, float] | None = None) -> None:
-        """One bus cycle: leader in, goals out, head position back now and then.
+        """One bus cycle: read the leader, write the follower once.
+
+        Two bus transactions, no more: the leader's present positions come in
+        (one read), and one write carries the fifteen joints copied from it
+        together with the two head goals from the headset.  The head's own
+        position is never read back after the start pose -- the goal just
+        written stands in for it in what the page and the log see.
 
         The only place the bus is used once the backend is built.  Called by
         the bus thread; or inline from :meth:`apply` when not threaded.
@@ -386,11 +381,8 @@ class HeadOnlyFollowerBackend:
             self._bus.sync_write(self._goal_item, goals)
             with self._lock:
                 self._writes += 1
+                self._present.update({k: v for k, v in goals.items() if k in self._by_name})
         self._cycles += 1
-        if self._cycles % self._present_read_every == 1 or not self._threaded:
-            present = self._read_present()
-            with self._lock:
-                self._present.update(present)
         elapsed_ms = (time.perf_counter() - started) * 1e3
         self._cycle_ms = (
             elapsed_ms if self._cycles == 1 else 0.9 * self._cycle_ms + 0.1 * elapsed_ms
