@@ -191,6 +191,12 @@ class XArmFollower(XArmArm):
         self._robot.set_collision_rebound(True)
         self._set_gripper_position(self._gripper_open)
 
+        # Enable F/T sensor
+        code = self._robot.set_ft_sensor_enable(1)
+
+        if code != 0:
+            raise RuntimeError(f"Failed to enable F/T sensor: code={code}")
+
         self._last_state = self._update_last_state()
         with self._target_command_lock:
             self._target_command = {
@@ -233,6 +239,27 @@ class XArmFollower(XArmArm):
         with self._last_state_lock:
             state = self._last_state
         return np.concatenate([state.cartesian_pos(), state.quat()]).astype(np.float32)
+
+
+
+    def get_ft_sensor_data(self) -> NDArray[np.float32]:
+        """Return external force/torque [Fx, Fy, Fz, Tx, Ty, Tz].
+
+        Force: N
+        Torque: N*m
+        """
+
+        if self._robot is None or not self._is_connected:
+            raise ConnectionError("XArmFollower is not connected.")
+
+        code, ft_data = self._robot.get_ft_sensor_data()
+
+        if code != 0:
+            raise RuntimeError(f"Failed to read F/T sensor: code={code}")
+
+        return np.asarray(ft_data, dtype=np.float32)
+
+
 
     def command_joint_state(self, joint_state: NDArray[np.float32]) -> None:
         """Submit a joint (+gripper) target to the background thread."""
