@@ -273,7 +273,7 @@ class XArmFollower(XArmArm):
         M = 0.06
         J = M * 0.01
 
-        K_pos = 300
+        K_pos = 1200 #300
         K_ori = 4
 
         mass = [M, M, M, J, J, J]
