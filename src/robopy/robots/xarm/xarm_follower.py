@@ -157,6 +157,13 @@ class XArmFollower(XArmArm):
 
 
         self._robot: Any | None = None  # XArmAPI (lazy import)
+
+        # Admittance control
+        self._admittance_enabled = False
+        self._motion_paused = False
+        self._control_lock = threading.RLock()
+
+
         self._last_state_lock = threading.Lock()
         self._target_command_lock = threading.Lock()
         self._last_state: RobotState = RobotState.from_robot(
@@ -203,23 +210,152 @@ class XArmFollower(XArmArm):
         self._is_connected = True
         logger.info("Connected to XArmFollower at %s.", self._ip)
 
+
     def disconnect(self) -> None:
         if not self._is_connected:
             return
+
+        # Stop the background control thread
         self._running = False
+
         if self._thread is not None:
-            self._thread.join(timeout=2.0)
+            self._thread.join(timeout=5.0)
+
+            if self._thread.is_alive():
+                raise RuntimeError(
+                    "Failed to stop XArmFollower control thread."
+                )
+
             self._thread = None
-        if self._robot is not None:
-            try:
+
+        with self._control_lock:
+            self._motion_paused = True
+
+            if self._robot is not None:
+
+                # Disable admittance control
+                code = self._robot.set_ft_sensor_mode(0)
+
+                if code != 0:
+                    raise RuntimeError(
+                        "Failed to disable admittance control: "
+                        f"code={code}"
+                    )
+
+                self._admittance_enabled = False
+
+                logger.info("Admittance control disabled.")
+
+                # Disconnect SDK
                 self._robot.disconnect()
-            except Exception as exc:  # pragma: no cover - best effort
-                logger.warning("xArm disconnect raised: %s", exc)
-            self._robot = None
-        self._is_connected = False
+                self._robot = None
+
+            self._is_connected = False
+
         logger.info("Disconnected XArmFollower.")
 
+
+
     # ----------------------------------------------------------- public API
+    def enable_admittance_control(self) -> None:
+        """Enable xArm's built-in admittance control."""
+
+        if self._robot is None or not self._is_connected:
+            raise RuntimeError("XArmFollower is not connected.")
+
+        def check(code: int, name: str) -> None:
+            if code != 0:
+                raise RuntimeError(
+                    f"{name} failed: code={code}"
+                )
+
+        # Parameters verified in the standalone SDK test
+        M = 0.06
+        J = M * 0.01
+
+        K_pos = 300
+        K_ori = 4
+
+        mass = [M, M, M, J, J, J]
+
+        stiffness = [
+            K_pos, K_pos, K_pos,
+            K_ori, K_ori, K_ori
+        ]
+
+        damping = [0] * 6
+
+        ref_frame = 0
+        c_axis = [0, 0, 1, 0, 0, 0]
+
+        with self._control_lock:
+            self._motion_paused = True
+            arm = self._robot
+
+            try:
+                check(
+                    arm.set_ft_sensor_admittance_parameters(
+                        mass, stiffness, damping
+                    ),
+                    "set admittance parameters"
+                )
+
+                check(
+                    arm.set_ft_sensor_admittance_parameters(
+                        ref_frame, c_axis
+                    ),
+                    "set admittance axes"
+                )
+
+                check(
+                    arm.set_ft_sensor_enable(1),
+                    "enable F/T sensor"
+                )
+
+                time.sleep(0.2)
+
+                check(
+                    arm.set_ft_sensor_mode(1),
+                    "enable admittance mode"
+                )
+
+                check(
+                    arm.set_state(0),
+                    "start admittance control"
+                )
+
+            except Exception:
+                self._admittance_enabled = False
+                arm.set_ft_sensor_mode(0)
+                raise
+
+            self._admittance_enabled = True
+
+            logger.info("Admittance control enabled.")
+
+
+    def disable_admittance_control(self) -> None:
+        """Disable admittance control."""
+
+        if self._robot is None or not self._is_connected:
+            raise RuntimeError("XArmFollower is not connected.")
+
+        with self._control_lock:
+            self._motion_paused = True
+
+            code = self._robot.set_ft_sensor_mode(0)
+
+            if code != 0:
+                raise RuntimeError(
+                    f"Failed to disable admittance control: "
+                    f"code={code}"
+                )
+
+            self._admittance_enabled = False
+
+            logger.info("Admittance control disabled.")
+
+
     def get_joint_state(self) -> NDArray[np.float32]:
         """Return ``[j1..j7, gripper]`` (8-DOF) matching the leader format."""
         with self._last_state_lock:
@@ -295,6 +431,29 @@ class XArmFollower(XArmArm):
                 "gripper": gripper,
             }
 
+
+    def resume_motion_commands(self) -> None:
+        """Resume motion commands after mode switching."""
+
+        if self._robot is None or not self._is_connected:
+            raise RuntimeError("XArmFollower is not connected.")
+
+        with self._control_lock:
+
+            state = self._update_last_state()
+
+            # Reset target to the current robot state
+            with self._target_command_lock:
+                self._target_command = {
+                    "mode": "joint",
+                    "joints": state.joints().copy(),
+                    "gripper": None,
+                }
+
+            self._motion_paused = False
+
+            logger.info("Motion commands resumed.")
+
     # ---------------------------------------------------------- xArm helpers
     def _clear_error_states(self) -> None:
         if self._robot is None:
@@ -323,63 +482,132 @@ class XArmFollower(XArmArm):
             wait=False,
         )
 
+
     def _get_gripper_pos(self) -> float:
-        if self._robot is None: return 0.0
+        if self._robot is None:
+            raise RuntimeError("XArm is not connected.")
 
         code, gripper_pos = self._robot.get_gripper_g2_position()
 
         retries = 0
-        while code != 0 or gripper_pos is None:
-            logger.warning("get_gripper_g2_position error code=%s value=%s", code, gripper_pos,)
 
-            if code == 22:
-                self._clear_error_states()
+        while (code != 0 or gripper_pos is None) and retries < 10:
+            logger.warning(
+                "get_gripper_g2_position error: code=%s, value=%s "
+                "(retry=%d/10)",
+                code,
+                gripper_pos,
+                retries + 1,
+            )
 
-            retries += 1
-            if retries > 10: return 0.0
-            time.sleep(0.001)
+            # Retry only. Do not change the robot control state.
+            time.sleep(0.01)
 
             code, gripper_pos = self._robot.get_gripper_g2_position()
 
+            retries += 1
+
+        if code != 0 or gripper_pos is None:
+            raise RuntimeError(
+                "Failed to get gripper position after retries: "
+                f"code={code}, value={gripper_pos}"
+            )
+
         span = self._gripper_close - self._gripper_open
 
-        if span == 0: return 0.0
+        if span == 0:
+            return 0.0
 
-        return float(float(gripper_pos) - self._gripper_open) / span
-
+        return (
+            float(gripper_pos) - self._gripper_open
+        ) / span
 
 
     def _update_last_state(self) -> RobotState:
         with self._last_state_lock:
             if self._robot is None:
-                return RobotState.from_robot(
-                    np.zeros(3, dtype=np.float32),
-                    np.zeros(7, dtype=np.float32),
-                    0.0,
-                    np.zeros(3, dtype=np.float32),
-                )
+                raise RuntimeError("XArm is not connected.")
+
+            # Gripper position
             gripper_pos = self._get_gripper_pos()
-            code, servo_angle = self._robot.get_servo_angle(is_radian=True)
+
+            # Joint angles
+            code, servo_angle = self._robot.get_servo_angle(
+                is_radian=True
+            )
+
             retries = 0
-            while code != 0 and retries < 10:
-                logger.warning("get_servo_angle error code=%s", code)
-                self._clear_error_states()
-                code, servo_angle = self._robot.get_servo_angle(is_radian=True)
+
+            while (code != 0 or servo_angle is None) and retries < 10:
+                logger.warning(
+                    "get_servo_angle error: code=%s "
+                    "(retry=%d/10)",
+                    code,
+                    retries + 1,
+                )
+
+                time.sleep(0.01)
+
+                code, servo_angle = self._robot.get_servo_angle(
+                    is_radian=True
+                )
+
                 retries += 1
 
-            code, cart_pos = self._robot.get_position_aa(is_radian=True)
+            if code != 0 or servo_angle is None:
+                raise RuntimeError(
+                    "Failed to get servo angles after retries: "
+                    f"code={code}"
+                )
+
+            # Cartesian pose
+            code, cart_pos = self._robot.get_position_aa(
+                is_radian=True
+            )
+
             retries = 0
-            while code != 0 and retries < 10:
-                logger.warning("get_position_aa error code=%s", code)
-                self._clear_error_states()
-                code, cart_pos = self._robot.get_position_aa(is_radian=True)
+
+            while (code != 0 or cart_pos is None) and retries < 10:
+                logger.warning(
+                    "get_position_aa error: code=%s "
+                    "(retry=%d/10)",
+                    code,
+                    retries + 1,
+                )
+
+                time.sleep(0.01)
+
+                code, cart_pos = self._robot.get_position_aa(
+                    is_radian=True
+                )
+
                 retries += 1
 
-            cart_arr = np.asarray(cart_pos, dtype=np.float32)
+            if code != 0 or cart_pos is None:
+                raise RuntimeError(
+                    "Failed to get Cartesian pose after retries: "
+                    f"code={code}"
+                )
+
+            cart_arr = np.asarray(
+                cart_pos,
+                dtype=np.float32,
+            )
+
             aa = cart_arr[3:].copy()
-            cartesian = cart_arr[:3].copy() / 1000.0  # mm -> m
-            joints = np.asarray(servo_angle, dtype=np.float32)[:7]
-            return RobotState.from_robot(cartesian, joints, gripper_pos, aa)
+            cartesian = cart_arr[:3].copy() / 1000.0
+
+            joints = np.asarray(
+                servo_angle,
+                dtype=np.float32,
+            )[:7]
+
+            return RobotState.from_robot(
+                cartesian,
+                joints,
+                gripper_pos,
+                aa,
+            )
 
     def _set_position(self, joints: np.ndarray) -> None:
         if self._robot is None:
@@ -404,8 +632,11 @@ class XArmFollower(XArmArm):
             mvacc=self._cartesian_mvacc,
             radius=0,
         )
-        if ret in (1, 9):
-            self._clear_error_states()
+        if ret != 0:
+            self._motion_paused = True
+            raise RuntimeError(
+                f"xArm set_position failed: code={ret}"
+            )
 
     def _send_cartesian(self, pose: np.ndarray) -> None:
         """Send a 6-DOF Cartesian pose ``[x, y, z, rx, ry, rz]`` (mm, rad)."""
@@ -429,8 +660,12 @@ class XArmFollower(XArmArm):
             mvacc=self._cartesian_mvacc,
             radius=0,
         )
-        if ret in (1, 9):
-            self._clear_error_states()
+        if ret != 0:
+            self._motion_paused = True
+            raise RuntimeError(
+                f"xArm set_position failed: code={ret}"
+            )
+
 
     def _robot_thread(self) -> None:
         rate = _Rate(duration=1.0 / self._control_frequency)
@@ -439,54 +674,147 @@ class XArmFollower(XArmArm):
         
         last_gripper_command = None
 
+
         while self._running:
             s_t = time.time()
-            self._last_state = self._update_last_state()
-            with self._target_command_lock:
-                cmd = dict(self._target_command)
 
-            mode = cmd.get("mode", "joint")
-            gripper_command: Optional[float] = cmd.get("gripper")
+            try:
+                with self._control_lock:
+                    self._last_state = self._update_last_state()
 
-            if mode == "cartesian_abs":
-                self._send_cartesian(np.asarray(cmd["pose"], dtype=np.float32))
-            elif mode == "cartesian_rel":
-                if self._robot is not None:
-                    cur_cart = self._robot.get_position_aa(is_radian=True)[1]
-                else:
-                    cur_cart = [0.0] * 6
-                cur_arr = np.asarray(cur_cart, dtype=np.float32)
-                target = cur_arr + np.asarray(cmd["delta"], dtype=np.float32)
-                self._send_cartesian(target)
-            else:
-                target_joints = np.asarray(cmd.get("joints", np.zeros(7)), dtype=np.float32)
-                joint_delta = target_joints - self._last_state.joints()
-                norm = float(np.linalg.norm(joint_delta))
-                if norm > self._max_delta and norm > 0.0:
-                    delta = joint_delta / norm * self._max_delta
-                else:
-                    delta = joint_delta
-                self._set_position(self._last_state.joints() + delta)
+            except Exception as exc:
+                logger.error(
+                    "Failed to update robot state: %s",
+                    exc,
+                )
 
-            # if gripper_command is not None:
-            #     gripper_pos = self._gripper_open + float(gripper_command) * (
-            #         self._gripper_close - self._gripper_open
-            #     )
-            #     self._set_gripper_position(int(gripper_pos))
-            if gripper_command is not None:
-                if (
-                    last_gripper_command is None
-                    or abs(gripper_command - last_gripper_command) > 1e-3
-                ):
-                    gripper_pos = self._gripper_open + float(gripper_command) * (
-                        self._gripper_close - self._gripper_open
-                    )
+                # Stop sending new motion commands
+                with self._control_lock:
+                    self._motion_paused = True
 
-                    self._set_gripper_position(gripper_pos)
-                    last_gripper_command = gripper_command
+                # Keep the thread alive for subsequent state polling
+                rate.sleep()
+                continue
 
-            self._last_state = self._update_last_state()
+
+            try:
+                with self._control_lock:
+
+                    if not self._motion_paused:
+                        with self._target_command_lock:
+                            cmd = dict(self._target_command)
+
+                        mode = cmd.get("mode", "joint")
+
+                        gripper_command: Optional[float] = cmd.get(
+                            "gripper"
+                        )
+
+                        if mode == "cartesian_abs":
+
+                            self._send_cartesian(
+                                np.asarray(cmd["pose"], dtype=np.float32)
+                            )
+
+                        elif mode == "cartesian_rel":
+
+                            if self._robot is None:
+                                raise RuntimeError("XArm is not connected.")
+
+                            code, cur_cart = self._robot.get_position_aa(
+                                is_radian=True
+                            )
+
+                            if code != 0 or cur_cart is None:
+                                raise RuntimeError(
+                                    f"Failed to get current Cartesian pose: code={code}"
+                                )
+
+                            cur_arr = np.asarray(
+                                cur_cart,
+                                dtype=np.float32
+                            )
+
+                            target = cur_arr + np.asarray(
+                                cmd["delta"],
+                                dtype=np.float32
+                            )
+
+                            self._send_cartesian(target)
+
+                        else:
+
+                            target_joints = np.asarray(
+                                cmd.get("joints", np.zeros(7)),
+                                dtype=np.float32
+                            )
+
+                            joint_delta = (
+                                target_joints
+                                - self._last_state.joints()
+                            )
+
+                            norm = float(np.linalg.norm(joint_delta))
+
+                            if norm > self._max_delta and norm > 0.0:
+                                delta = (
+                                    joint_delta / norm * self._max_delta
+                                )
+                            else:
+                                delta = joint_delta
+
+                            self._set_position(
+                                self._last_state.joints() + delta
+                            )
+
+                        # Gripper control
+                        if gripper_command is not None:
+
+                            if (
+                                last_gripper_command is None
+                                or abs(
+                                    gripper_command - last_gripper_command
+                                ) > 1e-3
+                            ):
+
+                                gripper_pos = (
+                                    self._gripper_open
+                                    + float(gripper_command)
+                                    * (
+                                        self._gripper_close
+                                        - self._gripper_open
+                                    )
+                                )
+
+                                self._set_gripper_position(gripper_pos)
+
+                                last_gripper_command = gripper_command
+            except Exception:
+                logger.exception(
+                    "Failed to send xArm motion command."
+                )
+
+                with self._control_lock:
+                    self._motion_paused = True
+
+
+
+            try:
+                with self._control_lock:
+                    self._last_state = self._update_last_state()
+
+            except Exception as exc:
+                logger.error(
+                    "Failed to update robot state: %s",
+                    exc,
+                )
+
+                with self._control_lock:
+                    self._motion_paused = True
+
             rate.sleep()
+
+
             step_times.append(time.time() - s_t)
             count += 1
             if count % 1000 == 0:
