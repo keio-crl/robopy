@@ -178,8 +178,24 @@ def build_model_and_ik(config: RakudaControlConfig) -> Tuple[Any, Any]:
     )
     model.add_fixed_frame("left_tcp", spec.left_tcp.parent_frame, _tcp_transform(spec.left_tcp))
     model.add_fixed_frame("right_tcp", spec.right_tcp.parent_frame, _tcp_transform(spec.right_tcp))
+    # The same resolver the viewer uses: overrides replace a wrong URDF range,
+    # soft limits narrow, and each value keeps its provenance.
+    if spec.joint_limit_overrides_rad:
+        model.set_joint_limit_overrides(spec.override_entries())
     if spec.soft_limits_rad:
-        model.set_soft_limits(spec.soft_limits_rad)
+        model.set_soft_limits(spec.soft_limit_entries())
+    profile = model.limit_profile(display_range_rad=None)
+    active = [spec.torso_joint, *spec.left_arm_joints, *spec.right_arm_joints]
+    unvalidated = profile.unvalidated([j for j in active if j in profile])
+    if unvalidated:
+        logger.warning(
+            "Joint limit(s) of %s are not validated for the machine (URDF placeholders or "
+            "provisional soft limits). The solver obeys them; whether the machine does is "
+            "unmeasured.",
+            unvalidated,
+        )
+    for line in profile.summary_lines():
+        logger.info("limit %s", line)
 
     if spec.build_collision:
         excluded = [(a, b) for a, b, _reason in spec.collision_exclusions]
@@ -211,10 +227,21 @@ def build_model_and_ik(config: RakudaControlConfig) -> Tuple[Any, Any]:
         left_arm_joints=spec.left_arm_joints,
         right_arm_joints=spec.right_arm_joints,
         head_joints=spec.head_joints,
+        # control.ik is the shared behaviour (the viewer builds its solver from
+        # the same section); the loop's timing comes from the control section.
         config=DualArmIKConfig(
-            compute_budget_s=config.ik_period_s,
-            max_state_age_s=config.max_state_age_s,
+            **{
+                **config.ik.solver_overrides(),
+                "compute_budget_s": config.ik_period_s,
+                "max_state_age_s": config.max_state_age_s,
+            }
         ),
+    )
+    logger.info(
+        "IK: %s priority, %s hands, preferred posture %s",
+        ik.config.task_priority_mode,
+        ik.config.orientation_mode,
+        "configured" if ik.config.posture_reference else "the pose at alignment",
     )
     return model, ik
 

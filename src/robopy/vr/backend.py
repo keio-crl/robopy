@@ -134,11 +134,17 @@ def _joint_state(names: tuple[str, ...], positions: Mapping[str, float]) -> Join
 
 
 def _errors_of(result: Any) -> Dict[str, float | None]:
+    errors = result.errors()
     return {
-        "left_position_m": result.left_position_error_m,
-        "left_orientation_rad": result.left_orientation_error_rad,
-        "right_position_m": result.right_position_error_m,
-        "right_orientation_rad": result.right_orientation_error_rad,
+        key: errors[key]
+        for key in (
+            "left_position_m",
+            "left_orientation_rad",
+            "left_axis_rad",
+            "right_position_m",
+            "right_orientation_rad",
+            "right_axis_rad",
+        )
     }
 
 

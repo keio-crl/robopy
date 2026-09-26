@@ -43,8 +43,7 @@ MOTORS = tuple(MOTOR_TO_URDF)
 
 def _bus() -> SimulatedDynamixelBus:
     motors = {
-        name: DynamixelMotor(index + 1, name, "xm430-w350")
-        for index, name in enumerate(MOTORS)
+        name: DynamixelMotor(index + 1, name, "xm430-w350") for index, name in enumerate(MOTORS)
     }
     joints = {name: SimulatedJoint() for name in MOTORS}
     return SimulatedDynamixelBus(motors, joints=joints, auto_step=False)
@@ -108,9 +107,7 @@ def cartesian_system(synthetic_urdf: Path):  # type: ignore[no-untyped-def]
 
 
 class TestCartesianTeleoperation:
-    def test_the_follower_converges_on_a_reachable_pair_of_targets(
-        self, cartesian_system
-    ) -> None:
+    def test_the_follower_converges_on_a_reachable_pair_of_targets(self, cartesian_system) -> None:
         system, _leader, follower = cartesian_system
         model = system.model
 
@@ -131,9 +128,7 @@ class TestCartesianTeleoperation:
         system.align()
         system.prepare_running()
         system.set_target(
-            DualArmTarget(
-                left_target=left, right_target=right, torso_policy=TorsoPolicy.OPTIMIZE
-            )
+            DualArmTarget(left_target=left, right_target=right, torso_policy=TorsoPolicy.OPTIMIZE)
         )
 
         dt = 0.01
@@ -147,6 +142,42 @@ class TestCartesianTeleoperation:
         pose = model.frame_pose(model.q_from_positions(reached), "left_tcp")
         np.testing.assert_allclose(pose[:3, 3], left[:3, 3], atol=5e-3)
         assert system.manager.faults == ()
+
+    def test_the_ik_section_and_limit_provenance_reach_the_machine_solver(
+        self, synthetic_urdf: Path
+    ) -> None:
+        from robopy.config.robot_config.rakuda_config import (
+            RakudaIKConfig,
+            RakudaLimitOverrideSpec,
+            RakudaSoftLimitSpec,
+        )
+        from robopy.robots.rakuda.rakuda_control import build_model_and_ik
+
+        config = _config(synthetic_urdf)
+        config.ik = RakudaIKConfig(
+            task_priority_mode="hierarchical",
+            orientation_mode="position_only",
+            joint_motion_cost={SYNTHETIC_TORSO_JOINT: 5.0},
+            preferred_posture_rad={"elbow_pitch_left_dof": -0.4},
+        )
+        config.model.soft_limit_specs = {
+            SYNTHETIC_TORSO_JOINT: RakudaSoftLimitSpec(-1.5, 1.5, validated=True, note="measured")
+        }
+        config.model.joint_limit_overrides_rad = {
+            "elbow_pitch_left_dof": RakudaLimitOverrideSpec(-2.0, 2.9, reason="measured stop")
+        }
+        model, ik = build_model_and_ik(config)
+        assert ik.config.task_priority_mode == "hierarchical"
+        assert ik.config.orientation_mode == "position_only"
+        assert ik.config.joint_motion_cost == {SYNTHETIC_TORSO_JOINT: 5.0}
+        assert ik.config.posture_reference == {"elbow_pitch_left_dof": -0.4}
+        # The loop's timing still comes from the control section.
+        assert ik.config.compute_budget_s == config.ik_period_s
+        profile = model.limit_profile()
+        assert profile[SYNTHETIC_TORSO_JOINT].validated is True
+        assert profile["elbow_pitch_left_dof"].source == "override"
+        lower, upper = model.position_limits(["elbow_pitch_left_dof"])
+        assert (lower[0], upper[0]) == (-2.0, 2.9)
 
     def test_no_target_means_no_new_motion(self, cartesian_system) -> None:
         system, _leader, follower = cartesian_system
