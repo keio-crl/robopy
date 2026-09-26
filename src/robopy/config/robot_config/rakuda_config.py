@@ -1,6 +1,6 @@
 import math
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -177,6 +177,185 @@ class RakudaTcpSpec:
 
 
 @dataclass
+class RakudaSoftLimitSpec:
+    """A soft limit as it appears in the YAML: a range that only narrows.
+
+    Attributes:
+        lower: Lower bound, radians, URDF joint coordinates.
+        upper: Upper bound.
+        validated: Whether the range was measured on the machine.  An
+            unvalidated value is a simulation stand-in and is reported as one;
+            it is never promoted to a machine limit.
+        note: Where the number came from.
+    """
+
+    lower: float
+    upper: float
+    validated: bool = False
+    note: str = ""
+
+
+@dataclass
+class RakudaLimitOverrideSpec:
+    """A recorded replacement of a URDF range known to be wrong.
+
+    Attributes:
+        lower: Replacement lower bound, radians, URDF joint coordinates.
+        upper: Replacement upper bound.
+        reason: Why the exported range is not trusted.  Required: an override
+            without a reason is a guess, and guesses are not configuration.
+    """
+
+    lower: float
+    upper: float
+    reason: str
+
+
+@dataclass
+class RakudaIKConfig:
+    """The ``control.ik`` section: how the dual-arm solver behaves.
+
+    Every field is optional; ``None`` keeps the solver's own default (see
+    :class:`~robopy.kinematics.dual_arm_ik.DualArmIKConfig`).  The same section
+    builds the viewer's solver and the machine's, so a behaviour tuned on the
+    page is the behaviour the machine gets.
+
+    Attributes:
+        task_priority_mode: ``weighted`` (one weighted sum, the historical
+            behaviour) or ``hierarchical`` (the hand tasks first, then the
+            posture, limit-avoidance and smoothness objectives without
+            degrading them).
+        orientation_mode: ``position_only``, ``pose`` or ``axis_aligned``.
+        approach_axis_tcp: The gripper's approach axis in TCP coordinates,
+            needed by ``axis_aligned``.  Not assumed: state it.
+        preferred_posture_rad: ``{joint: rad}`` the posture objective pulls
+            towards.  ``None`` uses the configuration at alignment.
+        posture_cost: Weight of the posture objective (scalar or per joint).
+        joint_motion_cost: Per-joint cost on moving at all (scalar or per
+            joint); the torso is usually given more than the arms.
+        velocity_smoothing_cost: Cost on the change of joint velocity between
+            cycles.
+        limit_avoidance_enabled: Push joints that enter the band near a limit
+            back inside.
+        limit_avoidance_band_rad: Width of that band.
+        limit_avoidance_cost: Its weight.
+        gain_time_constant_s: Task error correction time constant; the per-step
+            gain becomes ``1 - exp(-dt / tau)`` so the response does not change
+            with the control period.
+        torso_policy: Default torso policy name (``fixed`` / ``manual`` /
+            ``optimize``) for consumers that do not choose one per target.
+        inactive_arm_policy: ``hold_joints`` or ``hold_world``.
+        damping: Tikhonov regularisation of every step.
+        max_joint_velocity_rad_s: Per-joint or scalar velocity ceiling.
+        max_joint_acceleration_rad_s2: Per-joint or scalar acceleration ceiling.
+        max_joint_step_rad: Hard ceiling on one cycle's joint move.
+        position_limit_margin_rad: Stay this far inside every limit.
+        position_tolerance_m: Position error counted as converged.
+        orientation_tolerance_rad: Orientation error counted as converged.
+        solver: QP backend name (``qpsolvers``).
+    """
+
+    task_priority_mode: str | None = None
+    orientation_mode: str | None = None
+    approach_axis_tcp: Tuple[float, float, float] | None = None
+    preferred_posture_rad: Dict[str, float] | None = None
+    posture_cost: Dict[str, float] | float | None = None
+    joint_motion_cost: Dict[str, float] | float | None = None
+    velocity_smoothing_cost: Dict[str, float] | float | None = None
+    limit_avoidance_enabled: bool | None = None
+    limit_avoidance_band_rad: float | None = None
+    limit_avoidance_cost: float | None = None
+    gain_time_constant_s: float | None = None
+    torso_policy: str | None = None
+    inactive_arm_policy: str | None = None
+    damping: float | None = None
+    max_joint_velocity_rad_s: Dict[str, float] | float | None = None
+    max_joint_acceleration_rad_s2: Dict[str, float] | float | None = None
+    max_joint_step_rad: float | None = None
+    position_limit_margin_rad: float | None = None
+    position_tolerance_m: float | None = None
+    orientation_tolerance_rad: float | None = None
+    solver: str | None = None
+
+    def solver_overrides(self) -> Dict[str, Any]:
+        """The non-``None`` fields as keyword overrides for ``DualArmIKConfig``.
+
+        ``preferred_posture_rad`` maps onto the solver's ``posture_reference``;
+        ``torso_policy`` and ``inactive_arm_policy`` are consumer defaults, not
+        solver fields, and are left out.
+        """
+        out: Dict[str, Any] = {}
+        for name in (
+            "task_priority_mode",
+            "orientation_mode",
+            "approach_axis_tcp",
+            "posture_cost",
+            "joint_motion_cost",
+            "velocity_smoothing_cost",
+            "limit_avoidance_enabled",
+            "limit_avoidance_band_rad",
+            "limit_avoidance_cost",
+            "gain_time_constant_s",
+            "damping",
+            "max_joint_velocity_rad_s",
+            "max_joint_acceleration_rad_s2",
+            "max_joint_step_rad",
+            "position_limit_margin_rad",
+            "position_tolerance_m",
+            "orientation_tolerance_rad",
+            "solver",
+        ):
+            value = getattr(self, name)
+            if value is not None:
+                out[name] = value
+        if self.preferred_posture_rad is not None:
+            out["posture_reference"] = dict(self.preferred_posture_rad)
+        return out
+
+
+@dataclass
+class RakudaTrajectoryConfig:
+    """The ``control.trajectory`` section: how a hand target is turned into motion.
+
+    A new target is never jumped to.  A reference pose moves from where the
+    hand is towards the target under these ceilings, and the solver follows
+    the reference one step at a time.  ``None`` means "not set": the viewer
+    uses its simulation profile, the machine refuses to run Cartesian mode
+    with a ceiling it was not given.
+
+    Attributes:
+        sample_period_s: Time between reference samples (and solver steps).
+        max_linear_velocity_m_s: Ceiling on the reference's translation speed.
+        max_linear_acceleration_m_s2: Ceiling on its translational acceleration.
+        max_angular_velocity_rad_s: Ceiling on its rotation speed.
+        max_angular_acceleration_rad_s2: Ceiling on its angular acceleration.
+        lag_tolerance_m: When the hand lags the reference by more than this,
+            the reference waits instead of running ahead.
+    """
+
+    sample_period_s: float | None = None
+    max_linear_velocity_m_s: float | None = None
+    max_linear_acceleration_m_s2: float | None = None
+    max_angular_velocity_rad_s: float | None = None
+    max_angular_acceleration_rad_s2: float | None = None
+    lag_tolerance_m: float | None = None
+
+    def missing(self) -> List[str]:
+        """Names of the ceilings still unset."""
+        return [
+            name
+            for name in (
+                "sample_period_s",
+                "max_linear_velocity_m_s",
+                "max_linear_acceleration_m_s2",
+                "max_angular_velocity_rad_s",
+                "max_angular_acceleration_rad_s2",
+            )
+            if getattr(self, name) is None
+        ]
+
+
+@dataclass
 class RakudaModelConfig:
     """Where the kinematic model lives and how its joints are grouped.
 
@@ -192,7 +371,17 @@ class RakudaModelConfig:
         left_tcp: Left TCP definition.
         right_tcp: Right TCP definition.
         soft_limits_rad: Soft position limits ``{joint: (lower, upper)}``.
-            Required for continuous joints, which carry no URDF range.
+            Required for continuous joints, which carry no URDF range.  A
+            soft limit only narrows the model's range.
+        soft_limit_specs: The same limits with their provenance
+            (``validated`` / ``note``), for entries written in the long form.
+            A joint absent here is an unvalidated, simulation-only value.
+        joint_limit_overrides_rad: ``{joint: RakudaLimitOverrideSpec}``
+            replacing a URDF range known to be wrong, each with its reason.
+            This is the only way a range gets wider than the file's.
+        home_positions_rad: ``{joint: rad}`` of a home pose checked against
+            the resolved limits (and collision, when modelled).  Offered by
+            the viewer as *home*; never applied to the machine by itself.
         build_collision: Load the convex collision geometry.
         collision_exclusions: Approved geometry-name pairs to exclude, each with
             a recorded reason.  Blanket exclusion of every adjacent or nearby
@@ -209,9 +398,36 @@ class RakudaModelConfig:
     left_tcp: RakudaTcpSpec | None = None
     right_tcp: RakudaTcpSpec | None = None
     soft_limits_rad: Dict[str, Tuple[float, float]] = field(default_factory=dict)
+    soft_limit_specs: Dict[str, RakudaSoftLimitSpec] = field(default_factory=dict)
+    joint_limit_overrides_rad: Dict[str, RakudaLimitOverrideSpec] = field(default_factory=dict)
+    home_positions_rad: Dict[str, float] = field(default_factory=dict)
     build_collision: bool = False
     collision_exclusions: List[Tuple[str, str, str]] = field(default_factory=list)
     geometry_only: bool = True
+
+    def soft_limit_entries(self) -> Dict[str, Dict[str, Any]]:
+        """Every soft limit as ``{joint: {"lower", "upper", "validated", "note"}}``.
+
+        The form :meth:`WholeBodyModel.set_soft_limits` and
+        :meth:`ModelBundle.load` accept, so provenance travels with the value.
+        """
+        out: Dict[str, Dict[str, Any]] = {}
+        for joint, (lower, upper) in self.soft_limits_rad.items():
+            spec = self.soft_limit_specs.get(joint)
+            out[joint] = {
+                "lower": float(lower),
+                "upper": float(upper),
+                "validated": bool(spec.validated) if spec else False,
+                "note": spec.note if spec else "",
+            }
+        return out
+
+    def override_entries(self) -> Dict[str, Dict[str, Any]]:
+        """Every override as ``{joint: {"lower", "upper", "reason"}}``."""
+        return {
+            joint: {"lower": spec.lower, "upper": spec.upper, "reason": spec.reason}
+            for joint, spec in self.joint_limit_overrides_rad.items()
+        }
 
 
 @dataclass
@@ -280,6 +496,8 @@ class RakudaControlConfig:
         leader_joint_calibration: Per-motor calibration on the leader.
         follower_joint_calibration: Per-motor calibration on the follower.
         model: The kinematic model configuration.
+        ik: Solver behaviour shared by the viewer and the machine.
+        trajectory: Cartesian reference-trajectory ceilings.
         bilateral: Bilateral coupling configuration.
         allow_hardware_current_output: Master switch for commanding current on
             real hardware.  Off by default, so a freshly generated
@@ -302,6 +520,8 @@ class RakudaControlConfig:
     leader_joint_calibration: Dict[str, RakudaJointCalibrationSpec] = field(default_factory=dict)
     follower_joint_calibration: Dict[str, RakudaJointCalibrationSpec] = field(default_factory=dict)
     model: RakudaModelConfig = field(default_factory=RakudaModelConfig)
+    ik: RakudaIKConfig = field(default_factory=RakudaIKConfig)
+    trajectory: RakudaTrajectoryConfig = field(default_factory=RakudaTrajectoryConfig)
     bilateral: RakudaBilateralConfig = field(default_factory=RakudaBilateralConfig)
     allow_hardware_current_output: bool = False
 

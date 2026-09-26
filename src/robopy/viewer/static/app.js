@@ -286,26 +286,31 @@ function jointStepRad() {
   return state.unitDeg ? step / DEG : step;
 }
 
-// Where a slider's range came from. "motor" is the actuator travel -- for
-// Rakuda the DYNAMIXEL count range leader-follower teleoperation drives -- and
-// it is wider than several of the ranges the CAD export declares, so the
-// solver's own range is named too whenever it is the narrower of the two.
+// Where a slider's range came from. Every consumer -- these sliders, the
+// solver, the machine adapter -- reads the same resolved range, so the slider
+// range IS the solver's range. The source says what decided it and whether it
+// is validated for the machine.
 const LIMIT_NOTE = {
-  motor: 'motor travel: the range leader-follower position teleoperation drives, not a measured mechanical limit',
-  soft: 'measured soft limit',
   urdf: 'range declared by the URDF',
-  display: 'display range only: a continuous joint with no measured soft limit',
+  override: 'recorded override of the URDF range (see the reason in the Info tab)',
+  soft: 'soft limit narrowing the model\'s range',
+  display: 'display range only: no finite limit is known; the solver will not drive this joint',
+  unbounded: 'no limit known',
 };
-const LIMIT_TAG = { motor: ' (motor)', display: ' (display)' };
+const LIMIT_TAG = { override: ' (override)', display: ' (display)' };
 
 function limitText(j) {
-  return `${fmtLimit(j.lower)} … ${fmtLimit(j.upper)}${LIMIT_TAG[j.limit_source] || ''}`;
+  const tag = LIMIT_TAG[j.limit_source] || '';
+  const prov = j.limit_source === 'soft' && !j.validated ? ' (provisional)' : '';
+  return `${fmtLimit(j.lower)} … ${fmtLimit(j.upper)}${tag}${prov}`;
 }
 function limitTitle(j) {
   let note = LIMIT_NOTE[j.limit_source] || LIMIT_NOTE.urdf;
-  if (j.model_lower != null && (j.model_lower > j.lower + 1e-9 || j.model_upper < j.upper - 1e-9)) {
-    note += `. The solver keeps this joint within ${fmtLimit(j.model_lower)} … ${fmtLimit(j.model_upper)}, the model's own range.`;
+  note += j.validated ? '; validated for the machine' : '; NOT validated for the machine (simulation only)';
+  if (j.urdf_lower != null && j.limit_source !== 'urdf') {
+    note += `. URDF: ${fmtLimit(j.urdf_lower)} … ${fmtLimit(j.urdf_upper)}.`;
   }
+  for (const n of j.limit_notes || []) note += ` ${n}.`;
   return note;
 }
 
@@ -330,8 +335,8 @@ function buildJointsPanel(model) {
           <span class="lim ${j.limit_is_display_only ? 'display-only' : ''}" title="${limitTitle(j)}">
             ${limitText(j)}</span></div>
         <!-- step="any": a stepped range snaps to multiples of (max - min) from
-             its minimum, and with the motor travel (+/-pi) that grid misses
-             zero, so the home pose sat a few thousandths of a degree off. -->
+             its minimum, and an asymmetric range's grid misses zero, so the
+             home pose sat a few thousandths of a degree off. -->
         <input type="range" min="${j.lower}" max="${j.upper}" step="any" value="0">
         <input type="text" class="num" value="0">
         <button class="jog" data-dir="-1">−</button>
@@ -807,9 +812,15 @@ function buildInfo(model) {
   const rows = [
     ['URDF', model.urdf], ['nq / nv', `${model.nq} / ${model.nv}`], ['joints', `${model.joints.length} movable`],
     ['shapes', `${model.geometries.length} (${model.geometries.filter((g) => g.shape.type === 'mesh').length} meshes, drawn from <${model.geometry_source}>)`],
-    ['joint range', model.joints.some((j) => j.limit_source === 'motor')
-      ? 'motor travel, narrowed by any measured soft limit (the solver still obeys the URDF range)'
-      : 'URDF range, narrowed by any measured soft limit'],
+    ['joint range', `one resolved range per joint, read by the sliders, the solver and the machine: `
+      + `${(model.limits?.sources?.override || []).length} override(s), `
+      + `${(model.limits?.sources?.soft || []).length} soft limit(s), `
+      + `${model.joints.filter((j) => !j.validated).length} joint(s) NOT validated for the machine`],
+    ['limit overrides', (model.limits?.sources?.override || []).length
+      ? (model.limits.sources.override.map((n) => { const j = model.limits.joints.find((x) => x.joint === n); return `${n}: ${j.override.reason || '(no reason recorded)'}`; }).join('; '))
+      : 'none'],
+    ['home pose', Object.keys(model.home_positions_rad || {}).length ? 'configured and checked (Joints: home)' : 'none configured'],
+    ['TCP offsets', model.tcp_validated ? 'measured' : 'NOT measured: the end-effector pose is a placeholder frame'],
     ['TCP frames', JSON.stringify(model.tcp_frames)],
     ['IK', model.ik ? `groups: ${JSON.stringify(model.ik.groups)}` : 'not available'],
   ];

@@ -160,6 +160,30 @@ class IKSetup:
         }
         self._bundle = bundle
 
+    def describe_config(self) -> Dict[str, Any]:
+        """The solver settings that shape motion, for logs and the page."""
+        cfg = self.solver.config
+        return {
+            name: getattr(cfg, name)
+            for name in (
+                "task_priority_mode",
+                "orientation_mode",
+                "approach_axis_tcp",
+                "posture_cost",
+                "joint_motion_cost",
+                "velocity_smoothing_cost",
+                "limit_avoidance_enabled",
+                "gain_time_constant_s",
+                "damping",
+                "max_joint_velocity_rad_s",
+                "max_joint_acceleration_rad_s2",
+                "max_joint_step_rad",
+                "position_limit_margin_rad",
+                "solver",
+            )
+            if hasattr(cfg, name)
+        }
+
     def solve(
         self,
         positions: Mapping[str, float],

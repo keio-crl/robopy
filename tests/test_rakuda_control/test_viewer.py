@@ -7,7 +7,6 @@ involved here; the page itself is exercised manually with Playwright.
 from __future__ import annotations
 
 import json
-import math
 import threading
 import urllib.error
 import urllib.request
@@ -92,38 +91,71 @@ class TestModelBundle:
         assert [g["id"] for g in described if g["static"]] == ["root#0"]
         assert not [g for g in described if g["link"] == "torso_link" and g["static"]]
 
-    def test_the_motor_travel_becomes_the_slider_range(self, tmp_path: Path) -> None:
-        # Rakuda's joints are driven over the whole DYNAMIXEL count range, which
-        # is wider than several ranges its CAD export declares. The page's
-        # sliders span that travel; the model -- and so the solver -- keeps the
-        # URDF range, which describe() reports alongside.
+    def test_sliders_solver_and_overrides_read_one_resolved_range(self, tmp_path: Path) -> None:
+        # One resolver decides every joint's range: the URDF range, replaced by
+        # a recorded override, narrowed by a soft limit. The slider range *is*
+        # the solver's range; nothing applies an actuator travel to every axis.
         from robopy.kinematics.synthetic_dual_arm import write_synthetic_dual_arm_urdf
 
-        travelled = ModelBundle.load(
-            write_synthetic_dual_arm_urdf(tmp_path / "travel.urdf"),
-            soft_limits=SOFT_LIMITS,
-            joint_travel_rad=(-math.pi, math.pi),
+        resolved = ModelBundle.load(
+            write_synthetic_dual_arm_urdf(tmp_path / "resolved.urdf"),
+            soft_limits={
+                **SOFT_LIMITS,
+                "elbow_yaw_left_dof": {"lower": -1.0, "upper": 1.0, "validated": True},
+                "wrist_yaw_left_dof": (-9.0, 9.0),  # wider than the URDF: does not widen
+            },
+            joint_limit_overrides={
+                "elbow_pitch_left_dof": {"lower": -2.0, "upper": 2.9, "reason": "measured stop"}
+            },
         )
-        joints = {j["name"]: j for j in travelled.describe()["joints"]}
+        joints = {j["name"]: j for j in resolved.describe()["joints"]}
 
-        elbow = joints["elbow_pitch_left_dof"]  # URDF range +/-2.4 rad
-        assert elbow["limit_source"] == "motor"
-        assert (elbow["lower"], elbow["upper"]) == pytest.approx((-math.pi, math.pi))
-        assert (elbow["model_lower"], elbow["model_upper"]) == pytest.approx((-2.4, 2.4))
+        elbow = joints["elbow_pitch_left_dof"]  # URDF +/-2.4, overridden
+        assert elbow["limit_source"] == "override" and elbow["validated"] is True
+        assert (elbow["lower"], elbow["upper"]) == pytest.approx((-2.0, 2.9))
+        assert (elbow["model_lower"], elbow["model_upper"]) == pytest.approx((-2.0, 2.9))
+        assert (elbow["urdf_lower"], elbow["urdf_upper"]) == pytest.approx((-2.4, 2.4))
+        lower, upper = resolved.model.position_limits(["elbow_pitch_left_dof"])
+        assert (lower[0], upper[0]) == pytest.approx((-2.0, 2.9))  # the solver sees the same
 
-        # A soft limit is a measurement of this joint, so it still narrows the
-        # slider; the motor travel only replaces the URDF's declared range.
-        torso = joints["torso_yaw_dof"]
-        assert torso["limit_source"] == "soft"
+        yaw = joints["elbow_yaw_left_dof"]  # URDF +/-2.8 narrowed by a measured soft limit
+        assert yaw["limit_source"] == "soft" and yaw["validated"] is True
+        assert (yaw["lower"], yaw["upper"]) == pytest.approx((-1.0, 1.0))
+
+        wrist = joints["wrist_yaw_left_dof"]  # a wide soft limit changes nothing
+        assert wrist["limit_source"] == "urdf"
+        assert (wrist["lower"], wrist["upper"]) == pytest.approx((-2.8, 2.8))
+        assert any("wider than" in w for w in resolved.warnings)
+
+        torso = joints["torso_yaw_dof"]  # a plain pair is provisional
+        assert torso["limit_source"] == "soft" and torso["validated"] is False
         assert (torso["lower"], torso["upper"]) == pytest.approx(SOFT_LIMITS["torso_yaw_dof"])
-        assert any("actuator travel" in w for w in travelled.warnings)
+        assert any("provisional" in w for w in resolved.warnings)
+        assert not any(j["limit_source"] == "motor" for j in joints.values())
 
-    def test_without_a_travel_the_range_stays_the_model_s(self, bundle: ModelBundle) -> None:
+    def test_without_overrides_the_range_is_the_model_s(self, bundle: ModelBundle) -> None:
         joints = {j["name"]: j for j in bundle.describe()["joints"]}
         elbow = joints["elbow_pitch_left_dof"]
-        assert elbow["limit_source"] == "urdf"
+        assert elbow["limit_source"] == "urdf" and elbow["validated"] is True
         assert (elbow["lower"], elbow["upper"]) == pytest.approx((-2.4, 2.4))
         assert joints["torso_yaw_dof"]["limit_source"] == "soft"
+
+    def test_a_home_pose_is_checked_before_it_is_offered(self, tmp_path: Path) -> None:
+        from robopy.kinematics.synthetic_dual_arm import write_synthetic_dual_arm_urdf
+
+        urdf = write_synthetic_dual_arm_urdf(tmp_path / "home.urdf")
+        good = ModelBundle.load(
+            urdf, soft_limits=SOFT_LIMITS, home_positions_rad={"elbow_pitch_left_dof": 0.8}
+        )
+        assert good.home_positions_rad["elbow_pitch_left_dof"] == pytest.approx(0.8)
+        assert good.describe()["home_positions_rad"]["torso_yaw_dof"] == 0.0
+        bad = ModelBundle.load(
+            urdf, soft_limits=SOFT_LIMITS, home_positions_rad={"elbow_pitch_left_dof": 3.0}
+        )
+        assert bad.home_positions_rad == {}
+        assert any(
+            "not usable as a home pose" in w and "elbow_pitch_left_dof" in w for w in bad.warnings
+        )
 
     def test_poses_place_every_geometry_and_both_tcps(self, bundle: ModelBundle) -> None:
         poses = bundle.poses({"torso_yaw_dof": 0.3})

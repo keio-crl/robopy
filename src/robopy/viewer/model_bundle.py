@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Mapping, Sequence, Tuple
 import numpy as np
 from numpy.typing import NDArray
 
+from robopy.kinematics.joint_limits import JointLimitProfile, check_home_pose
 from robopy.kinematics.transforms import urdf_transform
 from robopy.kinematics.urdf_audit import audit_urdf, resolve_package_path
 from robopy.kinematics.urdf_model import WholeBodyModel
@@ -268,14 +269,14 @@ class ModelBundle:
         geometries: Visual shapes, in a stable order the page indexes by.
         joint_order: Movable joints in the order the page lists them.
         soft_limits: Soft limits applied to the model, for display.
-        joint_travel_rad: Travel the motors allow, applied to every movable
-            joint as the page's slider range.  ``None`` leaves the range to the
-            model (the URDF range, narrowed by any soft limit), which is what a
-            model with no known actuators gets.
         tcp_frames: ``{"left": frame, "right": frame}`` when TCPs are defined.
         warnings: Audit warnings, shown in the page's Info tab.
         geometry_source: Which URDF elements the shapes came from, ``"visual"``
             or ``"collision"``.
+        home_positions_rad: A checked home pose ``{joint: rad}``, or empty.
+            The page offers it as *home*, separately from *zero all*.
+        tcp_validated: Whether the TCP offsets were measured.  ``False`` means
+            the end-effector pose shown is a placeholder frame.
     """
 
     model: WholeBodyModel
@@ -283,10 +284,11 @@ class ModelBundle:
     geometries: List[VisualGeometry]
     joint_order: Tuple[str, ...]
     soft_limits: Dict[str, Tuple[float, float]] = field(default_factory=dict)
-    joint_travel_rad: Tuple[float, float] | None = None
     tcp_frames: Dict[str, str] = field(default_factory=dict)
     warnings: List[str] = field(default_factory=list)
     geometry_source: str = "visual"
+    home_positions_rad: Dict[str, float] = field(default_factory=dict)
+    tcp_validated: bool = False
 
     @classmethod
     def load(
@@ -294,9 +296,11 @@ class ModelBundle:
         urdf_path: Path | str,
         *,
         package_dirs: Sequence[Path | str] = (),
-        soft_limits: Mapping[str, Tuple[float, float]] | None = None,
-        joint_travel_rad: Tuple[float, float] | None = None,
+        soft_limits: Mapping[str, Any] | None = None,
+        joint_limit_overrides: Mapping[str, Any] | None = None,
         tcp_offsets: Mapping[str, Tuple[str, NDArray[np.float64]]] | None = None,
+        tcp_validated: bool = False,
+        home_positions_rad: Mapping[str, float] | None = None,
         default_continuous_limit_rad: float = math.pi,
         geometry_source: str = "auto",
     ) -> "ModelBundle":
@@ -310,39 +314,42 @@ class ModelBundle:
                 (or when the file has no visual meshes at all).
             urdf_path: The URDF file.
             package_dirs: Directories that resolve ``package://`` URIs.
-            soft_limits: ``{joint: (lower, upper)}`` measured limits.
-            joint_travel_rad: Travel the actuators allow, e.g.
-                :data:`~robopy.config.robot_config.RAKUDA_MOTOR_TRAVEL_RAD` for
-                Rakuda, where leader-follower position teleoperation drives the
-                whole DYNAMIXEL range about the count zero.  Given, it becomes
-                the page's slider range for every movable joint, narrowed per
-                joint by ``soft_limits`` -- so the sliders span what the machine
-                can be driven to rather than what the CAD export declared.  The
-                *model* is untouched: the solver keeps obeying the URDF range
-                and the soft limits, and :meth:`describe` reports that range
-                alongside as ``model_lower`` / ``model_upper``.
+            soft_limits: ``{joint: (lower, upper) | SoftLimit | {...}}``: limits
+                that narrow the model's range (see
+                :mod:`robopy.kinematics.joint_limits`).  A plain pair is an
+                unvalidated, simulation-only value.
+            joint_limit_overrides: ``{joint: (lower, upper) | {"lower",
+                "upper", "reason"}}`` replacing a URDF range known to be wrong.
             tcp_offsets: ``{"left"|"right": (parent_frame, (4,4) offset)}``.
                 When omitted, TCPs are attached with a zero offset to the
                 ``gripper_left_dof`` / ``gripper_right_dof`` frames if those
                 exist -- clearly a placeholder, and reported as one.
-            default_continuous_limit_rad: Slider range used for a continuous
-                joint that has no soft limit.  This is a *display* range for
-                the page's sliders, not a claim about the machine; the
-                solver's own soft-limit requirement is unaffected.
+            tcp_validated: Whether ``tcp_offsets`` were measured on the machine.
+            home_positions_rad: A home pose to offer on the page.  It is
+                checked against the resolved limits (and for collision when the
+                model carries geometry) and refused, with the reasons in the
+                warnings, when it fails.
+            default_continuous_limit_rad: Slider range used for a joint that
+                has no finite limit at all.  This is a *display* range for the
+                page's sliders, not a claim about the machine; the solver
+                never drives such a joint.
+
+        The sliders, the solver and anything else asking for a joint's range
+        all read the same resolved limits (:attr:`limit_profile`); the page
+        never gets a range of its own.
         """
         path = Path(urdf_path)
         dirs = [Path(d) for d in package_dirs]
         audit = audit_urdf(path, package_dirs=dirs)
         model = WholeBodyModel.from_urdf(path, package_dirs=dirs, geometry_only=True)
 
-        applied: Dict[str, Tuple[float, float]] = dict(soft_limits or {})
-        if applied:
-            model.set_soft_limits(applied)
-        if joint_travel_rad is not None:
-            lower, upper = (float(v) for v in joint_travel_rad)
-            if lower >= upper:
-                raise ValueError("joint_travel_rad must be (lower, upper) with lower < upper.")
-            joint_travel_rad = (lower, upper)
+        if joint_limit_overrides:
+            model.set_joint_limit_overrides(joint_limit_overrides)
+        if soft_limits:
+            model.set_soft_limits(soft_limits)
+        applied: Dict[str, Tuple[float, float]] = {
+            name: (soft.lower, soft.upper) for name, soft in model.soft_limits.items()
+        }
 
         tcp_frames: Dict[str, str] = {}
         warnings = list(audit.warnings)
@@ -366,12 +373,37 @@ class ModelBundle:
 
         # Sliders need a finite range even where the machine's real limit is
         # unknown; say so instead of pretending the range is measured.
-        for name in model.movable_joint_names:
-            if model.is_continuous(name) and name not in applied:
+        profile = model.limit_profile(display_range_rad=default_continuous_limit_rad)
+        for limit in profile.limits.values():
+            if limit.display_only:
                 warnings.append(
-                    f"{name} is continuous with no soft limit; the slider shows "
+                    f"{limit.joint} has no finite limit; the slider shows "
                     f"+/-{default_continuous_limit_rad:.2f} rad as a display range only."
                 )
+            for note in limit.notes:
+                if "provisional" in note or "wider than" in note or "replaced" in note:
+                    warnings.append(f"{limit.joint}: {note}")
+        if tcp_offsets and not tcp_validated:
+            warnings.append(
+                "The TCP offsets are configured but not marked as measured (validated: false); "
+                "the end-effector pose shown is unverified until they are."
+            )
+        home: Dict[str, float] = {}
+        if home_positions_rad:
+            full = {name: 0.0 for name in model.movable_joint_names}
+            full.update({k: float(v) for k, v in home_positions_rad.items()})
+            unknown = sorted(set(home_positions_rad) - set(model.movable_joint_names))
+            if unknown:
+                warnings.append(f"home_positions_rad names unknown joint(s) {unknown}; ignored.")
+            else:
+                check = check_home_pose(model, profile, full)
+                if check.ok:
+                    home = full
+                else:
+                    warnings.append(
+                        "home_positions_rad is not usable as a home pose and is not offered: "
+                        + "; ".join(check.problems)
+                    )
 
         if geometry_source not in ("auto", "visual", "collision"):
             raise ValueError("geometry_source must be 'auto', 'visual' or 'collision'.")
@@ -415,26 +447,25 @@ class ModelBundle:
                 "frames only."
             )
 
-        if joint_travel_rad is not None:
-            warnings.append(
-                f"Joint sliders span the actuator travel "
-                f"({joint_travel_rad[0]:.4f} to {joint_travel_rad[1]:.4f} rad about zero), not "
-                "the URDF's declared ranges. That is what the servos allow, not a measured "
-                "mechanical limit; a joint that stops sooner needs a measured soft limit. The "
-                "solver still obeys the URDF range and the soft limits."
-            )
-
         return cls(
             model=model,
             urdf_path=path,
             geometries=geometries,
             joint_order=tuple(model.movable_joint_names),
             soft_limits=applied,
-            joint_travel_rad=joint_travel_rad,
             tcp_frames=tcp_frames,
             warnings=warnings,
             geometry_source=source,
+            home_positions_rad=home,
+            tcp_validated=bool(tcp_validated and tcp_offsets),
         )
+
+    @property
+    def limit_profile(self) -> JointLimitProfile:
+        """The resolved limits every consumer reads (sliders, solver, adapter)."""
+        return self.model.limit_profile(display_range_rad=self._display_range_rad)
+
+    _display_range_rad: float = math.pi
 
     @property
     def meshes(self) -> List[VisualGeometry]:
@@ -456,54 +487,37 @@ class ModelBundle:
 
     # -- JSON views ---------------------------------------------------------
 
-    def describe(self, *, default_continuous_limit_rad: float = math.pi) -> Dict[str, Any]:
+    def describe(self, *, default_continuous_limit_rad: float | None = None) -> Dict[str, Any]:
         """The static description the page fetches once.
 
         Each joint reports the range the page's slider spans (``lower`` /
-        ``upper``), where that range came from (``limit_source``) and the range
-        the *solver* obeys (``model_lower`` / ``model_upper``, ``None`` where
-        the joint has no finite limit).  The two differ when the actuator
-        travel is wider than the URDF's declared range, which is the usual case
-        for the Rakuda export: a motor turns through its whole count range
-        while the CAD file declares something narrower.
+        ``upper``), where it came from (``limit_source``: ``urdf``,
+        ``override``, ``soft`` or ``display``), whether it is validated for
+        the machine, and the URDF's own range for reference.  The slider range
+        *is* the solver's range: both come from :attr:`limit_profile`.  A
+        joint with no finite limit gets a display range and says so.
         """
+        if default_continuous_limit_rad is not None:
+            self._display_range_rad = float(default_continuous_limit_rad)
         static = self.static_links
-        lower, upper = self.model.position_limits(self.joint_order)
+        profile = self.limit_profile
         joints = []
-        for i, name in enumerate(self.joint_order):
-            model_lo, model_hi = float(lower[i]), float(upper[i])
-            finite_model = math.isfinite(model_lo) and math.isfinite(model_hi)
-            if self.joint_travel_rad is not None:
-                # The actuator travel is the slider range; a soft limit is a
-                # measurement of this joint and narrows it, the URDF's own
-                # range does not (it is what this deliberately replaces).
-                lo, hi = self.joint_travel_rad
-                source = "motor"
-                if name in self.soft_limits:
-                    soft_lo, soft_hi = self.soft_limits[name]
-                    narrowed = (max(lo, soft_lo), min(hi, soft_hi))
-                    if narrowed != (lo, hi):
-                        lo, hi = narrowed
-                        source = "soft"
-                display_only = False
-            elif finite_model:
-                lo, hi, source, display_only = model_lo, model_hi, "urdf", False
-                if name in self.soft_limits:
-                    source = "soft"
-            else:
-                lo = -default_continuous_limit_rad
-                hi = default_continuous_limit_rad
-                source, display_only = "display", True
+        for name in self.joint_order:
+            limit = profile[name]
             joints.append(
                 {
                     "name": name,
-                    "lower": lo,
-                    "upper": hi,
-                    "limit_source": source,
-                    "model_lower": model_lo if finite_model else None,
-                    "model_upper": model_hi if finite_model else None,
-                    "continuous": self.model.is_continuous(name),
-                    "limit_is_display_only": display_only,
+                    "lower": limit.lower,
+                    "upper": limit.upper,
+                    "limit_source": limit.source,
+                    "validated": limit.validated,
+                    "model_lower": limit.lower if limit.finite else None,
+                    "model_upper": limit.upper if limit.finite else None,
+                    "urdf_lower": None if limit.urdf is None else limit.urdf[0],
+                    "urdf_upper": None if limit.urdf is None else limit.urdf[1],
+                    "continuous": limit.continuous,
+                    "limit_is_display_only": limit.display_only,
+                    "limit_notes": list(limit.notes),
                     "group": _group_of(name),
                 }
             )
@@ -513,6 +527,9 @@ class ModelBundle:
             "nq": self.model.nq,
             "nv": self.model.nv,
             "joints": joints,
+            "limits": profile.describe(),
+            "home_positions_rad": dict(self.home_positions_rad),
+            "tcp_validated": self.tcp_validated,
             "geometries": [
                 {
                     "id": g.id,

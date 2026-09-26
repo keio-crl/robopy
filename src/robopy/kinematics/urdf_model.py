@@ -145,6 +145,9 @@ class WholeBodyModel:
         self._joint_id = {name: model.getJointId(name) for name in self._movable_joint_names}
         self._soft_lower: Dict[str, float] = {}
         self._soft_upper: Dict[str, float] = {}
+        self._soft_validated: Dict[str, bool] = {}
+        self._soft_notes: Dict[str, str] = {}
+        self._overrides: Dict[str, Any] = {}
         # Set by :meth:`from_urdf`. True means the inertial data is not
         # trustworthy, so the model is for geometry only.
         self._geometry_only: bool = False
@@ -365,7 +368,12 @@ class WholeBodyModel:
         """The model's neutral configuration."""
         return np.asarray(self._pin.neutral(self._model), dtype=np.float64)
 
-    def positions_from_q(self, q: NDArray[np.float64]) -> Dict[str, float]:
+    def positions_from_q(
+        self,
+        q: NDArray[np.float64],
+        *,
+        reference: Mapping[str, float] | None = None,
+    ) -> Dict[str, float]:
         """Extract per-joint angles in radians from a configuration vector.
 
         Continuous joints are decoded with ``atan2(sin, cos)``, so their value
@@ -373,7 +381,17 @@ class WholeBodyModel:
         not a wrap applied to a measurement: measured multi-turn positions are
         handled in :mod:`robopy.control.joint_mapping` and are only mapped into
         the model here.
+
+        Args:
+            q: The configuration.
+            reference: ``{joint: rad}`` of the angles the caller already holds
+                (the measurement the step started from).  A continuous joint's
+                decoded angle is then unwrapped to the representative nearest
+                its reference, so a command derived from a configuration near
+                ``+/-pi`` does not jump by a whole turn.
         """
+        from .joint_limits import unwrap_towards  # noqa: PLC0415
+
         q = np.asarray(q, dtype=np.float64)
         self._check_q(q)
         out: Dict[str, float] = {}
@@ -381,7 +399,10 @@ class WholeBodyModel:
             sl = self.joint_q_slice(name)
             block = q[sl]
             if block.size == 2:
-                out[name] = float(np.arctan2(block[1], block[0]))
+                angle = float(np.arctan2(block[1], block[0]))
+                if reference is not None and name in reference:
+                    angle = unwrap_towards(angle, float(reference[name]))
+                out[name] = angle
             else:
                 out[name] = float(block[0])
         return out
@@ -457,51 +478,135 @@ class WholeBodyModel:
 
     # -- limits -------------------------------------------------------------
 
-    def set_soft_limits(self, limits: Mapping[str, Tuple[float, float]]) -> None:
+    def set_soft_limits(
+        self,
+        limits: Mapping[str, Any],
+        *,
+        validated: bool | None = None,
+    ) -> None:
         """Record soft position limits in radians for named joints.
 
         Continuous joints carry no URDF range, so a real limit -- cable routing,
         for example -- has to be supplied here.  Without it, IK would happily
         take the shortest angular path through a region the machine cannot
-        reach.
+        reach.  A soft limit only ever *narrows* the range (see
+        :mod:`robopy.kinematics.joint_limits`); a wrong URDF range is replaced
+        with :meth:`set_joint_limit_overrides`, not widened here.
 
         Args:
-            limits: ``{joint_name: (lower_rad, upper_rad)}``.
+            limits: ``{joint_name: (lower_rad, upper_rad)}``, or
+                ``{joint_name: SoftLimit}`` / ``{joint_name: {"lower", "upper",
+                "validated", "note"}}`` to say whether each value was measured.
+            validated: Overrides the validation flag of every entry given as a
+                plain pair (``None`` leaves a plain pair unvalidated).
 
         Raises:
             KeyError: On an unknown joint name.
             ValueError: If a lower limit exceeds its upper limit.
         """
-        for name, (lower, upper) in limits.items():
+        from .joint_limits import SoftLimit  # noqa: PLC0415
+
+        for name, value in limits.items():
             self._require_joint(name)
-            if lower > upper:
-                raise ValueError(f"{name}: soft lower limit {lower} exceeds upper limit {upper}.")
-            self._soft_lower[name] = float(lower)
-            self._soft_upper[name] = float(upper)
+            if isinstance(value, SoftLimit):
+                soft = value
+            elif isinstance(value, Mapping):
+                soft = SoftLimit(
+                    float(value["lower"]),
+                    float(value["upper"]),
+                    validated=bool(value.get("validated", False)),
+                    note=str(value.get("note", "")),
+                )
+            else:
+                lower, upper = value
+                if lower > upper:
+                    raise ValueError(
+                        f"{name}: soft lower limit {lower} exceeds upper limit {upper}."
+                    )
+                soft = SoftLimit(float(lower), float(upper), validated=bool(validated))
+            self._soft_lower[name] = soft.lower
+            self._soft_upper[name] = soft.upper
+            self._soft_validated[name] = soft.validated
+            self._soft_notes[name] = soft.note
+
+    def set_joint_limit_overrides(self, overrides: Mapping[str, Any]) -> None:
+        """Replace the URDF range of named joints with a recorded override.
+
+        This is for a CAD export whose declared range is known to be wrong.
+        It is the only way a range gets wider than the file's, and each entry
+        carries its reason.  Soft limits still narrow the overridden range.
+
+        Args:
+            overrides: ``{joint: JointLimitOverride | {"lower", "upper",
+                "reason"} | (lower, upper)}``.
+        """
+        from .joint_limits import JointLimitOverride  # noqa: PLC0415
+
+        for name, value in overrides.items():
+            self._require_joint(name)
+            if isinstance(value, JointLimitOverride):
+                override = value
+            elif isinstance(value, Mapping):
+                override = JointLimitOverride(
+                    float(value["lower"]), float(value["upper"]), str(value.get("reason", ""))
+                )
+            else:
+                lower, upper = value
+                override = JointLimitOverride(float(lower), float(upper))
+            self._overrides[name] = override
+
+    @property
+    def soft_limits(self) -> Dict[str, Any]:
+        """The soft limits recorded so far, as ``{joint: SoftLimit}``."""
+        from .joint_limits import SoftLimit  # noqa: PLC0415
+
+        return {
+            name: SoftLimit(
+                self._soft_lower[name],
+                self._soft_upper[name],
+                validated=self._soft_validated.get(name, False),
+                note=self._soft_notes.get(name, ""),
+            )
+            for name in self._soft_lower
+        }
+
+    @property
+    def joint_limit_overrides(self) -> Dict[str, Any]:
+        """The overrides recorded so far, as ``{joint: JointLimitOverride}``."""
+        return dict(self._overrides)
+
+    def limit_profile(self, *, display_range_rad: float | None = None) -> Any:
+        """The resolved :class:`~robopy.kinematics.joint_limits.JointLimitProfile`.
+
+        This is the one answer to "how far may each joint turn": the URDF
+        range, replaced by any override, narrowed by any soft limit.  The
+        solver, the viewer's sliders and the machine adapter all read it.
+
+        Args:
+            display_range_rad: Half-width of the slider range given to a joint
+                with no finite limit, or ``None`` to leave it unbounded.
+        """
+        from .joint_limits import limits_from_model, resolve_joint_limits  # noqa: PLC0415
+
+        return resolve_joint_limits(
+            self._movable_joint_names,
+            urdf_limits=limits_from_model(self),
+            overrides=self._overrides,
+            soft_limits=self.soft_limits,
+            display_range_rad=display_range_rad,
+        )
 
     def position_limits(self, joints: Sequence[str]) -> Tuple[NDArray[np.float64], ...]:
         """Effective ``(lower, upper)`` position limits in radians for ``joints``.
 
-        For a bounded joint the URDF limit is used unless a tighter soft limit
-        was set.  For a continuous joint only the soft limit applies; when none
-        was set the limit is infinite and the caller is responsible for knowing
+        The resolved range of :meth:`limit_profile`: the URDF range (or its
+        override), narrowed by any soft limit.  A continuous joint with no
+        soft limit is infinite and the caller is responsible for knowing
         that.
         """
-        lower: List[float] = []
-        upper: List[float] = []
-        for name in joints:
-            if self.is_continuous(name):
-                lo, hi = -np.inf, np.inf
-            else:
-                sl = self.joint_q_slice(name)
-                lo = float(self._model.lowerPositionLimit[sl][0])
-                hi = float(self._model.upperPositionLimit[sl][0])
-            if name in self._soft_lower:
-                lo = max(lo, self._soft_lower[name])
-                hi = min(hi, self._soft_upper[name])
-            lower.append(lo)
-            upper.append(hi)
-        return np.asarray(lower, dtype=np.float64), np.asarray(upper, dtype=np.float64)
+        profile = self.limit_profile(display_range_rad=None)
+        lower, upper = profile.bounds(list(joints))
+        return lower, upper
 
     def unbounded_joints(self, joints: Sequence[str]) -> List[str]:
         """Joints in ``joints`` that still have no finite position limit."""

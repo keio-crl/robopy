@@ -210,9 +210,32 @@ def ensure_default_rakuda_yaml(path: Path, *, joint_names: tuple[str, ...]) -> N
             "#       translation_m: [0.0, 0.0, 0.0]   # MEASURE THIS",
             "#       quaternion_xyzw: [0.0, 0.0, 0.0, 1.0]",
             "#       validated: false",
-            "#     soft_limits_rad:         # required for continuous joints",
-            "#       torso_yaw_dof: [-1.5, 1.5]",
+            "#     soft_limits_rad:         # required for continuous joints; only NARROWS",
+            "#       torso_yaw_dof: [-1.5, 1.5]                # short form: unvalidated",
+            "#       # shoulder_pitch_left_dof: {lower: -2.0, upper: 2.0, validated: true,",
+            "#       #                           note: measured 2026-xx-xx}",
+            "#     joint_limit_overrides_rad: {}  # {joint: {lower, upper, reason}} -- replaces a",
+            "#                                   # URDF range known to be wrong; reason required",
+            "#     home_positions_rad: {}   # a checked home pose (inside limits, no collision)",
             "#     collision_exclusions: [] # [geom_a, geom_b, reason] triples",
+            "#",
+            "#   ik:                        # shared by the viewer and the machine; null = default",
+            "#     task_priority_mode: hierarchical   # weighted | hierarchical",
+            "#     orientation_mode: position_only    # position_only | pose | axis_aligned",
+            "#     approach_axis_tcp: null            # [x, y, z] in TCP coords, for axis_aligned",
+            "#     preferred_posture_rad: {}          # {joint: rad}; {} = the pose at alignment",
+            "#     posture_cost: null",
+            "#     joint_motion_cost: null            # scalar or {joint: cost}; torso > arms",
+            "#     velocity_smoothing_cost: null",
+            "#     limit_avoidance_enabled: true",
+            "#     torso_policy: optimize",
+            "#     inactive_arm_policy: hold_joints",
+            "#   trajectory:                # ceilings of the Cartesian reference; null = unset",
+            "#     sample_period_s: 0.02",
+            "#     max_linear_velocity_m_s: null",
+            "#     max_linear_acceleration_m_s2: null",
+            "#     max_angular_velocity_rad_s: null",
+            "#     max_angular_acceleration_rad_s2: null",
             "#",
             "#   # Per-motor calibration. The URDF joint a motor drives is NOT",
             "#   # inferred from its name: r_arm_sh_pitch2, r_arm_el_yaw and",
@@ -486,7 +509,9 @@ def parse_rakuda_control_yaml(value: Any) -> Any:
     from robopy.config.robot_config.rakuda_config import (
         RakudaBilateralConfig,
         RakudaControlConfig,
+        RakudaLimitOverrideSpec,
         RakudaModelConfig,
+        RakudaSoftLimitSpec,
     )
 
     if value is None:
@@ -517,17 +542,52 @@ def parse_rakuda_control_yaml(value: Any) -> Any:
         exclusions.append((str(entry[0]), str(entry[1]), str(entry[2])))
 
     soft_limits: dict[str, tuple[float, float]] = {}
+    soft_specs: dict[str, Any] = {}
     for joint, bounds in _as_dict(model_data.get("soft_limits_rad")).items():
-        if not isinstance(bounds, list) or len(bounds) != 2:
-            raise ValueError(
-                f"control.model.soft_limits_rad.{joint} must be a [lower, upper] pair."
+        field = f"control.model.soft_limits_rad.{joint}"
+        if isinstance(bounds, dict):
+            # Long form: the value carries its provenance.
+            if "lower" not in bounds or "upper" not in bounds:
+                raise ValueError(f"{field} must give lower and upper.")
+            lower, upper = float(bounds["lower"]), float(bounds["upper"])
+            soft_specs[str(joint)] = RakudaSoftLimitSpec(
+                lower=lower,
+                upper=upper,
+                validated=bool(bounds.get("validated", False)),
+                note=str(bounds.get("note", "")),
             )
-        lower, upper = float(bounds[0]), float(bounds[1])
+        elif isinstance(bounds, list) and len(bounds) == 2:
+            lower, upper = float(bounds[0]), float(bounds[1])
+        else:
+            raise ValueError(
+                f"{field} must be a [lower, upper] pair or a "
+                "{lower, upper, validated, note} mapping."
+            )
         if lower > upper:
-            raise ValueError(
-                f"control.model.soft_limits_rad.{joint}: lower {lower} exceeds upper {upper}."
-            )
+            raise ValueError(f"{field}: lower {lower} exceeds upper {upper}.")
         soft_limits[str(joint)] = (lower, upper)
+
+    overrides: dict[str, Any] = {}
+    for joint, entry in _as_dict(model_data.get("joint_limit_overrides_rad")).items():
+        field = f"control.model.joint_limit_overrides_rad.{joint}"
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"{field} must be a {{lower, upper, reason}} mapping: an override replaces a "
+                "URDF range and needs its reason recorded."
+            )
+        reason = str(entry.get("reason", "")).strip()
+        if not reason:
+            raise ValueError(f"{field}.reason is required: say why the URDF range is wrong.")
+        lower, upper = float(entry["lower"]), float(entry["upper"])
+        if lower >= upper:
+            raise ValueError(f"{field}: lower {lower} must be below upper {upper}.")
+        overrides[str(joint)] = RakudaLimitOverrideSpec(lower=lower, upper=upper, reason=reason)
+
+    home: dict[str, float] = {}
+    for joint, value in _as_dict(model_data.get("home_positions_rad")).items():
+        if not isinstance(value, (int, float)):
+            raise ValueError(f"control.model.home_positions_rad.{joint} must be a number.")
+        home[str(joint)] = float(value)
 
     model = RakudaModelConfig(
         urdf_path=model_data.get("urdf_path"),
@@ -539,10 +599,16 @@ def parse_rakuda_control_yaml(value: Any) -> Any:
         left_tcp=_parse_tcp(model_data.get("left_tcp"), field_name="control.model.left_tcp"),
         right_tcp=_parse_tcp(model_data.get("right_tcp"), field_name="control.model.right_tcp"),
         soft_limits_rad=soft_limits,
+        soft_limit_specs=soft_specs,
+        joint_limit_overrides_rad=overrides,
+        home_positions_rad=home,
         build_collision=bool(model_data.get("build_collision", False)),
         collision_exclusions=exclusions,
         geometry_only=bool(model_data.get("geometry_only", True)),
     )
+
+    ik = _parse_ik(_as_dict(data.get("ik")))
+    trajectory = _parse_trajectory(_as_dict(data.get("trajectory")))
 
     bilateral_data = _as_dict(data.get("bilateral"))
     bilateral = RakudaBilateralConfig(
@@ -617,9 +683,91 @@ def parse_rakuda_control_yaml(value: Any) -> Any:
             field_name="control.follower_joint_calibration",
         ),
         model=model,
+        ik=ik,
+        trajectory=trajectory,
         bilateral=bilateral,
         allow_hardware_current_output=bool(data.get("allow_hardware_current_output", False)),
     )
+
+
+_IK_CHOICES = {
+    "task_priority_mode": ("weighted", "hierarchical"),
+    "orientation_mode": ("position_only", "pose", "axis_aligned"),
+    "torso_policy": ("fixed", "manual", "optimize"),
+    "inactive_arm_policy": ("hold_joints", "hold_world"),
+}
+
+
+def _parse_ik(data: dict[str, Any]) -> Any:
+    """Parse ``control.ik``; every field is optional and ``None`` means the solver default."""
+    from robopy.config.robot_config.rakuda_config import RakudaIKConfig
+
+    known = {f for f in RakudaIKConfig.__dataclass_fields__}
+    unknown = sorted(set(data) - known)
+    if unknown:
+        raise ValueError(f"control.ik has unknown field(s) {unknown}; known: {sorted(known)}.")
+    out: dict[str, Any] = {}
+    for name, choices in _IK_CHOICES.items():
+        value = data.get(name)
+        if value is not None:
+            if str(value) not in choices:
+                raise ValueError(
+                    f"control.ik.{name} must be one of {list(choices)}, got {value!r}."
+                )
+            out[name] = str(value)
+    axis = data.get("approach_axis_tcp")
+    if axis is not None:
+        if not isinstance(axis, list) or len(axis) != 3:
+            raise ValueError("control.ik.approach_axis_tcp must be [x, y, z] in TCP coordinates.")
+        out["approach_axis_tcp"] = tuple(float(v) for v in axis)
+    posture = data.get("preferred_posture_rad")
+    if posture is not None:
+        out["preferred_posture_rad"] = {str(j): float(v) for j, v in _as_dict(posture).items()}
+    for name in (
+        "posture_cost",
+        "joint_motion_cost",
+        "velocity_smoothing_cost",
+        "max_joint_velocity_rad_s",
+        "max_joint_acceleration_rad_s2",
+    ):
+        value = data.get(name)
+        if value is not None:
+            out[name] = _as_scalar_or_map(value, field_name=f"control.ik.{name}", default=None)
+    for name in (
+        "limit_avoidance_band_rad",
+        "limit_avoidance_cost",
+        "gain_time_constant_s",
+        "damping",
+        "max_joint_step_rad",
+        "position_limit_margin_rad",
+        "position_tolerance_m",
+        "orientation_tolerance_rad",
+    ):
+        out[name] = _as_float_or_none(data.get(name), field_name=f"control.ik.{name}")
+    if data.get("limit_avoidance_enabled") is not None:
+        out["limit_avoidance_enabled"] = bool(data["limit_avoidance_enabled"])
+    if data.get("solver") is not None:
+        out["solver"] = str(data["solver"])
+    return RakudaIKConfig(**out)
+
+
+def _parse_trajectory(data: dict[str, Any]) -> Any:
+    """Parse ``control.trajectory``; a missing ceiling stays ``None`` (unset)."""
+    from robopy.config.robot_config.rakuda_config import RakudaTrajectoryConfig
+
+    known = {f for f in RakudaTrajectoryConfig.__dataclass_fields__}
+    unknown = sorted(set(data) - known)
+    if unknown:
+        raise ValueError(
+            f"control.trajectory has unknown field(s) {unknown}; known: {sorted(known)}."
+        )
+    out: dict[str, Any] = {}
+    for name in known:
+        value = _as_float_or_none(data.get(name), field_name=f"control.trajectory.{name}")
+        if value is not None and value <= 0.0:
+            raise ValueError(f"control.trajectory.{name} must be positive.")
+        out[name] = value
+    return RakudaTrajectoryConfig(**out)
 
 
 def validate_rakuda_control(

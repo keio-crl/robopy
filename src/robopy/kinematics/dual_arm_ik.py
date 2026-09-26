@@ -637,7 +637,11 @@ class DualArmIK:
 
         self._previous_step = step_active
         errors = self._task_errors(configuration, target)
-        positions_next = self._model.positions_from_q(q_next)
+        # Continuous joints decode into (-pi, pi]; keep each command on the
+        # same turn as the measurement it was computed from.
+        positions_next = self._model.positions_from_q(
+            q_next, reference=self._model.positions_from_q(q, reference=state.positions_dict())
+        )
         targets = {name: positions_next[name] for name in self._active_joints}
         velocities = {
             name: float(step_active[i] / dt) for i, name in enumerate(self._active_joints)
@@ -801,12 +805,41 @@ class DualArmIK:
         for name, lo, hi in zip(fixed_names, fixed_lower, fixed_upper):
             # A stationary joint may sit on a valid limit (Rakuda's elbows
             # do at zero). The motion margin must not force it to move.
-            if not (lo <= positions[name] <= hi):
-                raise ValueError(f"Held joint '{name}' already violates the limits.")
+            if not (lo - 1e-9 <= positions[name] <= hi + 1e-9):
+                amount = positions[name] - hi if positions[name] > hi else lo - positions[name]
+                raise ValueError(
+                    f"Held joint '{name}' is outside its limits by {amount:.4f} rad "
+                    f"(at {positions[name]:.4f}, allowed [{lo:.4f}, {hi:.4f}])."
+                )
         lower, upper = self._model.position_limits(names)
         current = np.asarray([positions[name] for name in names])
-        lb_position = lower + cfg.position_limit_margin_rad - current
-        ub_position = upper - cfg.position_limit_margin_rad - current
+        # The position bound never *forces* motion. Outside the margin band
+        # the step may approach the limit up to the margin; inside the band
+        # (a joint parked on its stop, as the Rakuda's right elbow is at the
+        # CAD zero) it may only move inwards, and any inward step, however
+        # small, is allowed. The old form ``lower + margin - current`` demanded
+        # the whole margin back in one cycle, which the speed bound could not
+        # give, and the set went empty exactly where a small step home was the
+        # answer. A joint genuinely *beyond* its limit is reported below by
+        # name and amount, not clamped back silently.
+        lb_position = np.minimum(lower + cfg.position_limit_margin_rad - current, 0.0)
+        ub_position = np.maximum(upper - cfg.position_limit_margin_rad - current, 0.0)
+        # Rounding puts a joint that sits on its stop a few 1e-16 rad past it;
+        # that is "on the limit", not a violation.
+        tolerance = 1e-9
+        beyond = []
+        for i, name in enumerate(names):
+            if current[i] > upper[i] + tolerance:
+                beyond.append((name, float(current[i] - upper[i])))
+            elif current[i] < lower[i] - tolerance:
+                beyond.append((name, float(lower[i] - current[i])))
+        if beyond:
+            listed = ", ".join(f"{name} by {amount:.4f} rad" for name, amount in beyond)
+            raise ValueError(
+                f"The configuration is outside the position limits of: {listed}. No feasible "
+                "step exists; move the machine back inside its limits (the amounts above) "
+                "before commanding motion."
+            )
         lb_hard = np.maximum(lb_speed, lb_position)
         ub_hard = np.minimum(ub_speed, ub_position)
 

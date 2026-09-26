@@ -91,10 +91,65 @@ control:
     # to build, because a shortest-angle path through a cable stop is worse
     # than no path. The values below are NOT measured; they exist to show the
     # shape of the entry.
+    # A soft limit only NARROWS the model's range. Write the long form once a
+    # value is measured, so its provenance travels with it; the short form is
+    # an unvalidated, simulation-only stand-in and is reported as such.
     soft_limits_rad: {}
-    #  torso_yaw_dof: [-1.57, 1.57]              # MEASURE
-    #  shoulder_pitch_left_dof: [-3.14, 3.14]    # MEASURE
-    #  shoulder_pitch_right_dof: [-3.14, 3.14]   # MEASURE
+    #  torso_yaw_dof: [-1.57, 1.57]              # MEASURE (short form = unvalidated)
+    #  shoulder_pitch_left_dof: {lower: -3.14, upper: 3.14, validated: false, note: "cable stop, MEASURE"}
+    #  shoulder_pitch_right_dof: {lower: -3.14, upper: 3.14, validated: false, note: "cable stop, MEASURE"}
+
+    # A URDF range known to be WRONG is replaced here, never widened by a soft
+    # limit. The reason is required: an override is a recorded decision.
+    joint_limit_overrides_rad: {}
+    #  elbow_pitch_right_dof: {lower: -2.79, upper: 0.10, reason: "CAD zero on the stop; measured 6 deg beyond"}
+
+    # A home pose the viewer offers as "home" (separate from "zero all"). It is
+    # checked against the resolved limits and, with build_collision, for
+    # self-collision; a pose that fails is refused with the reasons.
+    home_positions_rad: {}
+    #  elbow_pitch_left_dof: 0.8
+    #  elbow_pitch_right_dof: -0.8
+
+  # ---------------------------------------------------------------------------
+  # How the dual-arm solver behaves. The SAME section builds the viewer's
+  # solver (robopy-viewer --config) and the machine's, so what is tuned on
+  # the page is what the machine runs. null keeps the solver's own default.
+  ik:
+    task_priority_mode: hierarchical      # weighted | hierarchical
+    orientation_mode: position_only       # position_only | pose | axis_aligned
+    approach_axis_tcp: null               # [x, y, z] in TCP coords; REQUIRED for axis_aligned (do not assume Z)
+    preferred_posture_rad: {}             # {joint: rad}; {} = the pose at alignment
+    posture_cost: null                    # scalar or {joint: cost}; a profile sets it
+    joint_motion_cost: null               # scalar or {joint: cost}; give the torso more than the arms
+    velocity_smoothing_cost: null
+    limit_avoidance_enabled: true
+    limit_avoidance_band_rad: null
+    limit_avoidance_cost: null
+    gain_time_constant_s: null            # error correction time constant; makes the gain dt-independent
+    torso_policy: optimize                # fixed | manual | optimize
+    inactive_arm_policy: hold_joints      # hold_joints | hold_world
+    damping: null
+    max_joint_velocity_rad_s: null        # scalar or {joint: rad/s}; null = the URDF value (placeholder!)
+    max_joint_acceleration_rad_s2: null
+    max_joint_step_rad: null
+    position_limit_margin_rad: null
+    position_tolerance_m: null
+    orientation_tolerance_rad: null
+    solver: null                          # qpsolvers backend name
+
+  # Ceilings of the Cartesian reference trajectory: a new target is never
+  # jumped to; the reference moves from the hand towards it under these, and
+  # the solver follows the reference step by step. On the machine every
+  # ceiling must be SET (null = refuse Cartesian mode); the viewer has its own
+  # simulation profile.
+  trajectory:
+    sample_period_s: 0.02
+    max_linear_velocity_m_s: null         # SET for the machine
+    max_linear_acceleration_m_s2: null
+    max_angular_velocity_rad_s: null
+    max_angular_acceleration_rad_s2: null
+    lag_tolerance_m: null                 # the reference waits when the hand lags more than this
 
   # Motor -> URDF joint. The correspondence is established ON THE MACHINE by
   # moving one motor and watching which URDF joint moves; the names below are

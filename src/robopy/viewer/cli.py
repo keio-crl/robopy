@@ -80,11 +80,13 @@ class LoadedModel:
         groups: Joint-group keyword arguments given to :class:`IKSetup`.
         urdf: The URDF path that was loaded.
         package_dirs: Package directories used to resolve meshes.
-        soft_limits: Soft limits applied.
+        soft_limits: Soft limits applied, as ``{joint: (lower, upper)}``.
         synthetic: Whether the synthetic fixture was served.
         provisional_soft_limits: Whether the continuous-joint limits are the
             unmeasured stand-ins rather than configured values.
         config: The ``RakudaControlConfig`` when ``--config`` was given.
+        ik_overrides: The solver settings the session was built with, for
+            the start-up log.
     """
 
     bundle: ModelBundle
@@ -96,6 +98,41 @@ class LoadedModel:
     synthetic: bool = False
     provisional_soft_limits: bool = False
     config: Any = None
+    ik_overrides: Dict[str, Any] = field(default_factory=dict)
+
+    def provenance_lines(self) -> List[str]:
+        """What was loaded and where every range came from, for the start-up log.
+
+        The lines name the code revision, the model file and its hash, the
+        source and validation state of every joint's limit, and the TCPs, so a
+        session's behaviour can be traced back to what it ran on.
+        """
+        lines = [f"code: {_code_revision()}"]
+        lines.append(f"model: {self.urdf} (sha256 {_file_hash(self.urdf)})")
+        if self.synthetic:
+            lines.append("  the synthetic fixture: Rakuda's topology, not its geometry")
+        lines.append(f"  package dirs: {[str(d) for d in self.package_dirs]}")
+        profile = self.bundle.limit_profile
+        lines.append("joint limits (resolved; sliders, solver and adapter all read these):")
+        for line in profile.summary_lines():
+            lines.append(f"  {line}")
+        if self.provisional_soft_limits:
+            lines.append(
+                "  NOTE: the continuous joints' limits are provisional stand-ins, not measured."
+            )
+        tcp = "validated" if self.bundle.tcp_validated else "NOT validated (placeholder offset)"
+        lines.append(f"TCP frames: {self.bundle.tcp_frames} -- {tcp}")
+        if self.bundle.home_positions_rad:
+            lines.append("home pose: configured and checked")
+        else:
+            lines.append("home pose: none configured (the page offers zero all only)")
+        if self.ik is not None:
+            lines.append(f"IK groups: {self.ik.groups}")
+            lines.append(f"IK settings: {self.ik.describe_config()}")
+        else:
+            lines.append("IK: not available")
+        return lines
+
     _tmpdir: Any = field(default=None, repr=False)
 
     def cleanup(self) -> None:
@@ -103,6 +140,49 @@ class LoadedModel:
         if self._tmpdir is not None:
             self._tmpdir.cleanup()
             self._tmpdir = None
+
+
+def _code_revision() -> str:
+    """``branch@commit`` of the running checkout, or the package version."""
+    import subprocess  # noqa: PLC0415
+
+    root = Path(__file__).resolve()
+    for parent in root.parents:
+        if (parent / ".git").exists():
+            try:
+                commit = subprocess.run(
+                    ["git", "-C", str(parent), "rev-parse", "--short", "HEAD"],
+                    capture_output=True,
+                    text=True,
+                    timeout=2.0,
+                ).stdout.strip()
+                branch = subprocess.run(
+                    ["git", "-C", str(parent), "rev-parse", "--abbrev-ref", "HEAD"],
+                    capture_output=True,
+                    text=True,
+                    timeout=2.0,
+                ).stdout.strip()
+                if commit:
+                    return f"{branch}@{commit}"
+            except (OSError, subprocess.SubprocessError):
+                break
+            break
+    try:
+        from importlib.metadata import version  # noqa: PLC0415
+
+        return f"robopy {version('robopy')}"
+    except Exception:  # noqa: BLE001
+        return "robopy (unknown revision)"
+
+
+def _file_hash(path: Path) -> str:
+    """Short SHA-256 of a file, or ``?`` when it cannot be read."""
+    import hashlib  # noqa: PLC0415
+
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    except OSError:
+        return "?"
 
 
 def parse_soft_limits(
@@ -143,13 +223,22 @@ def load_model(
         if not quiet:
             print(text)
 
-    soft_limits = parse_soft_limits(list(args.soft_limit), parser)
+    # Soft limits from the command line are unvalidated: nobody said they
+    # were measured.  Those from the configuration carry their own flag.
+    soft_entries: Dict[str, Any] = {
+        joint: {"lower": lo, "upper": hi, "validated": False, "note": "--soft-limit"}
+        for joint, (lo, hi) in parse_soft_limits(list(args.soft_limit), parser).items()
+    }
+    overrides: Dict[str, Any] = {}
+    home: Dict[str, float] = {}
     tcp_offsets = None
+    tcp_validated = False
     groups: Dict[str, Any] = {}
     urdf: Path | None = args.urdf
     package_dirs = list(args.package_dirs)
     control_config = None
     provisional = False
+    config_ik: Dict[str, Any] = {}
 
     if args.config:
         from robopy.config.dotrobopy import apply_rakuda_dotconfig
@@ -157,36 +246,32 @@ def load_model(
         from robopy.control.types import se3_from_quat_xyzw
 
         cfg = apply_rakuda_dotconfig(RakudaConfig(leader_port="", follower_port=""))
-        if cfg.control is None or not cfg.control.model.urdf_path:
-            parser.error(
-                "--config given but .robopy/rakuda/config.yaml has no control.model.urdf_path"
-            )
+        if cfg.control is None:
+            parser.error("--config given but .robopy/rakuda/config.yaml has no control section")
         assert cfg.control is not None
         control_config = cfg.control
         spec = cfg.control.model
-        urdf = urdf or Path(spec.urdf_path)  # type: ignore[arg-type]
+        if spec.urdf_path:
+            urdf = urdf or Path(spec.urdf_path)
+        # urdf_path: null means the bundled model, exactly as the machine
+        # resolves it; the fallback below does the same lookup.
         package_dirs = package_dirs or [Path(d) for d in spec.package_dirs]
-        soft_limits = {**spec.soft_limits_rad, **soft_limits}
+        soft_entries = {**spec.soft_limit_entries(), **soft_entries}
+        overrides = spec.override_entries()
+        home = dict(spec.home_positions_rad)
         if spec.left_tcp and spec.right_tcp:
             tcp_offsets = {
                 side: (tcp.parent_frame, se3_from_quat_xyzw(tcp.translation_m, tcp.quaternion_xyzw))
                 for side, tcp in (("left", spec.left_tcp), ("right", spec.right_tcp))
             }
+            tcp_validated = bool(spec.left_tcp.validated and spec.right_tcp.validated)
         groups = {
             "torso_joint": spec.torso_joint,
             "left_arm_joints": spec.left_arm_joints or None,
             "right_arm_joints": spec.right_arm_joints or None,
             "head_joints": spec.head_joints or None,
         }
-
-    # Rakuda's joints are driven over the whole DYNAMIXEL count range in
-    # leader-follower teleoperation, which is wider than several of the ranges
-    # its CAD export declares. The sliders show that travel, so the viewer and
-    # the machine speak of the same angles; the synthetic fixture has no motors
-    # and keeps its own URDF ranges.
-    from robopy.config.robot_config import RAKUDA_MOTOR_TRAVEL_RAD
-
-    joint_travel: Tuple[float, float] | None = RAKUDA_MOTOR_TRAVEL_RAD
+        config_ik = cfg.control.ik.solver_overrides()
 
     tmpdir = None
     synthetic = False
@@ -203,53 +288,62 @@ def load_model(
             hint = rakuda.visual_mesh_hint()
             if hint:
                 say(f"  {hint}")
-            if not soft_limits:
+            continuous = ("torso_yaw_dof", "shoulder_pitch_left_dof", "shoulder_pitch_right_dof")
+            missing = [j for j in continuous if j not in soft_entries]
+            if missing:
                 # The three continuous joints have no URDF range at all, and the
-                # solver needs a finite one. The motor travel is what the
-                # machine is driven over, so that is what they get -- it is not
-                # a measurement of where they actually stop, and a measured
-                # range belongs in .robopy/rakuda/config.yaml (--config).
-                soft_limits = {
-                    joint: RAKUDA_MOTOR_TRAVEL_RAD
-                    for joint in (
-                        "torso_yaw_dof",
-                        "shoulder_pitch_left_dof",
-                        "shoulder_pitch_right_dof",
-                    )
-                }
+                # solver needs a finite one. The motor's own travel is a
+                # stand-in for simulation -- it is not a measurement of where
+                # the machine stops -- and it is recorded as exactly that. A
+                # measured range belongs in .robopy/rakuda/config.yaml.
+                from robopy.config.robot_config import RAKUDA_MOTOR_TRAVEL_RAD
+
+                low, high = RAKUDA_MOTOR_TRAVEL_RAD
+                for joint in missing:
+                    soft_entries[joint] = {
+                        "lower": low,
+                        "upper": high,
+                        "validated": False,
+                        "note": "provisional: the servo's travel, not a measured stop",
+                    }
                 provisional = True
                 say(
-                    "  Continuous joints get the motor travel as their solver range; it is not "
-                    "measured. Pass --soft-limit or use --config for the real ranges."
+                    f"  Continuous joints {missing} get the servo travel "
+                    f"({math.degrees(low):.0f} to {math.degrees(high):.0f} deg) as a "
+                    "PROVISIONAL, simulation-only range; it is not measured. Pass --soft-limit "
+                    "or use --config for the real ranges."
                 )
-            low, high = RAKUDA_MOTOR_TRAVEL_RAD
-            say(
-                f"  Joint sliders span the motor travel ({math.degrees(low):.0f} to "
-                f"{math.degrees(high):.0f} deg about the count zero), as in leader-follower "
-                "position teleoperation; the solver still obeys the URDF range."
-            )
     if urdf is None:
         from robopy.kinematics.synthetic_dual_arm import write_synthetic_dual_arm_urdf
 
         tmpdir = tempfile.TemporaryDirectory()
         urdf = write_synthetic_dual_arm_urdf(Path(tmpdir.name) / "synthetic_dual_arm.urdf")
         synthetic = True
-        joint_travel = None  # no motors behind it; its URDF ranges are all there is
         say("Serving the synthetic fixture (Rakuda's topology, not its geometry).")
-        soft_limits = {
-            "torso_yaw_dof": (-1.5, 1.5),
-            "shoulder_pitch_left_dof": (-2.0, 2.0),
-            "shoulder_pitch_right_dof": (-2.0, 2.0),
-            **soft_limits,
-        }
+        for joint, bounds in (
+            ("torso_yaw_dof", (-1.5, 1.5)),
+            ("shoulder_pitch_left_dof", (-2.0, 2.0)),
+            ("shoulder_pitch_right_dof", (-2.0, 2.0)),
+        ):
+            soft_entries.setdefault(
+                joint,
+                {
+                    "lower": bounds[0],
+                    "upper": bounds[1],
+                    "validated": False,
+                    "note": "synthetic fixture",
+                },
+            )
 
     try:
         bundle = ModelBundle.load(
             urdf,
             package_dirs=package_dirs,
-            soft_limits=soft_limits,
-            joint_travel_rad=joint_travel,
+            soft_limits=soft_entries,
+            joint_limit_overrides=overrides,
             tcp_offsets=tcp_offsets,
+            tcp_validated=tcp_validated,
+            home_positions_rad=home,
             geometry_source=args.geometry,
         )
     except Exception as exc:  # noqa: BLE001 - report and exit with a clear message
@@ -259,9 +353,12 @@ def load_model(
         raise SystemExit(1) from exc
 
     ik = None
+    # The configuration's control.ik section is the shared behaviour; a
+    # command's own overrides (the VR streaming profile) come on top of it.
+    merged_overrides: Dict[str, Any] = {**config_ik, **(ik_overrides or {})}
     if not args.no_ik:
         try:
-            ik = IKSetup(bundle, config_overrides=ik_overrides, **groups)  # type: ignore[arg-type]
+            ik = IKSetup(bundle, config_overrides=merged_overrides, **groups)  # type: ignore[arg-type]
             if ik.geometric_study_only:
                 say(
                     "IK: continuous joint(s) "
@@ -278,9 +375,10 @@ def load_model(
         groups=groups,
         urdf=urdf,
         package_dirs=package_dirs,
-        soft_limits=soft_limits,
+        soft_limits=dict(bundle.soft_limits),
         synthetic=synthetic,
         provisional_soft_limits=provisional,
         config=control_config,
+        ik_overrides=merged_overrides,
         _tmpdir=tmpdir,
     )
