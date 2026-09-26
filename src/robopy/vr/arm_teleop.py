@@ -17,6 +17,15 @@ the target freezes and the solver holds the hand.  Two mappings exist:
   nothing.  Used when the operator's and the robot's reach differ so much that
   an absolute correspondence is not usable.
 
+In the absolute mapping the press can pull the hand a long way if the operator's
+hand is far from where the robot's is.  An **engagement gate** prevents that:
+with an engage radius set (see :attr:`ArmTeleopConfig.engage_radius_m`, or per
+sample for a device such as a tracked hand), the clutch is only *requested*
+by the press and engages once the mapped target lies within that distance of
+the current hand pose -- the operator brings their hand to the robot's, then
+the two move together.  Until then the command reports ``waiting`` and the
+distance still to go, so the page can show a marker.
+
 The trigger drives the gripper *only* when the gripper's open and closed
 angles have been measured on the machine and put in the configuration; with
 either missing no gripper command is produced.  The angles are not something
@@ -70,6 +79,11 @@ class ArmTeleopConfig:
         gripper_motor: Follower motor name of this arm's gripper, or ``None``.
         gripper_open_rad: Measured gripper angle at trigger 0, or ``None``.
         gripper_closed_rad: Measured gripper angle at trigger 1, or ``None``.
+        engage_radius_m: Absolute mapping only: the clutch engages only once
+            the mapped target is within this distance (robot metres) of the
+            current hand pose; ``None`` engages at once and lets the hand be
+            pulled over at the slew-limited speed.  A sample may carry its own
+            radius (:attr:`ControllerSample.engage_radius_m`), which wins.
     """
 
     mapping: Literal["absolute", "relative"] = "absolute"
@@ -82,10 +96,13 @@ class ArmTeleopConfig:
     gripper_motor: str | None = None
     gripper_open_rad: float | None = None
     gripper_closed_rad: float | None = None
+    engage_radius_m: float | None = None
 
     def __post_init__(self) -> None:
         if self.mapping not in ("absolute", "relative"):
             raise ValueError("mapping must be 'absolute' or 'relative'.")
+        if self.engage_radius_m is not None and self.engage_radius_m <= 0.0:
+            raise ValueError("engage_radius_m must be positive (or None to engage at once).")
         if not 0.0 < self.position_scale <= 5.0:
             raise ValueError("position_scale must be within (0, 5].")
         if self.max_speed_m_s <= 0.0 or self.max_angular_speed_rad_s <= 0.0:
@@ -125,6 +142,9 @@ class ControllerSample:
         trigger: Trigger value in ``[0, 1]``.
         buttons: Other named buttons (``"a"``, ``"b"``, ``"stick"`` ...).
         stamp_s: Monotonic time of the sample.
+        engage_radius_m: What this device requires before its clutch engages
+            in the absolute mapping (see :attr:`ArmTeleopConfig.engage_radius_m`),
+            or ``None`` to use the arm's setting.
     """
 
     pose: NDArray[np.float64] | None
@@ -132,6 +152,7 @@ class ControllerSample:
     trigger: float = 0.0
     buttons: Mapping[str, bool] = field(default_factory=dict)
     stamp_s: float = 0.0
+    engage_radius_m: float | None = None
 
 
 @dataclass(frozen=True)
@@ -148,6 +169,12 @@ class ArmCommand:
         engaged_now: The clutch was engaged on this step.
         released_now: The clutch was released on this step.
         tracked: Whether the controller was tracked this step.
+        engage_distance_m: Absolute mapping, controller tracked and clutch not
+            engaged: how far the mapped target is from the current hand, i.e.
+            how far the operator's hand is from the robot's.  ``None`` otherwise.
+        engage_radius_m: The gate radius in force this step, if any.
+        waiting: The clutch is requested but the hand is not yet within the
+            engage radius; nothing moves until it is.
     """
 
     target: NDArray[np.float64] | None
@@ -157,6 +184,9 @@ class ArmCommand:
     engaged_now: bool = False
     released_now: bool = False
     tracked: bool = True
+    engage_distance_m: float | None = None
+    engage_radius_m: float | None = None
+    waiting: bool = False
 
 
 class ArmTeleop:
@@ -267,6 +297,25 @@ class ArmTeleop:
 
         pose = np.asarray(sample.pose, dtype=np.float64)
         engaged_now = released_now = False
+        # The gate: where the absolute mapping would send the hand, and how
+        # far that is from where the hand is, while the clutch is not engaged.
+        radius = sample.engage_radius_m if sample.engage_radius_m is not None else c.engage_radius_m
+        distance: float | None = None
+        if c.mapping == "absolute" and not self._clutched:
+            distance = self._engage_distance(pose, current_hand_pose)
+        if radius is not None and c.mapping != "absolute":
+            radius = None  # the relative mapping never jumps; nothing to gate
+        if sample.clutch and not self._clutched and radius is not None and distance is not None:
+            if distance > radius:
+                return ArmCommand(
+                    target=self.target,
+                    enabled=False,
+                    clutched=False,
+                    gripper_rad=gripper,
+                    engage_distance_m=distance,
+                    engage_radius_m=radius,
+                    waiting=True,
+                )
         if sample.clutch and not self._clutched:
             self._clutched = True
             self._controller0 = pose.copy()
@@ -277,6 +326,8 @@ class ArmTeleop:
         elif not sample.clutch and self._clutched:
             self.release()
             released_now = True
+            if c.mapping == "absolute":
+                distance = self._engage_distance(pose, current_hand_pose)
 
         if not self._clutched:
             return ArmCommand(
@@ -285,6 +336,8 @@ class ArmTeleop:
                 clutched=False,
                 gripper_rad=gripper,
                 released_now=released_now,
+                engage_distance_m=distance,
+                engage_radius_m=radius,
             )
 
         assert self._controller0 is not None and self._hand0 is not None
@@ -342,6 +395,16 @@ class ArmTeleop:
             engaged_now=engaged_now,
         )
 
+    def _engage_distance(
+        self, pose: NDArray[np.float64], current_hand_pose: NDArray[np.float64]
+    ) -> float:
+        """How far the absolute mapping would move the hand if the clutch engaged now."""
+        c = self.config
+        assert self._robot_anchor is not None and self._operator_anchor is not None
+        mapped = self._robot_anchor + c.position_scale * (pose[:3, 3] - self._operator_anchor)
+        current = np.asarray(current_hand_pose, dtype=np.float64)[:3, 3]
+        return float(np.linalg.norm(mapped - current))
+
     def describe(self) -> Dict[str, Any]:
         """JSON-friendly state."""
         target = None
@@ -364,6 +427,7 @@ class ArmTeleop:
             "position_scale": self.config.position_scale,
             "orientation_enabled": self.config.orientation_enabled,
             "gripper_available": self.config.gripper_available,
+            "engage_radius_m": self.config.engage_radius_m,
         }
 
 

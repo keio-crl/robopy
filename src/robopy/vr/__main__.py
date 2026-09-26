@@ -173,6 +173,16 @@ def build_parser() -> argparse.ArgumentParser:
         "Without it the trigger does nothing: the travel is a measurement, not a default.",
     )
     arms.add_argument("--target-ttl", type=float, default=0.25, help="seconds a target stays valid")
+    arms.add_argument(
+        "--engage-radius",
+        type=float,
+        default=None,
+        metavar="M",
+        help="absolute mapping, controllers: the clutch engages only once the controller has "
+        "been brought within this distance (robot metres) of where the robot's hand is, "
+        "shown as a marker; default: engage at once and pull the hand over. Hands have "
+        "their own --hand-engage-radius",
+    )
 
     hands = parser.add_argument_group(
         "hands",
@@ -218,6 +228,23 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.035,
         metavar="M",
         help="fingertip distance above which a held pinch releases (default 0.035 m)",
+    )
+    hands.add_argument(
+        "--hand-engage-radius",
+        type=float,
+        default=0.05,
+        metavar="M",
+        help="absolute mapping: a pinch engages only once the hand has been brought within "
+        "this distance (robot metres) of where the robot's hand is, shown as a marker in "
+        "the headset, so a pinch never yanks the arm across the workspace (default 0.05; "
+        "0 engages at once)",
+    )
+    hands.add_argument(
+        "--stop-hold",
+        default="0.5,2.5",
+        metavar="PAUSE,END",
+        help="seconds both open palms are shown to the headset before the arms pause, and "
+        "before the session ends (default 0.5,2.5)",
     )
 
     hw = parser.add_argument_group("hardware")
@@ -894,16 +921,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "  note: the model has no gripper joints; gripper commands are recorded, "
                         "not simulated."
                     )
-                configs = {
-                    side: ArmTeleopConfig(
-                        mapping=args.mapping,
-                        position_scale=args.position_scale,
-                        orientation_enabled=not args.no_orientation,
-                        max_speed_m_s=args.max_hand_speed,
-                        **grippers.get(side, {}),
-                    )
-                    for side in ("left", "right")
-                }
+                try:
+                    configs = {
+                        side: ArmTeleopConfig(
+                            mapping=args.mapping,
+                            position_scale=args.position_scale,
+                            orientation_enabled=not args.no_orientation,
+                            max_speed_m_s=args.max_hand_speed,
+                            engage_radius_m=args.engage_radius,
+                            **grippers.get(side, {}),
+                        )
+                        for side in ("left", "right")
+                    }
+                except ValueError as exc:
+                    parser.error(str(exc))
                 arm_teleop = DualArmTeleop(
                     configs["left"],
                     configs["right"],
@@ -919,6 +950,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.clutch
                 ]
                 print(f"Arms: {args.mapping} mapping; hold {clutch_name} to drive an arm.")
+                if args.engage_radius is not None and args.mapping == "absolute":
+                    print(
+                        "  the clutch engages once the controller is within "
+                        f"{args.engage_radius:g} m of the robot's hand (the marker in the headset)"
+                    )
 
         if head_tracker is None and arm_teleop is None:
             print("Nothing to teleoperate.", file=sys.stderr)
@@ -928,12 +964,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         hands_config = None
         if not args.no_hands:
             try:
+                pause_hold, end_hold = (float(v) for v in args.stop_hold.split(","))
+            except ValueError:
+                parser.error("--stop-hold takes two numbers: PAUSE,END seconds")
+            try:
                 hands_config = HandTrackingConfig(
                     clutch_gesture=args.hand_clutch,
                     gripper_gesture=args.hand_gripper,
                     reference=args.hand_reference,
                     pinch_on_m=args.pinch_on,
                     pinch_off_m=args.pinch_off,
+                    engage_radius_m=None
+                    if args.hand_engage_radius <= 0.0
+                    else args.hand_engage_radius,
+                    pause_hold_s=pause_hold,
+                    end_hold_s=end_hold,
                 )
             except ValueError as exc:
                 parser.error(str(exc))
@@ -949,8 +994,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             }[hands_config.gripper_gesture]
             print(
                 f"Hands: {drive}; {gripper_hint}; hand position at the {hands_config.reference}. "
-                "Pinch thumb and middle finger on both hands to re-centre, hold it on one hand "
-                f"for {hands_config.record_hold_s:g} s to record."
+                "Pinch thumb and middle finger on both hands to re-centre (and resume), hold it "
+                f"on one hand for {hands_config.record_hold_s:g} s to record."
+            )
+            if hands_config.engage_radius_m is not None and args.mapping == "absolute":
+                print(
+                    f"  a pinch engages only within {hands_config.engage_radius_m:g} m of the "
+                    "robot's hand: bring the hand to the marker in the headset first"
+                )
+            print(
+                f"  show both open palms to the headset for {hands_config.pause_hold_s:g} s to "
+                f"pause the arms, {hands_config.end_hold_s:g} s to end the session"
             )
 
         # -- camera, TLS, server -------------------------------------------

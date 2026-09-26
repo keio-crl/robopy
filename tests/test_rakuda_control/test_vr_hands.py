@@ -81,8 +81,36 @@ def hand_entry(**kwargs: Any) -> Dict[str, Any]:
     return {"hand": {"joints": hand_joints(**kwargs)}}
 
 
-def reading(*, tracked: bool = True, middle_pinch: bool = False) -> HandReading:
-    return HandReading(sample=None, tracked=tracked, middle_pinch=middle_pinch)
+def reading(
+    *, tracked: bool = True, middle_pinch: bool = False, stop_sign: bool = False
+) -> HandReading:
+    return HandReading(sample=None, tracked=tracked, middle_pinch=middle_pinch, stop_sign=stop_sign)
+
+
+def facing_hand(side: str, *, towards_head: bool = True, curl: float = 0.0) -> Dict[str, Any]:
+    """The ``joints`` of an open hand held up in front of the face, fingers up.
+
+    Built by turning the forward-pointing synthetic hand so its fingers point
+    up (+Y) and its palm faces the operator (+Z, towards a headset behind it)
+    or away (-Z).  The synthetic layout is a right hand palm-down (thumb side
+    at -X); the left hand is its mirror image in X.
+    """
+    joints = hand_joints(wrist=(0.0, 0.0, 0.0), curl=curl)
+    out: Dict[str, Any] = {}
+    for name, joint in joints.items():
+        p = np.asarray(joint["p"] if isinstance(joint, dict) else joint, dtype=np.float64)
+        x, y, z = p
+        if side == "left":
+            x = -x  # the mirror image of the right hand
+        # Supinate (half turn about the fingers), then raise the fingers: a
+        # proper rotation taking the fingers to +Y and the palm to +Z, i.e.
+        # towards an operator standing behind the hand.
+        x, y2, z2 = -x, -z, -y
+        if not towards_head:
+            x, z2 = -x, -z2  # turned about the vertical: the back of the hand shows
+        q = [x, y2 + 1.2, z2 - 0.4]
+        out[name] = {"p": q, "q": [0, 0, 0, 1]} if name == "wrist" else {"p": q}
+    return out
 
 
 class TestConfig:
@@ -194,7 +222,8 @@ class TestHandInput:
         assert not opened.sample.clutch and opened.pinch_m is not None and opened.pinch_m > 0.05
         pinched = hand.update(frame_of(pinch=True), 0.1)
         assert pinched.pinch and pinched.sample is not None and pinched.sample.clutch
-        assert pinched.sample.buttons == {"pinch": True, "middle_pinch": False}
+        assert pinched.sample.buttons == {"pinch": True, "middle_pinch": False, "stop_sign": False}
+        assert pinched.sample.engage_radius_m == HandTrackingConfig().engage_radius_m
         # Drift out to 3 cm: still inside the release threshold, still held.
         joints = hand_joints(pinch=True)
         joints["thumb-tip"] = list(np.asarray(joints["index-finger-tip"]) + [0.03, 0.0, 0.0])
@@ -260,6 +289,34 @@ class TestHandInput:
         assert out.middle_pinch and not out.pinch
         assert out.describe()["middle_pinch"] is True
 
+    def test_open_palm_towards_the_headset_is_the_stop_sign(self) -> None:
+        # Headset at WebXR (0, 1.6, 0): robot axes (0, 0, 1.6).
+        head = np.array([0.0, 0.0, 1.6])
+        for side in ("left", "right"):
+            hand = HandInput(side)
+            shown = HandFrame.from_message({"joints": facing_hand(side)})
+            assert shown is not None
+            normal = shown.palm_normal(side)
+            assert normal is not None
+            # The palm faces WebXR +Z = robot -X, back towards the headset ahead... the
+            # headset is behind the hand (hand at z=-0.4 in WebXR, head at 0).
+            assert normal @ (head - shown.palm_center()) > 0
+            assert hand.update(shown, 0.0, head_position_m=head).stop_sign
+            # Back of the hand towards the headset: not the sign.
+            away = HandFrame.from_message({"joints": facing_hand(side, towards_head=False)})
+            assert not hand.update(away, 0.1, head_position_m=head).stop_sign
+            # A fist facing the headset is not the sign either, nor a pinch.
+            fist = HandFrame.from_message({"joints": facing_hand(side, curl=1.0)})
+            assert not hand.update(fist, 0.2, head_position_m=head).stop_sign
+            # Without the headset position the sign is never recognised.
+            assert not hand.update(shown, 0.3).stop_sign
+        # The forward-pointing, palm-down hand: normal points down.
+        flat = frame_of()
+        n = flat.palm_normal("right")
+        assert n is not None and n[2] < -0.9
+        n_left = flat.palm_normal("left")
+        assert n_left is not None and n_left[2] > 0.9  # the mirror image's palm would be up
+
 
 class TestTwoHandGestures:
     def test_both_middle_pinches_recentre_on_the_edge(self) -> None:
@@ -298,6 +355,29 @@ class TestTwoHandGestures:
         g.update({"left": reading(), "right": reading()}, 5.1)
         assert not g.update(held, 5.2).record_toggle
         assert g.update(held, 6.3).record_toggle
+
+    def test_stop_sign_pauses_then_ends_once_per_hold(self) -> None:
+        g = TwoHandGestures(HandTrackingConfig(pause_hold_s=0.5, end_hold_s=2.5))
+        both = {"left": reading(stop_sign=True), "right": reading(stop_sign=True)}
+        one = {"left": reading(stop_sign=True), "right": reading()}
+        ev = g.update(one, 0.0)
+        assert not ev.pause and ev.stop_hold_s == 0.0  # one hand is not the gesture
+        ev = g.update(both, 1.0)
+        assert not ev.pause and ev.stop_hold_s == 0.0
+        ev = g.update(both, 1.4)
+        assert not ev.pause and ev.stop_hold_s == pytest.approx(0.4)
+        ev = g.update(both, 1.5)
+        assert ev.pause and not ev.end
+        ev = g.update(both, 2.0)
+        assert not ev.pause and not ev.end and ev.stop_hold_s == pytest.approx(1.0)
+        ev = g.update(both, 3.5)
+        assert ev.end and not ev.pause
+        assert not g.update(both, 9.0).end
+        # Letting go re-arms both.
+        g.update(one, 9.1)
+        ev = g.update(both, 9.2)
+        assert ev.stop_hold_s == 0.0
+        assert g.update(both, 9.7).pause
 
     def test_the_two_handed_gesture_cancels_and_outlives_a_hold(self) -> None:
         g = TwoHandGestures(HandTrackingConfig(record_hold_s=1.0))
@@ -399,7 +479,7 @@ class TestHandSession:
         assert state["arms"]["right"]["clutched"] and state["arms"]["right"]["hand"] is None
 
     def test_both_middle_pinches_recentre_and_release(self, bundle: ModelBundle) -> None:
-        session, _ = make_session(bundle, mapping="absolute")
+        session, _ = make_session(bundle, mapping="relative")
         session.handle(pose(), 0.0)
         session.handle(pose(0.1, left=hand_entry(pinch=True)), 0.1)
         assert session.arm_teleop is not None and session.arm_teleop.arms["left"].clutched
@@ -414,6 +494,99 @@ class TestHandSession:
         again = session.handle({"type": "pose", "t": 0.3, "head": turned, **both}, 0.3)
         assert again is not None and "recentred" not in again
         assert again["head"]["yaw_input_rad"] == pytest.approx(0.0, abs=1e-6)
+
+    def test_a_pinch_far_from_the_robot_hand_waits_for_the_marker(
+        self, bundle: ModelBundle
+    ) -> None:
+        session, backend = make_session(bundle, mapping="absolute")
+        session.handle(pose(), 0.0)
+        anchor = np.asarray(session.robot_anchor_m)
+        head = np.array([0.0, 0.0, 1.6])
+        start = backend.hand_pose("left")[:3, 3].copy()
+        # The palm 20 cm above where the robot's hand is in the operator's body.
+        far_palm = head + (start - anchor) + np.array([0.0, 0.0, 0.20])
+        far = hand_entry(wrist=xr_point(far_palm - [0.045, 0.0, 0.0]), pinch=True)
+        t = 0.0
+        for _ in range(30):
+            t += 1.0 / 60.0
+            state = session.handle(pose(t, left=far), t)
+        assert state is not None
+        left = state["arms"]["left"]
+        assert left["tracked"] and left["hand"]["pinch"]
+        assert left["waiting"] and not left["clutched"] and not left["enabled"]
+        assert left["target"] is None  # nothing was ever commanded
+        assert np.allclose(backend.hand_pose("left")[:3, 3], start)
+        marker = left["engage"]
+        assert marker["radius_m"] == pytest.approx(0.05)
+        assert marker["distance_m"] == pytest.approx(0.20)
+        assert not marker["in_place"]
+        # The marker is drawn where the robot's hand is in the operator's body
+        # (page coordinates: robot axes from the WebXR origin; here identical).
+        assert marker["p"] == pytest.approx(list(head + (start - anchor)), abs=1e-9)
+        # Bring the palm to within the radius, still pinching: it engages.
+        near_palm = head + (start - anchor) + np.array([0.0, 0.0, 0.03])
+        near = hand_entry(wrist=xr_point(near_palm - [0.045, 0.0, 0.0]), pinch=True)
+        t += 1.0 / 60.0
+        state = session.handle(pose(t, left=near), t)
+        assert state is not None
+        left = state["arms"]["left"]
+        assert left["clutched"] and not left["waiting"] and left["engage"] is None
+        # An open hand near the marker shows the marker as reached, not clutched
+        # (the robot's hand has meanwhile come towards the palm, so the marker
+        # moved with it and the distance is below what it was).
+        opened = hand_entry(wrist=xr_point(near_palm - [0.045, 0.0, 0.0]), pinch=False)
+        state = session.handle(pose(t + 0.02, left=opened), t + 0.02)
+        assert state is not None
+        left = state["arms"]["left"]
+        assert not left["clutched"] and not left["waiting"]
+        assert left["engage"]["in_place"] and left["engage"]["distance_m"] <= 0.03 + 1e-9
+
+    def test_stop_sign_pauses_the_arms_then_ends_the_session(self, bundle: ModelBundle) -> None:
+        session, _ = make_session(bundle, mapping="relative")
+        session.handle(pose(), 0.0)
+        session.handle(pose(0.1, left=hand_entry(pinch=True)), 0.1)
+        assert session.arm_teleop is not None and session.arm_teleop.arms["left"].clutched
+        both = {
+            "left": {"hand": {"joints": facing_hand("left")}},
+            "right": {"hand": {"joints": facing_hand("right")}},
+        }
+        t = 0.2
+        state = session.handle(pose(t, **both), t)
+        assert state is not None
+        assert (
+            state["arms"]["left"]["hand"]["stop_sign"]
+            and state["arms"]["right"]["hand"]["stop_sign"]
+        )
+        assert state["arms_enabled"] and not state["gestures"]["paused"]
+        # Half a second in: paused, clutches released, arms off.
+        t = 0.75
+        state = session.handle(pose(t, **both), t)
+        assert state is not None
+        assert not state["arms_enabled"] and state["gestures"]["paused"]
+        assert not session.arm_teleop.arms["left"].clutched
+        assert state["gestures"]["stop_hold_s"] == pytest.approx(0.55)
+        assert "events" not in state
+        # While paused a pinch moves nothing.
+        state = session.handle(pose(1.0, left=hand_entry(pinch=True)), 1.0)
+        assert state is not None and not state["arms"]["left"]["clutched"]
+        assert not state["arms_enabled"]
+        # Show the palms again for long enough: the session is asked to end.
+        for t in (1.1, 2.0, 3.0, 3.7):
+            state = session.handle(pose(t, **both), t)
+        assert state is not None and state.get("events") == ["end_session"]
+        assert not state["arms_enabled"]
+        # The event is delivered once.
+        state = session.handle(pose(3.8, **both), 3.8)
+        assert state is not None and "events" not in state
+        # Resume: the re-centre gesture turns the arms back on.
+        middle = {"left": hand_entry(middle_pinch=True), "right": hand_entry(middle_pinch=True)}
+        state = session.handle(pose(4.0, **middle), 4.0)
+        assert state is not None and state.get("recentred") and state["arms_enabled"]
+        assert not state["gestures"]["paused"]
+        # The page's checkbox also clears the pause.
+        session._pause_arms()
+        hello = session.handle({"type": "set", "arms_enabled": True}, 4.1)
+        assert hello is not None and session.arms_enabled and not session.paused_by_gesture
 
     def test_hands_can_be_ignored(self, bundle: ModelBundle) -> None:
         cfg = VRServerConfig(state_hz=1000.0, hands=None)

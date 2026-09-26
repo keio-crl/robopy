@@ -20,7 +20,19 @@ What stands in for the controller's buttons:
 * **re-centre (both thumbstick clicks)** -- a pinch of the thumb and *middle*
   fingertips on both hands at once;
 * **record (B / Y)** -- the same middle pinch on one hand, held for
-  ``record_hold_s``.
+  ``record_hold_s``;
+* **stop** -- both palms turned towards the headset with the fingers straight
+  (the "stop" sign): held for ``pause_hold_s`` it pauses the arms (clutches
+  released, arms hold, nothing follows until the operator resumes with the
+  re-centre gesture); kept up to ``end_hold_s`` it ends the session (the page
+  leaves VR).  Nothing the hands do while paused moves an arm.
+
+Before a pinch may drive an arm the operator's hand must be *where the robot's
+hand is*: in the absolute mapping the clutch stays pending until the mapped
+target lies within ``engage_radius_m`` of the current hand pose (the
+engagement gate of :class:`~robopy.vr.arm_teleop.ArmTeleop`), so a pinch made
+far from the robot's hand never yanks the arm across the workspace.  The page
+draws where to bring the hand.
 
 The hand's *pose* is the wrist joint's orientation with a chosen reference
 point as position: the centre of the palm (default), the wrist joint, or the
@@ -147,6 +159,17 @@ class HandTrackingConfig:
         curl_closed_ratio: The ratio at which it counts as fully curled.
         record_hold_s: How long a one-handed middle pinch is held to toggle
             the recording.
+        engage_radius_m: How close (robot metres) the mapped hand must come to
+            the robot's hand before a pinch engages the clutch in the absolute
+            mapping; ``None`` engages at once (the hand is pulled over at the
+            slew-limited speed, as a controller does by default).
+        pause_hold_s: How long both palms are shown to the headset before the
+            arms pause.
+        end_hold_s: How long they are kept up before the session ends.
+        facing_cos: Cosine of the largest angle between a palm's normal and the
+            direction to the headset that still counts as "facing" it.
+        straight_ratio: Curl ratio above which a finger counts as straight
+            for the stop sign.
     """
 
     clutch_gesture: Literal["pinch", "always"] = "pinch"
@@ -158,6 +181,11 @@ class HandTrackingConfig:
     curl_open_ratio: float = 0.9
     curl_closed_ratio: float = 0.45
     record_hold_s: float = 1.0
+    engage_radius_m: float | None = 0.05
+    pause_hold_s: float = 0.5
+    end_hold_s: float = 2.5
+    facing_cos: float = 0.7
+    straight_ratio: float = 0.75
 
     def __post_init__(self) -> None:
         if self.clutch_gesture not in ("pinch", "always"):
@@ -179,6 +207,12 @@ class HandTrackingConfig:
             raise ValueError("Need 0 < curl_closed_ratio < curl_open_ratio <= 1.")
         if self.record_hold_s <= 0.0:
             raise ValueError("record_hold_s must be positive.")
+        if self.engage_radius_m is not None and self.engage_radius_m <= 0.0:
+            raise ValueError("engage_radius_m must be positive (or None to engage at once).")
+        if not 0.0 < self.pause_hold_s < self.end_hold_s:
+            raise ValueError("Need 0 < pause_hold_s < end_hold_s.")
+        if not -1.0 < self.facing_cos < 1.0 or not 0.0 < self.straight_ratio < 1.0:
+            raise ValueError("facing_cos must be in (-1, 1) and straight_ratio in (0, 1).")
 
     @property
     def required_joints(self) -> Tuple[str, ...]:
@@ -203,6 +237,9 @@ class HandTrackingConfig:
             "curl_open_ratio": self.curl_open_ratio,
             "curl_closed_ratio": self.curl_closed_ratio,
             "record_hold_s": self.record_hold_s,
+            "engage_radius_m": self.engage_radius_m,
+            "pause_hold_s": self.pause_hold_s,
+            "end_hold_s": self.end_hold_s,
         }
 
 
@@ -290,6 +327,33 @@ class HandFrame:
             return 1.0
         return self.distance(chain[0], chain[-1]) / length
 
+    def palm_normal(self, side: str) -> NDArray[np.float64] | None:
+        """Unit vector out of the palm, from the wrist and the index and little knuckles.
+
+        The three points span the palm; which side of that plane is the palm
+        depends on the hand, so ``side`` (``"left"`` / ``"right"``) picks the
+        sign.  ``None`` when a knuckle is missing or the points are collinear.
+        """
+        if not self.has("wrist", "index-finger-phalanx-proximal", "pinky-finger-phalanx-proximal"):
+            return None
+        w = self.positions["wrist"]
+        a = self.positions["index-finger-phalanx-proximal"] - w
+        b = self.positions["pinky-finger-phalanx-proximal"] - w
+        n = np.cross(a, b)
+        norm = float(np.linalg.norm(n))
+        if norm < 1e-9:
+            return None
+        n = n / norm
+        return n if side == "right" else -n
+
+    def palm_center(self) -> NDArray[np.float64]:
+        """Between the wrist and the middle knuckle (falls back to the wrist)."""
+        if self.has("middle-finger-phalanx-proximal"):
+            return 0.5 * (
+                self.positions["wrist"] + self.positions["middle-finger-phalanx-proximal"]
+            )
+        return self.positions["wrist"].copy()
+
     def reference_pose(self, reference: str) -> NDArray[np.float64]:
         """``(4, 4)`` hand pose: the wrist's orientation at the chosen reference point."""
         if reference == "wrist":
@@ -320,6 +384,8 @@ class HandReading:
         middle_pinch_m: Thumb-to-middle tip distance, if measured.
         curl: Mean curl of the free fingers in ``[0, 1]``, if measured.
         gripper: The trigger-equivalent in ``[0, 1]`` (1 = closed).
+        stop_sign: The open palm is turned towards the headset (fingers
+            straight, no pinch): this hand's half of the stop gesture.
         problem: Why the hand could not be read, if it could not.
     """
 
@@ -331,6 +397,7 @@ class HandReading:
     middle_pinch_m: float | None = None
     curl: float | None = None
     gripper: float = 0.0
+    stop_sign: bool = False
     problem: str | None = None
 
     def describe(self) -> Dict[str, Any]:
@@ -343,6 +410,7 @@ class HandReading:
             "middle_pinch_m": self.middle_pinch_m,
             "curl": self.curl,
             "gripper": self.gripper,
+            "stop_sign": self.stop_sign,
             "problem": self.problem,
         }
 
@@ -388,7 +456,12 @@ class HandInput:
         self._middle.engaged = False
         self.last = HandReading(sample=None, tracked=False)
 
-    def update(self, frame: HandFrame | None, now_s: float) -> HandReading:
+    def update(
+        self,
+        frame: HandFrame | None,
+        now_s: float,
+        head_position_m: NDArray[np.float64] | None = None,
+    ) -> HandReading:
         """Read the hand for this step.
 
         Args:
@@ -396,6 +469,9 @@ class HandInput:
                 tracked.  A lost hand releases every gesture at once: the arm
                 must not keep following a pose that is no longer measured.
             now_s: Monotonic time, seconds.
+            head_position_m: The headset's position in the same frame, for
+                the stop sign (palm towards the headset); without it the sign
+                is never recognised.
         """
         c = self.config
         if frame is None:
@@ -426,12 +502,24 @@ class HandInput:
             span = c.pinch_open_m - c.pinch_on_m
             gripper = min(1.0, max(0.0, (c.pinch_open_m - pinch_m) / span))
         clutch = pinch if c.clutch_gesture == "pinch" else True
+        stop_sign = False
+        if head_position_m is not None and not (pinch or middle):
+            normal = frame.palm_normal(self.side)
+            straight = all(
+                frame.has(*FINGERS[f]) and frame.curl_ratio(f) >= c.straight_ratio for f in FINGERS
+            )
+            if normal is not None and straight:
+                towards = np.asarray(head_position_m, dtype=np.float64) - frame.palm_center()
+                length = float(np.linalg.norm(towards))
+                if length > 1e-6:
+                    stop_sign = float(normal @ towards) / length >= c.facing_cos
         sample = ControllerSample(
             pose=frame.reference_pose(c.reference),
             clutch=clutch,
             trigger=gripper,
-            buttons={"pinch": pinch, "middle_pinch": middle},
+            buttons={"pinch": pinch, "middle_pinch": middle, "stop_sign": stop_sign},
             stamp_s=now_s,
+            engage_radius_m=c.engage_radius_m,
         )
         self.last = HandReading(
             sample=sample,
@@ -442,16 +530,29 @@ class HandInput:
             middle_pinch_m=middle_m,
             curl=curl,
             gripper=gripper,
+            stop_sign=stop_sign,
         )
         return self.last
 
 
 @dataclass(frozen=True)
 class HandEvents:
-    """Session-level gestures raised this step."""
+    """Session-level gestures raised this step.
+
+    Attributes:
+        recenter: Both hands pinched thumb and middle fingertips just now.
+        record_toggle: One hand held that pinch for ``record_hold_s``.
+        pause: Both palms have been shown to the headset for ``pause_hold_s``.
+        end: They have been kept up for ``end_hold_s``.
+        stop_hold_s: How long the stop sign has been held so far (0 when it
+            is not being made), for the page to show the progress.
+    """
 
     recenter: bool = False
     record_toggle: bool = False
+    pause: bool = False
+    end: bool = False
+    stop_hold_s: float = 0.0
 
 
 @dataclass
@@ -466,18 +567,25 @@ class TwoHandGestures:
     Re-centre fires on the edge where both hands come to pinch thumb and middle
     fingertips together.  Record toggles when one hand alone holds that pinch
     for ``record_hold_s``; a hold that turns into the two-handed gesture, or
-    outlives it, does not also toggle the recording.
+    outlives it, does not also toggle the recording.  The stop sign (both open
+    palms towards the headset) raises ``pause`` once at ``pause_hold_s`` and
+    ``end`` once at ``end_hold_s``; letting go re-arms both.
     """
 
     def __init__(self, config: HandTrackingConfig | None = None) -> None:
         self.config = config or HandTrackingConfig()
         self._both = False
         self._holds: Dict[str, _Hold] = {"left": _Hold(), "right": _Hold()}
+        self._stop_started_s: float | None = None
+        self._paused_fired = False
+        self._ended_fired = False
 
     def reset(self) -> None:
         """Forget every gesture in progress."""
         self._both = False
         self._holds = {"left": _Hold(), "right": _Hold()}
+        self._stop_started_s = None
+        self._paused_fired = self._ended_fired = False
 
     def update(self, readings: Mapping[str, HandReading | None], now_s: float) -> HandEvents:
         """Advance one step with this frame's readings (a missing side is untracked)."""
@@ -506,7 +614,27 @@ class TwoHandGestures:
             elif now_s - hold.started_s >= self.config.record_hold_s:
                 hold.fired = True
                 record = True
-        return HandEvents(recenter=recenter, record_toggle=record)
+        # The stop sign needs both hands; it is timed from the moment both show it.
+        stop = all(
+            r is not None and r.tracked and r.stop_sign
+            for r in (readings.get("left"), readings.get("right"))
+        )
+        pause = end = False
+        held = 0.0
+        if not stop:
+            self._stop_started_s = None
+            self._paused_fired = self._ended_fired = False
+        else:
+            if self._stop_started_s is None:
+                self._stop_started_s = now_s
+            held = now_s - self._stop_started_s
+            if held >= self.config.pause_hold_s and not self._paused_fired:
+                self._paused_fired = pause = True
+            if held >= self.config.end_hold_s and not self._ended_fired:
+                self._ended_fired = end = True
+        return HandEvents(
+            recenter=recenter, record_toggle=record, pause=pause, end=end, stop_hold_s=held
+        )
 
 
 def operator_transform(

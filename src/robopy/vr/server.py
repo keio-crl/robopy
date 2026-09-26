@@ -40,7 +40,9 @@ Server -> client::
     {"type": "state", "seq": n, "t": <echoed ms>, "joints": {...},
      "geometries": [{"p": [...], "q": [...]}, ...]   (only when want_poses),
      "tcp": {"left": {...}, "right": {...}},
-     "head": {...}, "arms": {...}, "ik": {...}, "warnings": [...], "server_ms": float}
+     "head": {...}, "arms": {...}, "ik": {...}, "warnings": [...], "server_ms": float,
+     "gestures": {"paused": bool, "stop_hold_s": float}     (with hands),
+     "events": ["end_session"]                                (when raised)}
     {"type": "error", "message": "..."}
 
 Exactly one operator may stream at a time; a second ``/ws/teleop`` connection
@@ -276,6 +278,9 @@ class TeleopSession:
         self._last_report: Any = None
         self.hands: Dict[str, HandInput] | None = None
         self._hand_gestures: TwoHandGestures | None = None
+        self.paused_by_gesture = False
+        self._stop_hold_s = 0.0
+        self._pending_events: List[str] = []
         if config.hands is not None:
             self.hands = {side: HandInput(side, config.hands) for side in ("left", "right")}
             self._hand_gestures = TwoHandGestures(config.hands)
@@ -452,6 +457,7 @@ class TeleopSession:
             self.head_enabled = bool(message["head_enabled"])
         if "arms_enabled" in message:
             self.arms_enabled = bool(message["arms_enabled"])
+            self.paused_by_gesture = False
             if not self.arms_enabled and self.arm_teleop is not None:
                 self.arm_teleop.release_all()
         if "want_poses" in message:
@@ -563,6 +569,17 @@ class TeleopSession:
                 self.recorder.stop(now_s)
             else:
                 self.recorder.start(self.recording_metadata(), now_s)
+        self._stop_hold_s = events.stop_hold_s
+        if events.pause or events.end:
+            # The stop sign: the arms stop following at once and stay off
+            # until the operator resumes (the re-centre gesture, or the page).
+            self._pause_arms()
+            if events.end:
+                self._pending_events.append("end_session")
+        if recentred_now and self.paused_by_gesture:
+            self.paused_by_gesture = False
+            self.arms_enabled = True
+        force_state = recentred_now or bool(self._pending_events)
 
         arm_target = None
         grippers: Dict[str, float] = {}
@@ -580,6 +597,8 @@ class TeleopSession:
                     "target": None if cmd.target is None else matrix_to_pose(cmd.target),
                     "input": inputs.get(side),
                     "hand": _describe_hand(readings.get(side)),
+                    "waiting": cmd.waiting,
+                    "engage": self._engage_marker(side, cmd, hand_poses[side]),
                 }
                 for side, cmd in output.commands.items()
             }
@@ -605,10 +624,50 @@ class TeleopSession:
             )
         )
         self._record_frame(now_s)
-        state = self._state(now_s, echo_t=message.get("t"), force=recentred_now)
+        state = self._state(now_s, echo_t=message.get("t"), force=force_state)
         if state is not None and recentred_now:
             state["recentred"] = True
         return state
+
+    def _pause_arms(self) -> None:
+        """Stop the arms following (clutches released, targets held) until resumed."""
+        self.paused_by_gesture = True
+        self.arms_enabled = False
+        if self.arm_teleop is not None:
+            self.arm_teleop.release_all()
+
+    def _engage_marker(
+        self, side: str, command: Any, robot_hand_pose: NDArray[np.float64]
+    ) -> Dict[str, Any] | None:
+        """Where the operator must bring their hand for this arm's clutch to engage.
+
+        The robot's current hand position, taken through the absolute
+        correspondence back into the operator's space, in the page's
+        coordinates (robot axes from the WebXR floor origin, as the twin pose
+        is sent).  ``None`` when no gate applies (relative mapping, no radius,
+        or nothing tracked on that side).
+        """
+        if command.engage_radius_m is None or self.robot_anchor_m is None:
+            return None
+        if self.arm_teleop is None:
+            return None
+        scale = self.arm_teleop.arms[side].config.position_scale
+        p_op = (
+            self.operator.head_position_m
+            + (np.asarray(robot_hand_pose)[:3, 3] - self.robot_anchor_m) / scale
+        )
+        T = np.eye(4)
+        T[:3, 3] = p_op
+        p_page = self.operator.from_operator(T)[:3, 3]
+        return {
+            "p": [float(v) for v in p_page],
+            "radius_m": float(command.engage_radius_m) / scale,
+            "distance_m": None
+            if command.engage_distance_m is None
+            else float(command.engage_distance_m) / scale,
+            "in_place": command.engage_distance_m is not None
+            and command.engage_distance_m <= command.engage_radius_m,
+        }
 
     def _read_inputs(
         self, message: Mapping[str, Any], now_s: float
@@ -633,6 +692,9 @@ class TeleopSession:
                     hand.update(None, now_s)
             return samples, inputs, readings
         T_op = operator_transform(self.operator.to_operator)
+        head_op = None
+        if self._last_head_robot is not None:
+            head_op = self.operator.to_operator(self._last_head_robot)[:3, 3]
         for side in ("left", "right"):
             entry = message.get(side)
             hand_entry = entry.get("hand") if isinstance(entry, dict) else None
@@ -642,7 +704,9 @@ class TeleopSession:
                 if self.hands is not None:
                     frame = HandFrame.from_message(hand_entry)
                     reading = self.hands[side].update(
-                        None if frame is None else frame.transformed(T_op), now_s
+                        None if frame is None else frame.transformed(T_op),
+                        now_s,
+                        head_position_m=head_op,
                     )
                     readings[side] = reading
                     samples[side] = reading.sample
@@ -706,6 +770,14 @@ class TeleopSession:
             "arms_enabled": self.arms_enabled,
             "backend": self.backend.name,
         }
+        if self.hands is not None:
+            state["gestures"] = {
+                "paused": self.paused_by_gesture,
+                "stop_hold_s": self._stop_hold_s,
+            }
+        if self._pending_events:
+            state["events"] = list(self._pending_events)
+            self._pending_events = []
         if report is not None:
             state["ik"] = {
                 "status": report.ik_status,
@@ -742,6 +814,7 @@ class TeleopSession:
             "head_enabled": self.head_enabled,
             "arms_enabled": self.arms_enabled,
             "want_poses": self.want_poses,
+            "paused_by_gesture": self.paused_by_gesture,
             "head": dict(self._last_head),
             "arms": dict(self._last_arms),
         }

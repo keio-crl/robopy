@@ -20,7 +20,11 @@
 // the hands): the page streams the 25 joint poses of each hand and draws them;
 // the server reads every gesture (by default: pinch thumb and index to drive
 // the arm, curl the other fingers for the gripper, pinch thumb and middle on
-// both hands to re-centre, hold that pinch on one hand to record).
+// both hands to re-centre, hold that pinch on one hand to record, show both
+// palms to the headset to pause the arms and keep them up to end the session).
+// Before a pinch may drive an arm the hand has to be brought to the marker the
+// server places where the robot's hand is (the engagement gate); the marker
+// turns green when the hand is close enough.
 //
 // The mirror: the twin is drawn again, reflected in a vertical plane a
 // chosen distance in front of the robot's head, so the operator -- who stands
@@ -47,6 +51,7 @@ const state = {
   sent: 0, received: 0, lastRttMs: null,
   controllers: {},       // index -> {handedness, grip, source}
   hands: { left: null, right: null },   // drawn joints per tracked hand
+  markers: { left: null, right: null }, // engagement markers (where to bring the hand)
   buttonsPrev: { left: {}, right: {} },
   cameraLocked: true,
   clutchButton: 'a',     // 'a' (A/X), 'grip' or 'stick'; from hello
@@ -327,7 +332,21 @@ function onState(msg) {
   if (msg.recording !== undefined) state.recording = msg.recording;
   if (msg.geometries) applyPoses(msg.geometries);
   if (msg.tcp) for (const [side, pose] of Object.entries(msg.tcp)) { const f = tcpFrames[side]; if (f) placeObject(f, pose); }
+  if (msg.arms_enabled !== undefined) $('#arms-on').checked = !!msg.arms_enabled;
+  if (msg.head_enabled !== undefined) $('#head-on').checked = !!msg.head_enabled;
+  updateMarkers(msg.arms);
+  for (const event of msg.events || []) onServerEvent(event);
   renderStatus();
+}
+
+// Events the server raises from gestures.  "end_session": the operator held
+// the stop sign long enough; the arms are already off on the server, and the
+// headset leaves VR so the session is visibly over.
+function onServerEvent(event) {
+  if (event === 'end_session') {
+    setStatus('stop gesture held: session ended by the operator; the arms hold.', 'warn');
+    if (state.xrSession) state.xrSession.end().catch(() => {});
+  }
 }
 
 function toggleRecording() { send({ type: 'record', action: 'toggle' }); }
@@ -462,6 +481,42 @@ function handDrawing(side) {
 function hideHand(side) {
   const drawing = state.hands[side];
   if (drawing) drawing.group.visible = false;
+}
+
+// Engagement markers: the server sends, per arm, where the operator's hand
+// must be for the clutch to engage (page coordinates: robot axes from the
+// WebXR floor origin, like the twin pose) and the radius that counts as
+// "there".  Amber until the hand is inside, green once it is; hidden while
+// that arm is clutched or nothing is tracked on that side.
+const markerMaterials = {
+  far: new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.35, depthWrite: false }),
+  near: new THREE.MeshBasicMaterial({ color: 0x4ce07a, transparent: true, opacity: 0.45, depthWrite: false }),
+};
+const markerRing = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, wireframe: true });
+
+function updateMarkers(arms) {
+  for (const side of ['left', 'right']) {
+    const a = arms && arms[side];
+    const engage = a && a.engage;
+    let marker = state.markers[side];
+    if (!engage || a.clutched || !a.tracked) { if (marker) marker.group.visible = false; continue; }
+    if (!marker) {
+      const group = new THREE.Group();
+      const ball = new THREE.Mesh(handSphere, markerMaterials.far);
+      const ring = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 8), markerRing);
+      group.add(ball); group.add(ring);
+      scene.add(group);
+      marker = { group, ball, ring };
+      state.markers[side] = marker;
+    }
+    const p = new THREE.Vector3(engage.p[0], engage.p[1], engage.p[2]).applyMatrix4(XR_FROM_ROBOT);
+    marker.group.position.copy(p);
+    marker.group.visible = true;
+    const r = Math.max(0.01, engage.radius_m || 0.05);
+    marker.ball.scale.setScalar(r);
+    marker.ring.scale.setScalar(r * 1.02);
+    marker.ball.material = engage.in_place ? markerMaterials.near : markerMaterials.far;
+  }
 }
 
 function handEntry(frame, refSpace, source) {
@@ -648,7 +703,9 @@ function renderStatus() {
       const g = h.hands;
       const clutch = g.clutch_gesture === 'pinch' ? 'pinch (thumb+index)' : 'always while tracked';
       const gripper = { curl: 'curl the other fingers', pinch: 'pinch strength', none: 'off' }[g.gripper_gesture] || g.gripper_gesture;
-      lines.push(`hands     clutch ${clutch}  gripper ${gripper}  at ${g.reference}  re-centre: both middle pinches  record: hold one ${g.record_hold_s}s`);
+      const gate = g.engage_radius_m ? `  engage within ${(g.engage_radius_m * 100).toFixed(0)}cm of the marker` : '';
+      lines.push(`hands     clutch ${clutch}  gripper ${gripper}  at ${g.reference}${gate}`);
+      lines.push(`          re-centre/resume: both middle pinches   record: hold one ${g.record_hold_s}s   pause: both palms to the headset ${g.pause_hold_s}s, end: ${g.end_hold_s}s`);
     } else lines.push('hands     ignored (controllers only)');
   }
   lines.push(recordingLine());
@@ -658,7 +715,15 @@ function renderStatus() {
   recBtn.classList.toggle('on', active);
   if (s) {
     const hd = s.head || {};
-    lines.push(`operator  ${s.operator.recentred ? 'recentred' : 'NOT recentred'}  head ${s.head_enabled ? 'on' : 'off'}  arms ${s.arms_enabled ? 'on' : 'off'}`);
+    const g = s.gestures || {};
+    const paused = g.paused ? '  PAUSED by the stop gesture (both middle pinches, or the arms checkbox, resume)' : '';
+    lines.push(`operator  ${s.operator.recentred ? 'recentred' : 'NOT recentred'}  head ${s.head_enabled ? 'on' : 'off'}  arms ${s.arms_enabled ? 'on' : 'off'}${paused}`);
+    if (g.stop_hold_s > 0) {
+      const hh = state.hello && state.hello.hands;
+      const pauseAt = hh ? hh.pause_hold_s : 0.5, endAt = hh ? hh.end_hold_s : 2.5;
+      const phase = g.stop_hold_s >= endAt ? 'ENDING' : g.stop_hold_s >= pauseAt ? 'paused; keep holding to END' : 'hold to pause';
+      lines.push(`stop      palms shown ${g.stop_hold_s.toFixed(1)}s  ${phase} (pause ${pauseAt}s, end ${endAt}s)`);
+    }
     if (hd.tracking) {
       const t = hd.targets_rad || {};
       lines.push(`headset   yaw ${(hd.yaw_input_rad * DEG).toFixed(1)}°  pitch ${(hd.pitch_input_rad * DEG).toFixed(1)}°   ->  ${Object.entries(t).map(([k, v]) => `${k}=${(v * DEG).toFixed(1)}°`).join('  ')}${hd.at_limit && hd.at_limit.length ? '  AT LIMIT ' + hd.at_limit.join(',') : ''}`);
@@ -676,7 +741,13 @@ function renderStatus() {
           extra = `  pinch ${a.hand.pinch_m != null ? (a.hand.pinch_m * 1000).toFixed(0) + 'mm' : '—'}${a.hand.curl != null ? `  curl ${(a.hand.curl * 100).toFixed(0)}%` : ''}${a.hand.middle_pinch ? '  MIDDLE PINCH' : ''}`;
         }
       }
-      lines.push(`${side.padEnd(9)} ${a.tracked ? (a.clutched ? 'CLUTCHED - following' : `idle (${hint} to drive)`) : lost}${a.gripper_rad != null ? `  gripper ${(a.gripper_rad * DEG).toFixed(0)}°` : ''}${extra}`);
+      let status;
+      if (!a.tracked) status = lost;
+      else if (a.clutched) status = 'CLUTCHED - following';
+      else if (a.waiting) status = `WAITING - bring the hand to the marker (${a.engage && a.engage.distance_m != null ? (a.engage.distance_m * 100).toFixed(0) + ' cm away' : 'not in place'})`;
+      else if (a.engage) status = a.engage.in_place ? `at the marker (${hint} to drive)` : `idle - marker ${a.engage.distance_m != null ? (a.engage.distance_m * 100).toFixed(0) + ' cm' : '?'} away, go there and ${hint}`;
+      else status = `idle (${hint} to drive)`;
+      lines.push(`${side.padEnd(9)} ${status}${a.gripper_rad != null ? `  gripper ${(a.gripper_rad * DEG).toFixed(0)}°` : ''}${extra}`);
     }
     if (s.ik) {
       const e = s.ik.errors || {};
@@ -693,7 +764,10 @@ function renderStatus() {
   lines.push(`link      sent ${state.sent}  recv ${state.received}  rtt ${state.lastRttMs == null ? '—' : state.lastRttMs.toFixed(0) + 'ms'}  ${cam}`);
   const el = $('#vr-status');
   el.textContent = lines.join('\n');
-  drawHud(lines.slice(0, 6));
+  // In the headset only the live lines matter (the static configuration is
+  // on the page): what the operator and each arm are doing, and any gate,
+  // pause or stop gesture in progress.
+  drawHud(lines.filter((l) => /^(operator|stop|left|right|ik|recording|warning)/.test(l)).slice(0, 6));
   const rtt = state.lastRttMs == null ? '' : `  rtt ${state.lastRttMs.toFixed(0)} ms`;
   setStatus(`${state.connected ? 'live' : 'offline'}${rtt}`, state.connected ? 'ok' : 'bad');
 }

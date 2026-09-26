@@ -374,6 +374,38 @@ class TestArmTeleop:
         again = arm.update(_sample(0.0, 0.0, 1.2, clutch=True), hand2, 0.04)
         assert np.allclose(again.target, hand2)
 
+    def test_engage_gate_waits_until_the_hand_is_at_the_robot_hand(self) -> None:
+        arm = ArmTeleop(
+            "left", ArmTeleopConfig(mapping="absolute", engage_radius_m=0.05, max_speed_m_s=100.0)
+        )
+        arm.set_anchor([0.0, 0.0, 1.0], [0.0, 0.0, 1.6])
+        hand = np.eye(4)
+        hand[:3, 3] = [0.3, 0.2, 0.7]  # 0.3 ahead, 0.2 left, 0.3 below the anchor
+        # The controller 20 cm above the corresponding spot: pressing waits.
+        far = arm.update(_sample(0.3, 0.2, 1.6 - 0.3 + 0.2, clutch=True), hand, 0.0)
+        assert far.waiting and not far.clutched and not far.enabled and far.target is None
+        assert far.engage_distance_m == pytest.approx(0.2)
+        assert far.engage_radius_m == 0.05
+        # Not pressing: the distance is still reported, nothing waits.
+        idle = arm.update(_sample(0.3, 0.2, 1.6 - 0.3 + 0.2, clutch=False), hand, 0.1)
+        assert not idle.waiting and idle.engage_distance_m == pytest.approx(0.2)
+        # Within the radius: engages, anchored at the current hand.
+        near = arm.update(_sample(0.3, 0.2, 1.6 - 0.3 + 0.03, clutch=True), hand, 0.2)
+        assert near.engaged_now and near.clutched and not near.waiting
+        assert near.engage_distance_m is None
+        assert near.target is not None and np.allclose(near.target, hand)
+        # A sample may carry its own radius, which wins over the arm's.
+        arm.release()
+        near_pose = np.eye(4)
+        near_pose[:3, 3] = [0.3, 0.2, 1.6 - 0.3 + 0.03]
+        strict = ControllerSample(pose=near_pose, clutch=True, engage_radius_m=0.01)
+        assert arm.update(strict, hand, 0.3).waiting
+        # The relative mapping never gates.
+        relative = ArmTeleop("left", ArmTeleopConfig(mapping="relative", engage_radius_m=0.05))
+        assert relative.update(_sample(5.0, 5.0, 5.0, clutch=True), hand, 0.0).clutched
+        with pytest.raises(ValueError, match="engage_radius_m"):
+            ArmTeleopConfig(engage_radius_m=0.0)
+
     def test_untracked_controller_releases_the_clutch(self) -> None:
         arm = ArmTeleop("right", RELATIVE)
         hand = np.eye(4)

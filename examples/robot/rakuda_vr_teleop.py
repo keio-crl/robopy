@@ -18,7 +18,10 @@ the hand where it got to.
 
 With ``--hands`` the operator uses a bare hand instead of the controller:
 the page then sends the hand's joints (WebXR Hand Input) and the server reads
-the pinch of thumb and index as the clutch.
+the pinch of thumb and index as the clutch.  A pinch made away from where the
+robot's hand is does not move the arm: the operator first brings the palm to
+the marker the server places there (the engagement gate), pinches, and only
+then does the hand follow.
 
 To operate for real::
 
@@ -60,16 +63,18 @@ def controller(z: float, *, clutch: bool) -> Dict[str, Any]:
     return {"p": [-0.15, 1.3, z], "q": [0, 0, 0, 1], "clutch": clutch, "trigger": 0.0}
 
 
-def tracked_hand(z: float, *, pinch: bool) -> Dict[str, Any]:
+def tracked_hand(z: float, *, pinch: bool, palm: List[float] | None = None) -> Dict[str, Any]:
     """A tracked left hand in place of the controller: what the page sends per frame.
 
     Only the joints the default gestures need are laid out here (the real page
     sends all 25): the wrist with its orientation, the thumb and index tips
     (5 mm apart when pinching, 8 cm otherwise), the middle knuckle for the
     palm reference point, and the middle, ring and little fingers straight,
-    i.e. the gripper open.  The palm centre lands where the controller was.
+    i.e. the gripper open.  The palm centre lands where the controller was,
+    or at ``palm`` (WebXR coordinates) when given.
     """
-    w = [-0.15, 1.3, z + 0.045]  # palm = midpoint(wrist, middle knuckle) = the controller's spot
+    p = palm if palm is not None else [-0.15, 1.3, z]
+    w = [p[0], p[1], p[2] + 0.045]  # palm = midpoint(wrist, middle knuckle)
     joints: Dict[str, Any] = {"wrist": {"p": w, "q": [0, 0, 0, 1]}}
     for finger, x in (("index", -0.03), ("middle", 0.0), ("ring", 0.03), ("pinky", 0.06)):
         knuckle = [w[0] + x, w[1], w[2] - 0.09]
@@ -167,6 +172,54 @@ def main(argv: List[str] | None = None) -> int:
         #    The hand target is the same offset from the robot's head anchor;
         #    the hand slews there.
         hand0 = backend.hand_pose("left")[:3, 3].copy()
+        if args.hands:
+            # 2a. A pinch far from the robot's hand engages nothing: the server
+            #     reports the marker where the palm has to go, in page
+            #     coordinates (robot axes: x forward, y left, z up).
+            state = session.handle(
+                {"type": "pose", "head": headset(0.0), "left": tracked_hand(-0.2, pinch=True)},
+                t + 1 / 60,
+            )
+            assert state is not None
+            left = state["arms"]["left"]
+            marker = left["engage"]
+            print(
+                f"pinch away from the robot's hand: waiting={left['waiting']} "
+                f"clutched={left['clutched']}; marker {marker['distance_m'] * 100:.0f} cm away at "
+                f"({marker['p'][0]:+.3f}, {marker['p'][1]:+.3f}, {marker['p'][2]:+.3f}) m, "
+                f"radius {marker['radius_m'] * 100:.0f} cm"
+            )
+            # 2b. Bring the palm to the marker (page -> WebXR: x=-y, y=z, z=-x),
+            #     pinch there: the clutch engages with the hand where it is.
+            mx, my, mz = marker["p"]
+            at_marker = [-my, mz, -mx]
+            for _ in range(5):
+                t += 1 / 60
+                state = session.handle(
+                    {
+                        "type": "pose",
+                        "head": headset(0.0),
+                        "left": tracked_hand(0.0, pinch=True, palm=at_marker),
+                    },
+                    t,
+                )
+            assert state is not None
+            print(f"pinch at the marker: clutched={state['arms']['left']['clutched']}")
+            # 2c. Move the pinched hand from the marker to the intended spot
+            #     over a second; the robot's hand comes along.
+            goal = [-0.15, 1.3, -0.2]
+            for i in range(60):
+                t += 1 / 60
+                a = (i + 1) / 60
+                palm = [m + a * (g - m) for m, g in zip(at_marker, goal)]
+                session.handle(
+                    {
+                        "type": "pose",
+                        "head": headset(0.0),
+                        "left": tracked_hand(0.0, pinch=True, palm=palm),
+                    },
+                    t,
+                )
         for _ in range(180):
             t += 1 / 60
             state = session.handle(
