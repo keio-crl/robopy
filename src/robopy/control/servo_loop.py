@@ -363,6 +363,15 @@ class ArmServo:
         return self._name
 
     @property
+    def bus(self) -> BusLike:
+        """The bus this servo owns.
+
+        For writes that must share the bus's thread -- the control loop's --
+        such as goal positions for motors this servo does not command.
+        """
+        return self._bus
+
+    @property
     def motor_names(self) -> Tuple[str, ...]:
         """Motors this servo reads every cycle.
 

@@ -385,18 +385,118 @@ uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem
 
 # 実機（.robopy/rakuda/config.yaml の control.mode: cartesian_teleop が必要。ロボットが動きます）
 uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem --config --hardware
+
+# 実機の頭だけ（腕は動かさない）＋頭部 RealSense の投影。制御系も校正も不要
+uv run --extra kinematics robopy-vr --hardware-head --follower-port /dev/ttyUSB1 --camera realsense \
+    --host 0.0.0.0 --self-signed
 ```
 
 Quest のブラウザで `https://<PCのIP>:8766/vr` を開き、**Enter VR** を押します。
+
+### 実機の頭だけを動かし、頭部 RealSense を投影する（`--hardware-head`） {: #vr-head-only }
+
+腕は一切動かさず、ヘッドセットの向きで `head_yaw` / `head_pitch` の 2 モータだけを動かし、頭部の
+RealSense の映像をヘッドセットに投影するデモです。`--hardware` と違って制御系（双腕IK・リーダ・校正済み
+joint map）を起動せず、フォロワのバスに直接、モータの生カウントで書きます。校正値（`zero_count` 等）は
+不要で、**起動時の頭の姿勢を「正面」**とし、ヘッドセットでリセンターした向きに対応させます。
+
+```bash
+uv sync --extra kinematics --extra realsense     # pyrealsense2 を入れる（一度だけ）
+uv run --frozen --extra kinematics robopy-vr --hardware-head --follower-port /dev/ttyUSB1 \
+    --camera realsense --host 0.0.0.0 --self-signed
+```
+
+- 操作者（ヘッドセット）が接続すると、追従を始める前に頭の 2 モータを**リセット位置**へ動かします。
+  `--head-home YAW,PITCH`（エンコーダのカウント、既定 `2048,2048` = 可動域の中央）で指定し、到達
+  （または 3 秒のタイムアウト）後にその位置を「正面」の基準にします。`--head-home current` にすると
+  従来どおり起動時の姿勢を基準にします。バイラテラル時は制御ループがバスを持つ前に同じことを行います。
+- 基準位置から `--head-range`（既定 yaw ±60°、pitch ±35°）の範囲で動かします。頭以外のモータには何も書きません。フォロワの他の関節のトルクは `.robopy/rakuda/config.yaml` の
+  `follower.torque_enabled` に従います（既定は全関節ON＝腕はその場で保持。`[head_yaw, head_pitch]` にすると
+  腕は脱力）。終了時は従来どおりフォロワ全体のトルクを切ります。
+- **軸の向き**: 既定 `--head-signs 1,-1` は研究室の Rakuda で測った値です（頭の 2 モータとも URDF の軸と
+  逆向きに回る）。別の機体で逆に回る場合は `--head-signs -1,1` のように yaw, pitch の符号を指定してください。
+  `--head-signs auto` にすると URDF から導いた符号に config の `direction` を掛けた値になります。
+- **カメラ**: `--camera realsense`（複数台なら `realsense:1`）で色ストリームを配信します。`--camera-size`
+  と `--camera-fps` で解像度とレートを、`--camera-fov` で投影サイズを変えられます。D435 の色カメラの
+  水平画角 69° が既定です。カメラが上下逆や鏡像で取り付けられている場合は `--camera-rotate 90|180|270` と
+  `--camera-mirror on` で補正します（既定はどちらも無補正。研究室の Rakuda のカメラは正しく付いています）。
+  これらの補正は**カメラから画像を受け取った直後に 1 回だけ**行い、それ以降の
+  すべて（配信、ヘッドセット表示、録画の動画、描画）は補正済みの正立画像しか受け取りません。下流のどこにも
+  回転の設定はなく、二重に回ることはありません。
+- **録画**: 実カメラ（`realsense` / `opencv:`）を使っているときは、録画中にそのカメラの画像を
+  `*_first_person.mp4` に直接書き、描画時は MuJoCo の 1 人称ではなくそれを 1 人称動画として扱います。
+  3 人称は従来どおり MuJoCo で描きます。テストパターン（`synthetic`）のときは従来どおり MuJoCo の 1 人称です。
+- **配信が止まったとき**: RealSense からフレームが 5 秒来なければパイプラインを再起動し、カメラ用の
+  WebSocket が切れればページが自動で再接続します（再接続中は画像が灰色になります）。status 欄の
+  `camera ... last N s ago` で最終フレームからの経過時間が見えます。
+- ページのツイン／ミラーは、頭だけがモータの読み値に従って動き、腕は起動姿勢のまま描かれます。録画も
+  同様に使えます。
+
+**マスター（リーダ）も使う**: `--leader-port /dev/ttyUSB0` を足す（または config の `leader_port`）と、
+頭の 2 関節はヘッドセット、それ以外の関節（胴体・両腕・グリッパ）はリーダの現在位置をそのままフォロワの
+目標にする位置テレオペになります。リーダの頭の読み値は無視します。書き込む関節は `follower.torque_enabled`
+に従い、頭はリーダからは決して書きません。リーダのグリッパは既定で**トルク OFF** にします（リーダは手で動かす
+マスタ装置なので）。位置テレオペと同じ戻りばね（トルク ON、目標 2400）が欲しい場合は `--leader-grip-hold` を
+付けてください。
+
+```bash
+uv run --extra kinematics --extra realsense robopy-vr --hardware-head \
+    --follower-port /dev/ttyUSB1 --leader-port /dev/ttyUSB0 --camera realsense --host 0.0.0.0 --self-signed
+```
+
+ページのツインとミラー、録画ログの関節角は、頭以外は起動姿勢のままです（リーダ追従の腕の角度を URDF に
+直すには校正済み joint map が要るため）。実機の動きは頭部カメラの映像と 1 人称動画で確認してください。
+
+バスの読み書きはバックエンド専用のスレッドが固定周期（50 Hz）で行い、1 周期は **リーダ 17 モータ読み → フォロワ
+1 回書き**（リーダ由来の 15 関節 + ヘッドセット由来の頭 2 関節）の 2 往復だけです。頭の現在値は起動時の基準姿勢を
+1 回読むほかは読み戻さず、書いた目標値をツインとログに使います。ヘッドセットの姿勢メッセージは最新の頭目標を
+置くだけです。Linux の USB シリアルは 1 往復 16 ms 前後かかるので、これを受信スレッドで行うと 60 Hz の姿勢
+メッセージに追いつけず頭の遅れが増え続けます。1 周期が周期の 2 倍を超えると起動ログに警告が出ます。その場合は
+USB シリアルのレイテンシタイマを 1 ms にしてください。
+
+```bash
+echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer   # ttyUSB1 も同様
+```
+
+**バイラテラル**: さらに `--bilateral` を付けると、腕はリーダの位置を写すのではなく
+[バイラテラル関節制御](#制御モード双腕ik-バイラテラル)（仮想ばね・ダンパ、電流制御）で結合され、頭はヘッドセットに
+追従します。制御系（`RakudaControlSystem`）を `bilateral_joint` モードで起動するので、`.robopy/rakuda/config.yaml` の
+`control:` セクション（結合する関節の校正値、`bilateral:` のゲイン、`allow_hardware_current_output: true`）が
+そのまま必要です。`control.mode` はこのフラグで `bilateral_joint` に上書きされます。制御系が動いている間はバスの
+書き込み権を制御ループが持つため、頭の目標は制御系の `set_direct_goal_counts()` に渡し、制御ループが自分の
+周期の中で書きます（別スレッドからバスに触ることはありません）。頭のモータは結合の対象外（位置モードのまま）で、
+リーダ側の頭は無視されます。
+
+```bash
+uv run --extra kinematics --extra realsense robopy-vr --hardware-head --bilateral \
+    --follower-port /dev/ttyUSB1 --leader-port /dev/ttyUSB0 --camera realsense --host 0.0.0.0 --self-signed
+```
+
+API から同じ構成を組む例が `examples/robot/rakuda_vr_head_camera.py` です。引数なしでは模擬バスと
+テストパターンで動くので、実機なしでも配線を確認できます（`--follower-port` で実機、`--serve` でページを
+配信）。
+
+```bash
+uv run --frozen --extra kinematics python examples/robot/rakuda_vr_head_camera.py
+```
 
 ### セキュアコンテキスト（HTTPS）
 
 WebXR は https か localhost でしか動きません。方法は 2 つあります。
 
-1. 自己署名証明書で HTTPS 配信（`--cert/--key`）。Quest のブラウザで一度警告を受け入れます。
+1. 自己署名証明書で HTTPS 配信。Quest のブラウザで一度警告を受け入れます。
+   `--self-signed` を付けると `robopy-vr` がカレントディレクトリに `cert.pem` / `key.pem` を作って
+   （既にあればそれを使って）配信します。
+   ```bash
+   uv run --extra kinematics robopy-vr --host 0.0.0.0 --self-signed
+   ```
+   自分で作る場合は `--cert/--key` で渡します。
    ```bash
    openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 -subj "/CN=robopy"
    ```
+   `openssl` が `Can't open "/usr/local/ssl/openssl.cnf"` と言って失敗する（コンパイル時のプレフィックスが
+   実機に無い）環境では `OPENSSL_CONF=/etc/ssl/openssl.cnf` を付けて実行します。`--self-signed` はこの
+   回避を自動で行います。`--cert/--key` のファイルが無ければ、モデルを読む前に対処法付きで停止します。
 2. `adb reverse tcp:8766 tcp:8766` で Quest の `localhost:8766` を PC に転送し、`http://localhost:8766/vr` を開く
    （ブラウザは localhost をセキュア扱いします。TLS 不要）。
 
@@ -405,17 +505,60 @@ WebXR は https か localhost でしか動きません。方法は 2 つあり�
 | 入力 | 動作 |
 | --- | --- |
 | ヘッドセットの向き | 頭部の yaw / pitch（roll は 2 軸首では再現できないので無視） |
-| グリップ（握り） | **クラッチ**。握っている間だけ、そのコントローラの相対移動・回転が同じ側の手先目標に加算される |
+| A / X（親指） | **クラッチ**。押している間だけ、そのコントローラが同じ側の腕を駆動する（`--clutch grip` でグリップ、`--clutch stick` でスティック押し込みに変更可） |
 | トリガ | グリッパ（`--gripper SIDE=MOTOR:OPEN,CLOSED` で開閉角を与えたときのみ） |
-| 両スティック同時クリック | リセンター（いま向いている方向をロボットの正面 +X にする） |
-| A / X | カメラ画像を頭に追従させる／空間に固定する |
-| B / Y | ロボットのツイン表示の切替 |
+| 両スティック同時クリック | リセンター（いま向いている方向をロボットの正面 +X にし、頭の位置をロボットの頭に対応させる） |
+| B / Y | **録画の開始／停止**（下記） |
+| ページのチェックボックス | ツイン表示、ミラー表示（距離も指定可）、カメラ画像の頭追従 |
 
-腕は**相対**マッピングです。絶対マッピングは操作者の肩とロボットの肩が一致していないと成り立たないので、
-クラッチを離して自分の腕を戻し、また握って続ける、という操作になります。目標の移動速度・角速度は
-スルーリミットで抑えられます（`--max-hand-speed`）。手先の向き追従は `--no-orientation` で切れます。
-Rakuda の手首は 2 軸なので、向きを保った並進は届かないことが多く、その場合ソルバは重み付きの妥協解に
-落ちます（Info 表示の残差を見てください）。
+腕は既定で**絶対**マッピングです（`--mapping absolute`）。リセンター時のヘッドセット位置をロボットの頭
+（`--arm-anchor`、既定は `head_camera_link`）に対応させ、A / X を押している間は「頭から見たコントローラの
+位置」をそのまま「ロボットの頭から見た手先目標」にします。押した瞬間から手先はコントローラの位置へ、
+スルーリミット（`--max-hand-speed`）の速さで寄っていき、離すとその場で保持されます。片側だけ押している
+間は、押していない側の腕の関節は固定され、ソルバは押している側の腕だけを解きます（胴体 yaw は
+`--torso optimize` を与えない限り固定）。`--position-scale` は頭を中心とした倍率です。
+手先の**向き**は押した時点からのコントローラの回転を相対的に加えます（グリップの軸と 2 軸手首の TCP に
+自然な対応がないため）。`--no-orientation` で切れます。Rakuda の手首は 2 軸なので、向きを保った並進は
+届かないことが多く、その場合ソルバは重み付きの妥協解に落ちます（Info 表示の残差を見てください）。
+
+`--mapping relative` にすると、押した瞬間の手先を基準にコントローラの移動量だけを加える方式になります
+（押しても動かず、離して腕を戻し、また押して続ける操作）。
+
+ページのツイン表示は、既定ではロボットの頭がリセンター時の自分の頭の位置に来るように置かれるので、
+腕を押して動かすとツインの手が自分のコントローラの位置に来るのが見えます。従来どおり前方に置くには
+`--twin-offset 0,0,1` のように指定します。自分がロボットの中に立つ配置では機体そのものは見えないので、
+ページは既定で**ミラー**も描きます。ロボットの頭の前方 1.5 m（`mirror` の距離欄で変更可）の鉛直面で
+ツインを鏡映したもので、鏡を見るのと同じく自分の左手側にロボットの左腕が映ります。
+
+### 録画と動画の保存
+
+操作中にどう動いていたかを後から確かめるために、サーバがセッションを記録して動画にします。
+ページの **● Record** ボタン、または VR 中は **B / Y** で開始し、もう一度押すと停止します。停止すると
+`--record-dir`（既定 `./recordings`）に JSON のログ（関節角、コントローラの位置（ロボット座標系）、
+クラッチ状態、手先目標、IK 残差、毎ステップ）が書かれ、続けて MuJoCo で 2 本の MP4 が描画されます。
+
+- `*_third_person.mp4`: 正面やや上からの 3 人称視点。コントローラの位置を球で描き（押している側は緑、
+  離している側は灰色）、押している手先から目標への線を引きます。
+- `*_first_person.mp4`: 1 人称視点。実カメラを配信しているときはそのカメラの画像そのもの（録画中に書かれる）、
+  シミュレーションではロボットの頭部カメラ（`head_camera_link`、光軸は頭の中立姿勢から導出）の描画。
+- `*_operator_view.mp4`: **操作者がヘッドセットで見ていた画面**。ページが録画中に自分の視点でシーン（ツイン、
+  ミラー、カメラ画像、HUD）を 10 fps でオフスクリーン描画して JPEG でサーバに送り、サーバが動画に書きます。
+  デスクトッププレビュー中はウィンドウの視点になります。
+
+進捗と保存先はページの status 欄／VR 内の HUD に出ます。描画には MuJoCo が必要です（無ければログだけが
+残り、後から描画できます）。動画は `ffmpeg`（libx264 付き。Ubuntu なら `apt install ffmpeg`）があれば
+H.264 で書かれ、ブラウザや VS Code でも再生できます。無い場合は OpenCV の MPEG-4 part 2（`mp4v`）になり、
+VLC 以外の多くのプレイヤーで再生できないので、その旨を警告します。
+
+```bash
+uv pip install mujoco                                     # 描画に必要（一度だけ）
+uv run --frozen --extra kinematics robopy-vr --host 0.0.0.0 --self-signed   # 録画は既定で有効
+uv run --frozen --extra kinematics robopy-vr-render recordings/rakuda-vr-*.json   # 後から／再描画
+```
+
+`robopy-vr-render` は `--view third_person|first_person`、`--fps`、`--size WxH`、`--azimuth/--elevation/--distance`
+（3 人称カメラ）、`--fovy`（1 人称の縦画角）を受け付けます。`robopy-vr --no-render` で描画を後回しに、
+`--no-record` で録画機能自体を切れます。操作者の接続が切れた時点で録画中なら、その時点までを保存します。
 
 ### モデルから導出するもの（推定しないもの）
 
@@ -435,7 +578,9 @@ Rakuda の手首は 2 軸なので、向きを保った並進は届かないこ�
 
 ### 安全側の設計
 
-- 操作者の WebSocket が切れる／無応答になると、両クラッチを解放し腕をホールドします（`teleop_timeout_s`）。
+- 操作者の WebSocket が切れる／無応答になると、両クラッチを解放し腕をホールドします（`teleop_timeout_s`、既定 5 s）。
+  姿勢はVR中かデスクトッププレビュー中しか流れないので、ページはそれ以外の間（Enter VR 前など）1 秒ごとに
+  `ping` を送って接続を保ち、切れた場合は自動で再接続します。
 - 目標には有効期限（`--target-ttl`、既定 0.25 s）があり、ストリームが止まれば新しい動作は出ません。
 - 同時に操作できるのは 1 人だけです。2 本目の接続は拒否されます。
 - コントローラのトラッキングが外れた瞬間にクラッチを解放します（測っていない姿勢で動き続けない）。
@@ -449,6 +594,8 @@ uv run --extra kinematics python examples/robot/rakuda_vr_teleop.py      # ス�
 uv run --extra kinematics robopy-vr --open-browser                          # デスクトップでプレビュー
 ```
 
+スクリプト操作者は、X を押したままコントローラを頭の前 20 cm・左 15 cm・下 30 cm に置き、左手先が
+ロボットの頭から同じオフセットの位置へ寄っていくのを表示します。
 ページの **Desktop preview** はウィンドウのカメラの向きを頭部姿勢として送るので、ヘッドセットなしで
 頭部追従とツイン描画を確認できます。シミュレーションの初期姿勢は肘を 0.8 rad 曲げた姿勢です
 （実機エクスポートのゼロ姿勢は腕が伸び切り右肘が可動域端にあるため、そこからはソルバの一歩も取れません。
@@ -497,6 +644,44 @@ multi-turn位置は `[-pi, pi]` へ折り返しません。`zero_count` は
 
 `control.allow_hardware_current_output` は既定で `false` です。上記が測定され
 `validated: true` になるまで、バイラテラルモードは `configure()` で拒否されます。
+
+### 校正コマンド（`robopy-rakuda-calibrate`）
+
+上の表のうちバイラテラルに必要な関節ごとの値を、実機で測って `.robopy/rakuda/config.yaml` の `control:`
+セクションに書き込むコマンドです。数値はすべて機械から読むか操作者が測るもので、データシートからは
+何も埋めません。
+
+```bash
+uv run robopy-rakuda-calibrate --leader-port /dev/ttyUSB1 --follower-port /dev/ttyUSB0
+uv run robopy-rakuda-calibrate --simulate     # 模擬バスと自動操作者で流れを見る
+```
+
+対象は既定で胴体＋両腕の 13 モータ（`--motors` で絞れます。頭とグリッパは結合対象外なので指定できません）。
+リーダ、フォロワの順に、各腕で次を行います。**対象モータのトルクは切れる**ので腕を支えてください。
+
+1. **レジスタ読み取り**（自動）: モデル、`DRIVE_MODE`、`HOMING_OFFSET`、`VELOCITY_LIMIT`（→ `max_velocity_rad_s`）、
+   `CURRENT_LIMIT`（その `--current-fraction`、既定 0.5 倍 → `current_limit_a`）。
+2. **モータ ↔ URDF 関節の対応**: チェーン順の提案を表示し、Enter で確定、違えば入力します（名前からの推定は
+   しません）。
+3. **ゼロ点**: 指示された基準姿勢（`--zero-pose` の文、既定はモデルのゼロ姿勢）に手で合わせて Enter →
+   `zero_count`。
+4. **向き**: 関節ごとに、モデルが正とする向きへ手で動かす → カウントの増減から `direction`。
+5. **可動域**: 両端へ手で動かして Enter ずつ → `lower_limit_rad` / `upper_limit_rad`。
+6. **トルク定数**（任意、`--no-torque-constant` で省略）: 関節軸を水平・リンクを水平にして保持させ、
+   無負荷時と既知の質量 `m` を腕長 `r` に吊るした時の保持電流の差から
+   `torque_constant_nm_per_a = m g r / |I_load − I_free|`。
+
+すべて揃った関節だけ `validated: true` になり `bilateral.coupled_motors` に入ります（片腕でも欠ければ結合
+しません）。`--allow-current` を付けたときだけ、かつ結合関節がすべて完全なときだけ
+`allow_hardware_current_output: true` を書きます。既存の `control:` のゲイン・周期・モデル設定は保持し、
+`leader.torque_enabled` / `follower.torque_enabled` は結合関節を含むよう広げ、元のファイルは
+`config.yaml.bak-<日時>` に残します（コメントは失われます）。書いた後に通常のローダで読み戻し、
+`JointMap.require("hardware")` を通ることを確認してから成功を報告します。
+
+`bilateral.allow_uncompensated` は既定 `false` のままです。電流制御には腕ごとの検証済み重力補償モデルも
+必要で、これはこのコマンドでは測れません。重力が載らない関節だけを結合するなら、承知のうえで `true` に
+してください。
+
 
 ### モデルの配置（`robopy/models/rakuda/`、パッケージ同梱）
 

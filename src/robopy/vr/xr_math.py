@@ -184,14 +184,17 @@ class OperatorFrame:
     re-centring are not a calibration of anything.
 
     The origin is also moved to the headset's floor projection at re-centring,
-    so positions are expressed relative to where the operator stands.  Arm
-    teleoperation is relative (see :mod:`robopy.vr.arm_teleop`) and does not
-    depend on this choice; the page's robot twin does.
+    so positions are expressed relative to where the operator stands, and the
+    headset's height there is kept: in the operator frame the head was at
+    ``(0, 0, head_height_m)`` when re-centring.  The absolute arm mapping
+    (see :mod:`robopy.vr.arm_teleop`) makes that point correspond to the
+    robot's head, and the page's robot twin is placed the same way.
     """
 
     def __init__(self) -> None:
         self._yaw_offset = 0.0
         self._origin = np.zeros(3)
+        self._head_height = 0.0
         self._recentred = False
 
     @property
@@ -204,6 +207,30 @@ class OperatorFrame:
         """Yaw of the operator's forward in WebXR-converted robot coordinates."""
         return self._yaw_offset
 
+    @property
+    def origin_m(self) -> NDArray[np.float64]:
+        """The operator frame's origin in WebXR-converted robot coordinates."""
+        return self._origin.copy()
+
+    @property
+    def head_height_m(self) -> float:
+        """Height of the headset above the floor when re-centring."""
+        return self._head_height
+
+    @property
+    def head_position_m(self) -> NDArray[np.float64]:
+        """Where the headset was, in the operator frame, when re-centring."""
+        return np.array([0.0, 0.0, self._head_height])
+
+    def from_operator(self, pose_operator: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Inverse of :meth:`to_operator`."""
+        T = np.asarray(pose_operator, dtype=np.float64)
+        out = np.eye(4)
+        Rz = rotation_z(self._yaw_offset)
+        out[:3, :3] = Rz @ T[:3, :3]
+        out[:3, 3] = Rz @ T[:3, 3] + self._origin
+        return out
+
     def recenter(self, head_pose_robot: NDArray[np.float64]) -> None:
         """Make the headset's current forward the operator's +X.
 
@@ -215,6 +242,7 @@ class OperatorFrame:
         yaw, _ = yaw_pitch_of_forward(T[:3, :3])
         self._yaw_offset = yaw
         self._origin = np.array([T[0, 3], T[1, 3], 0.0])
+        self._head_height = float(T[2, 3])
         self._recentred = True
 
     def to_operator(self, pose_robot: NDArray[np.float64]) -> NDArray[np.float64]:

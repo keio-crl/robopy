@@ -19,6 +19,7 @@ Client -> server::
                "buttons": {"a": bool, "b": bool, "stick": bool}} | null,
      "right": {...} | null}
     {"type": "recenter"}
+    {"type": "ping"}                       keepalive; answered with {"type": "pong"}
     {"type": "set", "head_enabled": bool, "arms_enabled": bool,
      "position_scale": float, "orientation_enabled": bool, "want_poses": bool}
 
@@ -44,6 +45,7 @@ from __future__ import annotations
 
 import json
 import logging
+import select
 import socket
 import ssl
 import threading
@@ -52,7 +54,7 @@ import webbrowser
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any, Callable, Dict, Mapping, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Tuple
 from urllib.parse import urlsplit
 
 import numpy as np
@@ -63,9 +65,11 @@ from robopy.viewer.server import IKSetup, ViewerServer, _Handler
 
 from .arm_teleop import ControllerSample, DualArmTeleop
 from .backend import TeleopBackend, TeleopCommand
-from .camera import FrameStreamer
+from .camera import FrameStreamer, SyntheticFrameSource
 from .head_tracking import HeadTracker
+from .recording import CameraTap, PushedFrames, SessionRecorder
 from .websocket import (
+    OP_BINARY,
     OP_TEXT,
     WebSocket,
     WebSocketClosed,
@@ -77,7 +81,7 @@ from .xr_math import OperatorFrame, xr_pose_to_robot
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["TeleopSession", "VRServer", "VRServerConfig", "serve_vr"]
+__all__ = ["TeleopSession", "VRServer", "VRServerConfig", "head_anchor_position", "serve_vr"]
 
 _STATIC_DIR = Path(__file__).parent / "static"
 
@@ -93,25 +97,91 @@ class VRServerConfig:
         camera_fov_deg: Horizontal field of view the page uses to size the
             camera image.  The default is the Intel RealSense D435 colour
             sensor's data-sheet value; it is *not* a calibration of this camera.
-        twin_offset_m: Where the page draws the robot's base relative to the
-            operator's re-centred origin (x forward, y left, z up).  Purely
-            visual; the teleoperation is relative and does not depend on it.
+        twin_offset_m: Where the page draws the robot's base, in robot axes
+            (x forward, y left, z up) from the WebXR floor origin, or ``None``
+            to place the twin so that the robot's head anchor sits where the
+            operator's head was at re-centring -- the operator then stands in
+            the robot and, with the absolute arm mapping, the twin's hands
+            come to their own.  Purely visual either way.
+        arm_anchor_frame: Model frame whose position is the robot's head
+            anchor for the absolute arm mapping; ``"auto"`` takes
+            ``head_camera_link`` when the model has it.  Ignored when both
+            arms use the relative mapping.
+        clutch_button: Which controller button the page treats as the clutch:
+            ``"a"`` (A on the right, X on the left; the thumb), ``"grip"``
+            (the squeeze) or ``"stick"`` (the thumbstick click).
         head_enabled: Whether the head follows the headset at session start.
         arms_enabled: Whether the arms follow the controllers at session start.
+        record_dir: Where session recordings (and their videos) are written,
+            or ``None`` to disable recording.
+        render_videos: Whether to render each recording to MP4 with
+            :mod:`robopy.vr.render` as soon as it is written (needs MuJoCo).
     """
 
     state_hz: float = 30.0
     teleop_timeout_s: float = 5.0
     camera_fov_deg: float = 69.0
-    twin_offset_m: Tuple[float, float, float] = (0.0, 0.0, 1.0)
+    twin_offset_m: Tuple[float, float, float] | None = None
+    arm_anchor_frame: str = "auto"
+    clutch_button: str = "a"
     head_enabled: bool = True
     arms_enabled: bool = True
+    record_dir: Path | None = Path("recordings")
+    render_videos: bool = True
 
     def __post_init__(self) -> None:
         if self.state_hz <= 0.0 or self.teleop_timeout_s <= 0.0:
             raise ValueError("state_hz and teleop_timeout_s must be positive.")
         if not 10.0 <= self.camera_fov_deg <= 170.0:
             raise ValueError("camera_fov_deg must be within [10, 170].")
+        if self.clutch_button not in ("a", "grip", "stick"):
+            raise ValueError("clutch_button must be 'a', 'grip' or 'stick'.")
+
+
+#: Frames tried, in order, for the robot's head anchor when none is named.
+HEAD_ANCHOR_FRAMES: Tuple[str, ...] = ("head_camera_link", "head_link", "head")
+
+
+def head_anchor_position(
+    bundle: ModelBundle,
+    joints: Mapping[str, float],
+    head_tracker: HeadTracker | None,
+    frame: str = "auto",
+) -> NDArray[np.float64]:
+    """Position of the robot's head anchor in the base frame.
+
+    Computed at ``joints`` with the head joints at the forward-looking neutral
+    of ``head_tracker`` (when given), so the anchor does not depend on where
+    the head happens to point.
+
+    Args:
+        bundle: The model.
+        joints: Current joint positions, radians.
+        head_tracker: Supplies the head joints' neutral angles, or ``None``.
+        frame: A model frame, or ``"auto"``.
+
+    Raises:
+        ValueError: The frame is unknown (or none of the automatic candidates
+            exists).
+    """
+    model = bundle.model
+    if frame == "auto":
+        found = next((f for f in HEAD_ANCHOR_FRAMES if model.has_frame(f)), None)
+        if found is None:
+            raise ValueError(
+                f"no head anchor frame among {HEAD_ANCHOR_FRAMES}; name one with "
+                "arm_anchor_frame (--arm-anchor) or use the relative arm mapping"
+            )
+        frame = found
+    elif not model.has_frame(frame):
+        raise ValueError(f"arm anchor frame {frame!r} is not in the model")
+    positions = dict(joints)
+    if head_tracker is not None:
+        m = head_tracker.mapping
+        positions[m.yaw_joint] = m.yaw_neutral_rad
+        positions[m.pitch_joint] = m.pitch_neutral_rad
+    q = model.q_from_positions(positions, require_all=False)
+    return np.asarray(model.frame_pose(q, frame)[:3, 3], dtype=np.float64).copy()
 
 
 def _pose_entry(entry: Any) -> NDArray[np.float64] | None:
@@ -144,6 +214,8 @@ class TeleopSession:
         arm_teleop: DualArmTeleop | None,
         config: VRServerConfig,
         bundle: ModelBundle | None = None,
+        recorder: SessionRecorder | None = None,
+        camera_available: bool = True,
     ) -> None:
         """Create a session.
 
@@ -153,8 +225,14 @@ class TeleopSession:
             arm_teleop: Arm mapping, or ``None`` for a head-only session.
             config: Session settings.
             bundle: The model bundle, for geometry poses sent to the page.
+            recorder: Where ``{"type": "record"}`` messages go, or ``None``
+                when recording is off.
+            camera_available: Whether the server streams a camera image; the
+                page hides the image plane otherwise.
         """
         self.backend = backend
+        self.recorder = recorder
+        self.camera_available = camera_available
         self.head_tracker = head_tracker
         self.arm_teleop = arm_teleop
         self.config = config
@@ -170,7 +248,24 @@ class TeleopSession:
         self._last_state_s = -1.0
         self._last_head: Dict[str, Any] = {}
         self._last_arms: Dict[str, Any] = {}
+        self._last_controller_base: Dict[str, Any] = {}
         self._last_report: Any = None
+        self.recorder_joint_names: List[str] = list(backend.joint_positions())
+        self.robot_anchor_m: NDArray[np.float64] | None = None
+        if arm_teleop is not None and arm_teleop.needs_anchor:
+            if bundle is None:
+                raise ValueError("the absolute arm mapping needs the model bundle for its anchor")
+            self.robot_anchor_m = head_anchor_position(
+                bundle, backend.joint_positions(), head_tracker, config.arm_anchor_frame
+            )
+        # A backend that can put the head at its reset position does so now,
+        # before any target is issued: the operator has just connected, and
+        # what they re-centre on must be a known pose, not wherever the head
+        # was left.  (Simulated and Cartesian-hardware backends have no such
+        # step; the bilateral path homes before its loop takes the bus.)
+        home = getattr(backend, "home", None)
+        if callable(home):
+            home()
         if head_tracker is not None:
             head_tracker.reset(backend.joint_positions())
 
@@ -187,9 +282,18 @@ class TeleopSession:
             "head_enabled": self.head_enabled,
             "arms_enabled": self.arms_enabled,
             "camera_fov_deg": self.config.camera_fov_deg,
-            "twin_offset_m": list(self.config.twin_offset_m),
+            "twin_offset_m": None
+            if self.config.twin_offset_m is None
+            else list(self.config.twin_offset_m),
+            "twin": self._twin_pose(),
+            "clutch_button": self.config.clutch_button,
+            "robot_anchor_m": None
+            if self.robot_anchor_m is None
+            else [float(v) for v in self.robot_anchor_m],
             "state_hz": self.config.state_hz,
             "backend_info": self.backend.describe(),
+            "camera_available": self.camera_available,
+            "recording": None if self.recorder is None else self.recorder.describe(),
         }
 
     def handle(self, message: Mapping[str, Any], now_s: float) -> Dict[str, Any] | None:
@@ -205,7 +309,108 @@ class TeleopSession:
             return self._recenter(now_s)
         if kind == "set":
             return self._apply_settings(message)
+        if kind == "record":
+            return self._record(message, now_s)
+        if kind == "ping":
+            # Keepalive from a page that is connected but not yet streaming
+            # poses (before Enter VR); answering it also lets the page measure
+            # the link.
+            return {"type": "pong", "t": message.get("t")}
         return {"type": "error", "message": f"unknown message type {kind!r}"}
+
+    # -- recording ----------------------------------------------------------
+
+    def recording_metadata(self) -> Dict[str, Any]:
+        """The header of a recording: enough to render it without the session."""
+        joints = list(self.backend.joint_positions())
+        head = None
+        if self.head_tracker is not None:
+            m = self.head_tracker.mapping
+            head = {
+                "yaw_joint": m.yaw_joint,
+                "pitch_joint": m.pitch_joint,
+                "yaw_neutral_rad": m.yaw_neutral_rad,
+                "pitch_neutral_rad": m.pitch_neutral_rad,
+            }
+        arms = None
+        if self.arm_teleop is not None:
+            left = self.arm_teleop.arms["left"].config
+            arms = {"mapping": left.mapping, "position_scale": left.position_scale}
+        return {
+            "robot": None if self.bundle is None else self.bundle.describe().get("robot"),
+            "backend": self.backend.name,
+            "joint_names": joints,
+            "head": head,
+            "anchor_m": None
+            if self.robot_anchor_m is None
+            else [float(v) for v in self.robot_anchor_m],
+            "arms": arms,
+        }
+
+    def _record(self, message: Mapping[str, Any], now_s: float) -> Dict[str, Any]:
+        if self.recorder is None:
+            return {"type": "error", "message": "recording is disabled on this server"}
+        action = message.get("action", "status")
+        if action == "start":
+            self.recorder.start(self.recording_metadata(), now_s)
+        elif action == "stop":
+            self.recorder.stop(now_s)
+        elif action == "toggle":
+            if self.recorder.active:
+                self.recorder.stop(now_s)
+            else:
+                self.recorder.start(self.recording_metadata(), now_s)
+        elif action != "status":
+            return {"type": "error", "message": f"unknown record action {action!r}"}
+        return {"type": "recording", "recording": self.recorder.describe()}
+
+    def take_operator_frame(self, data: bytes) -> None:
+        """A JPEG of the operator's view from the page; kept while recording."""
+        if self.recorder is not None:
+            self.recorder.push_operator_frame(data)
+
+    def _record_frame(self, now_s: float) -> None:
+        """Append this pose step to the recorder (cheap when not recording)."""
+        if self.recorder is None or not self.recorder.active:
+            return
+        joints = self.backend.joint_positions()
+        report = self._last_report
+        head = None
+        if self._last_head.get("tracking"):
+            head = {
+                "yaw_rad": self._last_head.get("yaw_input_rad"),
+                "pitch_rad": self._last_head.get("pitch_input_rad"),
+            }
+        controllers: Dict[str, Any] = {}
+        targets: Dict[str, Any] = {}
+        for side in ("left", "right"):
+            arm = self._last_arms.get(side) or {}
+            p_base = self._last_controller_base.get(side)
+            controllers[side] = (
+                None
+                if not arm.get("tracked")
+                else {"p_base": p_base, "clutched": bool(arm.get("clutched"))}
+            )
+            target = arm.get("target")
+            targets[side] = None if not target else list(target["p"])
+        ik = None
+        if report is not None:
+            errors = report.errors or {}
+            ik = {
+                "status": report.ik_status,
+                "left_position_m": errors.get("left_position_m"),
+                "right_position_m": errors.get("right_position_m"),
+            }
+        self.recorder.add(
+            {
+                "q": [float(joints.get(name, 0.0)) for name in self.recorder_joint_names],
+                "head": head,
+                "controllers": controllers,
+                "targets": targets,
+                "ik": ik,
+            },
+            now_s,
+        )
 
     def _apply_settings(self, message: Mapping[str, Any]) -> Dict[str, Any]:
         if "head_enabled" in message:
@@ -231,10 +436,34 @@ class TeleopSession:
                         setattr(arm.config, key, value)
         return self.hello()
 
+    def _recentre_operator(self, head_robot: NDArray[np.float64]) -> None:
+        """Re-centre the operator frame and re-anchor the absolute arm mapping."""
+        self.operator.recenter(head_robot)
+        if self.arm_teleop is not None and self.robot_anchor_m is not None:
+            self.arm_teleop.set_anchor(self.robot_anchor_m, self.operator.head_position_m)
+
+    def _twin_pose(self) -> Dict[str, Any] | None:
+        """Where the page should draw the robot: ``{"p", "yaw"}`` in robot axes.
+
+        With an explicit ``twin_offset_m`` the page places the twin itself.
+        Otherwise the twin is placed so its head anchor coincides with the
+        operator's head at re-centring, facing the operator's forward.
+        """
+        if (
+            self.config.twin_offset_m is not None
+            or self.robot_anchor_m is None
+            or not self.operator.recentred
+        ):
+            return None
+        base_op = np.eye(4)
+        base_op[:3, 3] = self.operator.head_position_m - self.robot_anchor_m
+        base = self.operator.from_operator(base_op)
+        return {"p": [float(v) for v in base[:3, 3]], "yaw": self.operator.yaw_offset_rad}
+
     def _recenter(self, now_s: float) -> Dict[str, Any]:
         if self._last_head_robot is None:
             return {"type": "error", "message": "no head pose received yet; cannot re-centre"}
-        self.operator.recenter(self._last_head_robot)
+        self._recentre_operator(self._last_head_robot)
         head_op = self.operator.to_operator(self._last_head_robot)
         if self.head_tracker is not None:
             self.head_tracker.recenter(head_op[:3, :3])
@@ -251,7 +480,7 @@ class TeleopSession:
         if head_robot is not None:
             self._last_head_robot = head_robot
             if not self.operator.recentred:
-                self.operator.recenter(head_robot)
+                self._recentre_operator(head_robot)
             head_op = self.operator.to_operator(head_robot)
             if self.head_tracker is not None and self.head_enabled:
                 torso_joint = self.head_tracker.mapping.torso_joint
@@ -289,8 +518,17 @@ class TeleopSession:
                     continue
                 assert isinstance(entry, dict)
                 buttons = entry.get("buttons") or {}
+                pose_op = self.operator.to_operator(pose)
+                if self.robot_anchor_m is not None:
+                    scale = self.arm_teleop.arms[side].config.position_scale
+                    p_base = self.robot_anchor_m + scale * (
+                        pose_op[:3, 3] - self.operator.head_position_m
+                    )
+                    self._last_controller_base[side] = [float(v) for v in p_base]
+                else:
+                    self._last_controller_base[side] = None
                 samples[side] = ControllerSample(
-                    pose=self.operator.to_operator(pose),
+                    pose=pose_op,
                     clutch=bool(entry.get("clutch", False)),
                     trigger=float(entry.get("trigger", 0.0) or 0.0),
                     buttons={str(k): bool(v) for k, v in buttons.items()}
@@ -327,6 +565,7 @@ class TeleopSession:
                 stamp_s=now_s,
             )
         )
+        self._record_frame(now_s)
         return self._state(now_s, echo_t=message.get("t"))
 
     def _state(self, now_s: float, *, echo_t: Any, force: bool = False) -> Dict[str, Any] | None:
@@ -347,7 +586,10 @@ class TeleopSession:
             "operator": {
                 "recentred": self.operator.recentred,
                 "yaw_offset_rad": self.operator.yaw_offset_rad,
+                "head_height_m": self.operator.head_height_m,
             },
+            "twin": self._twin_pose(),
+            "recording": None if self.recorder is None else self.recorder.describe(),
             "head_enabled": self.head_enabled,
             "arms_enabled": self.arms_enabled,
             "backend": self.backend.name,
@@ -371,10 +613,12 @@ class TeleopSession:
         return state
 
     def close(self) -> None:
-        """The operator is gone: release the clutches and hold."""
+        """The operator is gone: release the clutches, hold, and finish any recording."""
         if self.arm_teleop is not None:
             self.arm_teleop.release_all()
         self.backend.hold()
+        if self.recorder is not None and self.recorder.active:
+            self.recorder.stop(time.monotonic())
 
     def describe(self) -> Dict[str, Any]:
         """JSON-friendly status."""
@@ -436,6 +680,13 @@ class _VRHandler(_Handler):
             self.close_connection = True
 
 
+def _unwrapped(source: Any) -> Any:
+    """The camera behind any source wrappers (rotation and the like)."""
+    while hasattr(source, "source"):
+        source = source.source
+    return source
+
+
 class VRServer(ViewerServer):
     """The viewer server extended with the teleoperation and camera sockets.
 
@@ -484,6 +735,27 @@ class VRServer(ViewerServer):
         self._session_lock = threading.Lock()
         self._camera_clients = 0
         self._refused_operators = 0
+        self.recorder: SessionRecorder | None = None
+        if self.vr_config.record_dir is not None:
+            render = None
+            if self.vr_config.render_videos:
+                from .render import render_recording
+
+                def render(path: Path, progress: Callable[[float], None]) -> List[Path]:
+                    return render_recording(path, progress=progress)
+
+            tap = None
+            if self.camera is not None and not isinstance(
+                _unwrapped(self.camera.source), SyntheticFrameSource
+            ):
+                # A real camera: its pictures become the first-person video.
+                tap = CameraTap(self.camera)
+            self.recorder = SessionRecorder(
+                self.vr_config.record_dir,
+                render=render,
+                camera=tap,
+                operator_view=CameraTap(PushedFrames(), fps=15.0),
+            )
 
     @property
     def url(self) -> str:
@@ -522,13 +794,18 @@ class VRServer(ViewerServer):
                 "camera": None if self.camera is None else self.camera.describe(),
                 "session": None if session is None else session.describe(),
                 "camera_clients": self._camera_clients,
+                "recording": None if self.recorder is None else self.recorder.describe(),
                 "refused_operators": self._refused_operators,
                 "tls": self.ssl_context is not None,
                 "config": {
                     "state_hz": self.vr_config.state_hz,
                     "teleop_timeout_s": self.vr_config.teleop_timeout_s,
                     "camera_fov_deg": self.vr_config.camera_fov_deg,
-                    "twin_offset_m": list(self.vr_config.twin_offset_m),
+                    "twin_offset_m": None
+                    if self.vr_config.twin_offset_m is None
+                    else list(self.vr_config.twin_offset_m),
+                    "arm_anchor_frame": self.vr_config.arm_anchor_frame,
+                    "clutch_button": self.vr_config.clutch_button,
                 },
             }
 
@@ -556,6 +833,8 @@ class VRServer(ViewerServer):
                     arm_teleop=self.arm_teleop,
                     config=self.vr_config,
                     bundle=self.bundle,
+                    recorder=self.recorder,
+                    camera_available=self.camera is not None,
                 )
             self._session = session
         connection.settimeout(self.vr_config.teleop_timeout_s)
@@ -569,6 +848,11 @@ class VRServer(ViewerServer):
                 except (WebSocketError, socket.timeout, TimeoutError, OSError) as exc:
                     logger.info("VR operator stream ended: %s", exc)
                     break
+                if message.opcode == OP_BINARY:
+                    # A JPEG of what the headset shows, for the recording.
+                    with self._lock:
+                        session.take_operator_frame(message.data)
+                    continue
                 if message.opcode != OP_TEXT:
                     continue
                 try:
@@ -603,27 +887,28 @@ class VRServer(ViewerServer):
             logger.info("VR operator disconnected; arms holding")
 
     def run_camera_socket(self, ws: WebSocket, connection: socket.socket) -> None:
-        """Push JPEG frames to one client as they are produced."""
+        """Push JPEG frames to one client as they are produced.
+
+        One thread does both directions on purpose.  The client sends nothing
+        but pings and a close, which are serviced when the socket becomes
+        readable; a second thread blocked in ``recv`` while this one sends
+        would use the same TLS connection from two threads at once, which
+        OpenSSL does not allow and which ended camera streams mid-session.
+        """
         if self.camera is None:
             ws.send_text(json.dumps({"type": "error", "message": "no camera in this session"}))
             ws.close(1011, "no camera")
             return
         self._camera_clients += 1
-        stop = threading.Event()
+        reason = "client closed"
 
-        def drain() -> None:
-            # The client sends nothing but pings/close; read them so a close
-            # frame is honoured promptly instead of on the next failed send.
-            try:
-                while not stop.is_set():
-                    ws.recv()
-            except (WebSocketError, OSError):
-                pass
-            finally:
-                stop.set()
+        def readable() -> bool:
+            pending = getattr(connection, "pending", None)
+            if pending is not None and pending():
+                return True
+            ready, _, _ = select.select([connection], [], [], 0.0)
+            return bool(ready)
 
-        reader = threading.Thread(target=drain, name="robopy-camera-ws-reader", daemon=True)
-        reader.start()
         try:
             ws.send_text(
                 json.dumps(
@@ -635,17 +920,21 @@ class VRServer(ViewerServer):
                 )
             )
             last_seq = 0
-            while not stop.is_set():
-                frame = self.camera.wait_for(last_seq, 1.0)
+            while True:
+                if readable():
+                    ws.recv(control_only=True)  # answers pings; raises on close
+                frame = self.camera.wait_for(last_seq, 0.25)
                 if frame is None:
                     continue
                 last_seq = frame.seq
                 ws.send_binary(frame.data)
-        except WebSocketError:
+        except WebSocketClosed:
             pass
+        except (WebSocketError, OSError) as exc:
+            reason = f"{type(exc).__name__}: {exc}"
         finally:
-            stop.set()
             self._camera_clients -= 1
+            logger.info("camera client gone (%s); %d still watching", reason, self._camera_clients)
 
     def server_close(self) -> None:
         """Stop the camera thread along with the server."""

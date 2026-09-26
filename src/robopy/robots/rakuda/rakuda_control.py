@@ -45,6 +45,7 @@ from robopy.control.types import (
     monotonic_ns,
     se3_from_quat_xyzw,
 )
+from robopy.motor.dynamixel_control_table import XControlTable
 
 logger = logging.getLogger(__name__)
 
@@ -289,6 +290,9 @@ class RakudaControlSystem:
         self._ik_targets: Dict[str, float] = {}
         self._direct_targets: Dict[str, float] = {}
         self._direct_expiry_ns: int | None = None
+        self._direct_counts: Dict[str, int] = {}
+        self._direct_counts_expiry_ns: int | None = None
+        self._direct_count_writes = 0
         self._cycle = 0
 
         if self._mode is ControlMode.BILATERAL_JOINT:
@@ -611,6 +615,49 @@ class RakudaControlSystem:
         self._direct_targets = clean
         self._direct_expiry_ns = monotonic_ns() + int(ttl_s * 1e9)
 
+    def set_direct_goal_counts(self, goals: Mapping[str, int], *, ttl_s: float = 0.25) -> None:
+        """Goal positions, in encoder counts, for follower motors the servo does not command.
+
+        In bilateral joint control the servo owns only the coupled motors; the
+        head (and the grippers) stay in position mode with whatever torque the
+        follower was connected with.  This is how the VR teleoperation moves
+        the head while the arms are coupled: the goals are written by the
+        control loop itself, in its cycle, so no second thread ever touches
+        the bus.  They are raw counts on purpose -- the head's zero point is
+        not part of the bilateral calibration -- and expire like the other
+        direct targets.
+
+        Args:
+            goals: ``{follower_motor_name: count}``.
+            ttl_s: How long the goals stay valid.
+
+        Raises:
+            RuntimeError: Outside bilateral joint control.
+            ValueError: For a motor that is not on the follower bus, one the
+                servo commands itself, or a non-finite count.
+        """
+        if self._mode is not ControlMode.BILATERAL_JOINT:
+            raise RuntimeError(
+                f"Direct goal counts are only used in {ControlMode.BILATERAL_JOINT.value} mode."
+            )
+        if ttl_s <= 0.0:
+            raise ValueError("ttl_s must be positive.")
+        owned = set(self._follower.motor_names)
+        clean: Dict[str, int] = {}
+        for motor, count in goals.items():
+            if motor not in self._follower.bus.motors:
+                raise ValueError(f"'{motor}' is not a follower motor.")
+            if motor in owned:
+                raise ValueError(
+                    f"'{motor}' is commanded by the bilateral coupling; it cannot also be "
+                    "given a goal position."
+                )
+            if not np.isfinite(count):
+                raise ValueError(f"'{motor}': non-finite goal count.")
+            clean[motor] = int(round(float(count)))
+        self._direct_counts = clean
+        self._direct_counts_expiry_ns = monotonic_ns() + int(ttl_s * 1e9)
+
     def follower_positions_urdf(self) -> Dict[str, float]:
         """Latest follower positions keyed by URDF joint (reads the bus if needed)."""
         state = self._follower.latest_state()
@@ -786,6 +833,14 @@ class RakudaControlSystem:
         self._leader.command_torques_nm(
             output.as_dict("leader"), generation=generation, issued_ns=issued
         )
+        # Motors outside the coupling (the head) follow their own goals, in
+        # this thread, while those goals are fresh.
+        if self._direct_counts and self._direct_counts_expiry_ns is not None:
+            if monotonic_ns() <= self._direct_counts_expiry_ns:
+                self._follower.bus.sync_write(
+                    XControlTable.GOAL_POSITION, dict(self._direct_counts)
+                )
+                self._direct_count_writes += 1
         self._loop.publish_log(
             {
                 "cycle": self._cycle,
@@ -822,4 +877,8 @@ class RakudaControlSystem:
             "last_ik_status": (
                 None if self._last_ik_result is None else self._last_ik_result.status.value
             ),
+            "direct_goal_counts": {
+                "goals": dict(self._direct_counts),
+                "writes": self._direct_count_writes,
+            },
         }

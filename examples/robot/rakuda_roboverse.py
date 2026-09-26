@@ -6,7 +6,7 @@ MetaSim content pack through the ``metasim.packages`` entry point, so
 
 Run it inside the environment RoboVerse is installed in::
 
-    pip install -e ".[roboverse]"          # from the robopy checkout
+    pip install -e ".[sim]"          # from the robopy checkout
 
     python examples/robot/rakuda_roboverse.py --demo wave
     python examples/robot/rakuda_roboverse.py --demo task --task rakuda.reach
@@ -44,7 +44,7 @@ try:
 except ImportError as exc:  # pragma: no cover - depends on the environment
     raise SystemExit(
         f"this example needs RoboVerse/MetaSim in the current environment ({exc}).\n"
-        "From a robopy checkout:  pip install -e '.[roboverse]'"
+        "From a robopy checkout:  pip install -e '.[sim]'"
     ) from exc
 
 from robopy.roboverse.mount import RakudaMount

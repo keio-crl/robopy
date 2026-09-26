@@ -11,8 +11,13 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
+import os
+import shutil
 import ssl
+import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, Sequence, Tuple
 
@@ -52,6 +57,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     net.add_argument("--key", type=Path, help="TLS private key (PEM)")
     net.add_argument(
+        "--self-signed",
+        action="store_true",
+        help="serve HTTPS with a self-signed certificate, generating it with openssl when "
+        "the files do not exist yet (default cert.pem/key.pem in the current directory, or "
+        "--cert/--key). The headset's browser will ask once to accept it.",
+    )
+    net.add_argument(
         "--open-browser", action="store_true", help="open the page in a desktop browser"
     )
     net.add_argument(
@@ -62,9 +74,30 @@ def build_parser() -> argparse.ArgumentParser:
     cam.add_argument(
         "--camera",
         default="synthetic",
-        help="synthetic (default), none, or opencv:<index|/dev/videoN|url>",
+        help="synthetic (default), none, opencv:<index|/dev/videoN|url>, or "
+        "realsense[:index] (the colour stream of an Intel RealSense; needs pyrealsense2)",
+    )
+    cam.add_argument(
+        "--camera-size", default="640x480", metavar="WxH", help="RealSense colour stream size"
     )
     cam.add_argument("--camera-fps", type=float, default=30.0)
+    cam.add_argument(
+        "--camera-mirror",
+        choices=["on", "off"],
+        default="off",
+        help="flip the picture left-right after the rotation, at the source, for a camera "
+        "whose image comes out mirrored. Default off",
+    )
+    cam.add_argument(
+        "--camera-rotate",
+        type=int,
+        choices=[0, 90, 180, 270],
+        default=0,
+        help="how the camera is mounted: the picture is turned by this much, clockwise, "
+        "as it comes off the camera, and that upright picture is the only one anything "
+        "downstream (page, recording, videos) ever sees. Default 0: the lab's Rakuda "
+        "carries its RealSense upright",
+    )
     cam.add_argument("--jpeg-quality", type=int, default=75)
     cam.add_argument("--camera-max-width", type=int, default=960, help="downscale wider frames")
     cam.add_argument(
@@ -102,6 +135,28 @@ def build_parser() -> argparse.ArgumentParser:
     arms = parser.add_argument_group("arms")
     arms.add_argument("--no-arms", action="store_true", help="do not drive the arms")
     arms.add_argument(
+        "--mapping",
+        choices=["absolute", "relative"],
+        default="absolute",
+        help="absolute (default): while the clutch is held the hand goes to where the "
+        "controller is, with the operator's head at the robot's head; relative: only the "
+        "controller's motion since the press is applied",
+    )
+    arms.add_argument(
+        "--arm-anchor",
+        default="auto",
+        metavar="FRAME",
+        help="model frame that stands for the robot's head in the absolute mapping "
+        "(auto: head_camera_link when present)",
+    )
+    arms.add_argument(
+        "--clutch",
+        choices=["a", "grip", "stick"],
+        default="a",
+        help="controller button held to drive an arm: a (A on the right, X on the left; "
+        "default), grip (the squeeze) or stick (the thumbstick click)",
+    )
+    arms.add_argument(
         "--position-scale", type=float, default=1.0, help="robot metres per operator metre"
     )
     arms.add_argument("--no-orientation", action="store_true", help="translation-only hand targets")
@@ -126,7 +181,52 @@ def build_parser() -> argparse.ArgumentParser:
         help="drive the real follower via .robopy/rakuda/config.yaml (needs --config and a "
         "control section in cartesian_teleop mode). THE ROBOT WILL MOVE.",
     )
+    hw.add_argument(
+        "--hardware-head",
+        action="store_true",
+        help="drive the real follower's two head motors from the headset, straight on the "
+        "bus: no control system, no joint calibration needed; the pose at start is taken "
+        "as looking ahead. Alone, nothing else moves. With --leader-port (or leader_port "
+        "in the config) every other joint follows the leader arm as in position "
+        "teleoperation. THE ROBOT WILL MOVE.",
+    )
+    hw.add_argument(
+        "--head-signs",
+        default="1,-1",
+        metavar="YAW,PITCH",
+        help="--hardware-head: motor direction per headset direction. Default 1,-1, as "
+        "measured on the lab's Rakuda (both head motors turn against their URDF axes). "
+        "auto: the URDF's sign times the configured motor direction",
+    )
+    hw.add_argument(
+        "--head-home",
+        default="2048,2048",
+        metavar="YAW,PITCH",
+        help="--hardware-head: encoder counts the head is moved to when the operator connects, "
+        "before any headset target; that pose is then 'looking ahead'. Default 2048,2048 "
+        "(mid travel). 'current' keeps whatever pose the head has at start",
+    )
+    hw.add_argument(
+        "--head-range",
+        default="60,35",
+        metavar="YAW,PITCH",
+        help="--hardware-head: degrees of travel allowed either side of the start pose",
+    )
+    hw.add_argument(
+        "--bilateral",
+        action="store_true",
+        help="--hardware-head with a leader: couple the arms with the bilateral joint "
+        "controller (the config's control: section, mode forced to bilateral_joint; needs "
+        "the measured calibration and allow_hardware_current_output) instead of copying the "
+        "leader's positions. The head still follows the headset. THE ROBOT WILL MOVE.",
+    )
     hw.add_argument("--leader-port", default=None, help="leader serial port (config default)")
+    hw.add_argument(
+        "--leader-grip-hold",
+        action="store_true",
+        help="--hardware-head with a leader: keep the leader's grippers torque ON with the "
+        "spring-back goal position teleoperation uses. Default: their torque is switched OFF",
+    )
     hw.add_argument("--follower-port", default=None, help="follower serial port (config default)")
 
     parser.add_argument(
@@ -140,12 +240,122 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--twin-offset",
-        default="0,0,1.0",
+        default="auto",
         metavar="X,Y,Z",
-        help="where the page draws the robot base relative to the operator (m, robot axes)",
+        help="where the page draws the robot base (m, robot axes from the WebXR floor "
+        "origin). Default auto: the robot's head where the operator's head was at "
+        "re-centring, so the twin's hands and the operator's agree",
+    )
+    rec = parser.add_argument_group("recording")
+    rec.add_argument(
+        "--record-dir",
+        type=Path,
+        default=Path("recordings"),
+        help="where session recordings and their videos go (default: ./recordings)",
+    )
+    rec.add_argument("--no-record", action="store_true", help="disable recording")
+    rec.add_argument(
+        "--no-render",
+        action="store_true",
+        help="keep the recording log but do not render videos after each recording "
+        "(render later with robopy-vr-render)",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser
+
+
+#: Where distributions keep the OpenSSL configuration.  Some ``openssl`` builds
+#: are compiled with a prefix that does not exist on the machine (e.g. a binary
+#: in /usr/bin looking for /usr/local/ssl/openssl.cnf); ``openssl req`` then
+#: fails even though a perfectly good config sits in one of these places.
+OPENSSL_CONF_CANDIDATES: Tuple[str, ...] = (
+    "/etc/ssl/openssl.cnf",
+    "/usr/lib/ssl/openssl.cnf",
+    "/etc/pki/tls/openssl.cnf",
+    "/usr/local/etc/openssl/openssl.cnf",
+    "/opt/homebrew/etc/openssl@3/openssl.cnf",
+)
+
+SELF_SIGNED_HINT = (
+    "generate one with\n"
+    "  openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 "
+    '-subj "/CN=robopy"\n'
+    "or pass --self-signed to let robopy-vr do it"
+)
+
+
+def generate_self_signed_certificate(
+    cert: Path, key: Path, *, days: int = 365, common_name: str = "robopy"
+) -> None:
+    """Write a self-signed certificate and key with ``openssl``.
+
+    WebXR only runs in a secure context, so a headset on the LAN needs HTTPS
+    even for a simulation.  The certificate is for the browser to accept once,
+    nothing more.  When the ``openssl`` binary cannot find its own configuration
+    (a broken compile-time prefix) the command is retried with the first config
+    found in :data:`OPENSSL_CONF_CANDIDATES`.
+
+    Raises:
+        RuntimeError: ``openssl`` is not installed or failed both times.
+    """
+    if shutil.which("openssl") is None:
+        raise RuntimeError("openssl is not installed; cannot generate a self-signed certificate")
+    command = [
+        "openssl",
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-keyout",
+        str(key),
+        "-out",
+        str(cert),
+        "-days",
+        str(days),
+        "-subj",
+        f"/CN={common_name}",
+    ]
+    cert.parent.mkdir(parents=True, exist_ok=True)
+    key.parent.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode == 0:
+        return
+    fallback = next((c for c in OPENSSL_CONF_CANDIDATES if Path(c).is_file()), None)
+    if "openssl.cnf" in result.stderr and fallback is not None and "OPENSSL_CONF" not in os.environ:
+        env = dict(os.environ, OPENSSL_CONF=fallback)
+        retry = subprocess.run(command, capture_output=True, text=True, env=env)
+        if retry.returncode == 0:
+            print(f"  note: openssl could not find its config; used OPENSSL_CONF={fallback}")
+            return
+        result = retry
+    raise RuntimeError("openssl failed to generate the certificate:\n" + result.stderr.strip())
+
+
+def _resolve_tls(
+    args: argparse.Namespace, parser: argparse.ArgumentParser
+) -> Tuple[Path, Path] | None:
+    """The certificate and key to serve with, or ``None`` for plain HTTP.
+
+    Checked before the model is loaded so a missing file stops the command at
+    once, with the way out, instead of a traceback after the start-up banner.
+    """
+    if (args.cert is None) != (args.key is None):
+        parser.error("--cert and --key go together")
+    if args.cert is None and not args.self_signed:
+        return None
+    cert = args.cert if args.cert is not None else Path("cert.pem")
+    key = args.key if args.key is not None else Path("key.pem")
+    missing = [str(p) for p in (cert, key) if not p.is_file()]
+    if missing and args.self_signed:
+        try:
+            generate_self_signed_certificate(cert, key)
+        except RuntimeError as exc:
+            parser.error(str(exc))
+        print(f"Self-signed certificate written: {cert} / {key}")
+    elif missing:
+        parser.error(f"TLS file(s) not found: {', '.join(missing)}\n{SELF_SIGNED_HINT}")
+    return cert, key
 
 
 def _parse_triplet(
@@ -177,6 +387,128 @@ def _parse_grippers(
             "gripper_closed_rad": closed_rad,
         }
     return out
+
+
+def _home_head_before_loop(backend: Any, bus: Any) -> Dict[str, Any]:
+    """Put the head at its reset position with the bus still free (bilateral path).
+
+    The backend is built with a control system and so never touches the bus
+    itself; here the loop has not started yet, so the goals are written and
+    the head read back directly until it arrives or the wait runs out.
+    """
+    from robopy.motor.dynamixel_control_table import XControlTable
+
+    home = backend.describe()["home"]
+    if not home:
+        return {"moved": False}
+    bus.sync_write(XControlTable.GOAL_POSITION, {k: int(v) for k, v in home.items()})
+    deadline = time.monotonic() + 3.0
+    arrived = False
+    while time.monotonic() < deadline and not arrived:
+        time.sleep(0.05)
+        present = bus.sync_read(XControlTable.PRESENT_POSITION, list(home))
+        arrived = all(abs(float(present.get(k, 1e9)) - v) <= 8.0 for k, v in home.items())
+    backend.set_start_units(home)
+    return {"moved": True, "arrived": arrived, "start": home}
+
+
+def _leader_grippers(leader: Any, *, hold: bool) -> str:
+    """Torque OFF the leader's grippers, or (``hold``) give them the spring-back goal.
+
+    ``RakudaLeader.connect()`` torque-enables the grippers (the position
+    teleoperation default, where they spring back when released).  In the
+    head-only modes the leader is a master device the operator moves by
+    hand, so the grippers are switched off unless the spring is asked for.
+    """
+    from robopy.motor.dynamixel_control_table import XControlTable
+
+    from .head_only import LEADER_GRIP_HOLD_COUNT
+
+    grippers = list(getattr(leader, "GRIPPER_MOTORS", ("l_arm_grip", "r_arm_grip")))
+    if hold:
+        enabled = leader.config.leader_torque_enabled
+        held = [n for n in grippers if enabled is None or n in enabled]
+        if held:
+            leader.motors.sync_write(
+                XControlTable.GOAL_POSITION, {n: LEADER_GRIP_HOLD_COUNT for n in held}
+            )
+        return f"spring-back goal {LEADER_GRIP_HOLD_COUNT} on {', '.join(held) or 'none'}"
+    leader.motors.torque_disabled(grippers)
+    return "torque OFF (--leader-grip-hold keeps the spring)"
+
+
+def _parse_home(text: str, parser: argparse.ArgumentParser) -> Dict[str, float] | None:
+    from robopy.config.robot_config.rakuda_config import RAKUDA_HEAD_MOTOR_NAMES
+
+    if text.strip().lower() == "current":
+        return None
+    try:
+        yaw, pitch = (float(v) for v in text.split(","))
+    except ValueError:
+        parser.error(f"--head-home expects YAW,PITCH counts or current, got {text!r}")
+    return dict(zip(RAKUDA_HEAD_MOTOR_NAMES, (yaw, pitch)))
+
+
+def _parse_signs(text: str, parser: argparse.ArgumentParser) -> Tuple[int, int] | None:
+    if text.strip().lower() == "auto":
+        return None
+    try:
+        yaw, pitch = (int(v) for v in text.split(","))
+    except ValueError:
+        parser.error(f"--head-signs expects YAW,PITCH as +1/-1 or auto, got {text!r}")
+    if yaw not in (1, -1) or pitch not in (1, -1):
+        parser.error("--head-signs values must be 1 or -1")
+    return yaw, pitch
+
+
+def _head_motors(
+    args: argparse.Namespace, parser: argparse.ArgumentParser, cfg: Any, model: Any
+) -> Tuple[Any, Any]:
+    """The two head motors for ``--hardware-head``, with what the config knows of them."""
+    from robopy.config.robot_config.rakuda_config import RAKUDA_HEAD_MOTOR_NAMES
+
+    from .head_only import HeadMotor
+
+    try:
+        yaw_range, pitch_range = (float(v) for v in args.head_range.split(","))
+    except ValueError:
+        parser.error(f"--head-range expects YAW,PITCH degrees, got {args.head_range!r}")
+    if yaw_range <= 0 or pitch_range <= 0:
+        parser.error("--head-range values must be positive")
+    yaw_joint, pitch_joint = _infer_head_joints(list(model.movable_joint_names), parser)
+    # The model's forward-looking neutral, so the page's twin shows the head
+    # where the start pose is taken to be; the URDF zero is turned aside.
+    neutral: Dict[str, float] = {}
+    try:
+        from .head_tracking import HeadJointMapping
+
+        camera = "head_camera_link" if model.has_frame("head_camera_link") else None
+        neutral = HeadJointMapping.from_model(
+            model, yaw_joint, pitch_joint, camera_frame=camera
+        ).neutral_positions()
+    except ValueError:
+        pass
+    calibration = {}
+    if cfg.control is not None:
+        calibration = dict(cfg.control.follower_joint_calibration)
+    motors = []
+    for motor_name, urdf_joint, travel in zip(
+        RAKUDA_HEAD_MOTOR_NAMES, (yaw_joint, pitch_joint), (yaw_range, pitch_range)
+    ):
+        spec = calibration.get(motor_name)
+        direction = 1 if spec is None or spec.direction is None else int(spec.direction)
+        if spec is not None and spec.urdf_joint:
+            urdf_joint = spec.urdf_joint
+        motors.append(
+            HeadMotor(
+                motor=motor_name,
+                urdf_joint=urdf_joint,
+                urdf_neutral_rad=float(neutral.get(urdf_joint, 0.0)),
+                direction=direction,
+                range_rad=math.radians(travel),
+            )
+        )
+    return motors[0], motors[1]
 
 
 def _infer_head_joints(names: Sequence[str], parser: argparse.ArgumentParser) -> Tuple[str, str]:
@@ -214,7 +546,13 @@ def _start_pose(
 
 
 def _make_camera(args: argparse.Namespace, caption: Any) -> Any:
-    from .camera import FrameStreamer, JpegEncoder, OpenCVFrameSource, SyntheticFrameSource
+    from .camera import (
+        FrameStreamer,
+        JpegEncoder,
+        OpenCVFrameSource,
+        RotatedFrameSource,
+        SyntheticFrameSource,
+    )
 
     spec = str(args.camera).strip().lower()
     if spec == "none":
@@ -224,10 +562,31 @@ def _make_camera(args: argparse.Namespace, caption: Any) -> Any:
     elif spec.startswith("opencv:"):
         raw = str(args.camera)[len("opencv:") :]
         source = OpenCVFrameSource(int(raw) if raw.isdigit() else raw)
+    elif spec == "realsense" or spec.startswith("realsense:"):
+        from .camera import RealsenseFrameSource
+
+        index = int(spec.partition(":")[2] or 0)
+        try:
+            width, height = (int(v) for v in str(args.camera_size).lower().split("x"))
+        except ValueError:
+            raise SystemExit(f"--camera-size expects WxH, got {args.camera_size!r}") from None
+        try:
+            source = RealsenseFrameSource(
+                index, width=width, height=height, fps=int(args.camera_fps)
+            )
+        except ImportError as exc:
+            raise SystemExit(
+                f"--camera realsense needs pyrealsense2 (uv sync --extra realsense): {exc}"
+            ) from exc
     else:
         raise SystemExit(
-            f"--camera must be synthetic, none or opencv:<source>, got {args.camera!r}"
+            "--camera must be synthetic, none, opencv:<source> or realsense[:index], "
+            f"got {args.camera!r}"
         )
+    mirror = args.camera_mirror == "on"
+    if int(args.camera_rotate) % 360 or mirror:
+        # Corrected once, at the source; nothing downstream knows it happened.
+        source = RotatedFrameSource(source, int(args.camera_rotate), mirror=mirror)
     encoder = JpegEncoder(args.jpeg_quality, max_width=args.camera_max_width)
     return FrameStreamer(source, fps=args.camera_fps, encoder=encoder)
 
@@ -237,10 +596,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
-    if (args.cert is None) != (args.key is None):
-        parser.error("--cert and --key go together")
+    tls = _resolve_tls(args, parser)
     if args.hardware and not args.config:
         parser.error("--hardware needs --config so the page shows the model the controller uses")
+    if args.hardware and args.hardware_head:
+        parser.error("--hardware and --hardware-head are different things; pick one")
+    if args.hardware_head:
+        args.no_arms = True  # by definition
+    if args.bilateral and not args.hardware_head:
+        parser.error("--bilateral goes with --hardware-head")
     if args.no_head and args.no_arms:
         parser.error("--no-head with --no-arms leaves nothing to teleoperate")
 
@@ -249,12 +613,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     from .arm_teleop import ArmTeleopConfig, DualArmTeleop
     from .backend import ControlSystemBackend, SimulationBackend
+    from .head_only import HeadOnlyFollowerBackend, head_motor_mapping
     from .head_tracking import HeadJointMapping, HeadTracker, HeadTrackingConfig
     from .server import VRServer, VRServerConfig, serve_vr
 
     loaded = load_model(args, parser, ik_overrides=STREAMING_IK_OVERRIDES)
     bundle = loaded.bundle
     pair = None
+    follower = None
+    leader = None
+    head_motors: Any = None
+    head_backend: Any = None
     try:
         # -- backend --------------------------------------------------------
         if args.hardware:
@@ -280,6 +649,112 @@ def main(argv: Sequence[str] | None = None) -> int:
             system = pair.start_control()
             backend: Any = ControlSystemBackend(system, target_ttl_s=args.target_ttl)
             model = system.model
+        elif args.hardware_head:
+            from robopy.config.dotrobopy import apply_rakuda_dotconfig
+            from robopy.config.robot_config.rakuda_config import (
+                RAKUDA_MOTOR_MAPPING,
+                RakudaConfig,
+            )
+
+            base = RakudaConfig(leader_port="", follower_port=args.follower_port or "")
+            cfg = apply_rakuda_dotconfig(base)
+            if args.follower_port:
+                cfg.follower_port = args.follower_port
+            if args.leader_port:
+                cfg.leader_port = args.leader_port
+            if not cfg.follower_port:
+                parser.error(
+                    "--hardware-head needs --follower-port (or follower_port in the config)"
+                )
+            model = bundle.model
+            head_motors = _head_motors(args, parser, cfg, model)
+            rest = _start_pose(args, parser, model.movable_joint_names)
+            home = _parse_home(args.head_home, parser)
+            if args.bilateral:
+                from robopy.robots.rakuda.rakuda_pair_sys import RakudaPairSys
+
+                if not cfg.leader_port:
+                    parser.error("--bilateral needs --leader-port (or leader_port in the config)")
+                if cfg.control is None:
+                    parser.error(
+                        "--bilateral needs a control: section in .robopy/rakuda/config.yaml "
+                        "(calibration, bilateral gains, allow_hardware_current_output)"
+                    )
+                cfg.control.mode = "bilateral_joint"
+                print(
+                    "HARDWARE HEAD + BILATERAL: the arms are coupled to the leader by the "
+                    "bilateral joint controller; the head follows the headset through its loop."
+                )
+                pair = RakudaPairSys(cfg)
+                pair.connect()
+                grips = _leader_grippers(pair.leader, hold=args.leader_grip_hold)
+                print(f"  leader grippers: {grips}")
+                system = pair.build_control_system()
+                # Built before the loop runs: it reads the head's start pose itself.
+                backend = HeadOnlyFollowerBackend(
+                    pair.follower.motors,
+                    model=model,
+                    yaw=head_motors[0],
+                    pitch=head_motors[1],
+                    tcp_frames=bundle.tcp_frames,
+                    rest_positions_rad=rest,
+                    control_system=system,
+                    target_ttl_s=args.target_ttl,
+                    home_units=home,
+                )
+                # Home now, while the bus is still free: the loop owns it after start.
+                homed = _home_head_before_loop(backend, pair.follower.motors)
+                print(f"  head reset: {homed}")
+                pair.start_control(system)
+            else:
+                from robopy.robots.rakuda.rakuda_follower import RakudaFollower
+
+                print(
+                    "HARDWARE HEAD MODE: connecting to the follower; only head_yaw and head_pitch "
+                    "will be written from the headset. The arms keep whatever torque the config "
+                    "gives them."
+                )
+                follower = RakudaFollower(cfg)
+                follower.connect()
+                leader_bus = None
+                if cfg.leader_port:
+                    from robopy.robots.rakuda.rakuda_leader import RakudaLeader
+
+                    print(
+                        f"  leader on {cfg.leader_port}: every joint but the head follows it "
+                        "(position teleoperation); the head follows the headset."
+                    )
+                    leader = RakudaLeader(cfg)
+                    leader.connect()
+                    leader_bus = leader.motors
+                    print(
+                        f"  leader grippers: {_leader_grippers(leader, hold=args.leader_grip_hold)}"
+                    )
+                writable = cfg.follower_torque_enabled
+                backend = HeadOnlyFollowerBackend(
+                    follower.motors,
+                    model=model,
+                    yaw=head_motors[0],
+                    pitch=head_motors[1],
+                    tcp_frames=bundle.tcp_frames,
+                    rest_positions_rad=rest,
+                    leader_bus=leader_bus,
+                    leader_to_follower=RAKUDA_MOTOR_MAPPING if leader_bus is not None else None,
+                    follower_writable=None if writable is None else list(writable),
+                    home_units=home,
+                )
+                if home is not None:
+                    print(
+                        "  head reset position: "
+                        + ", ".join(f"{k}={v:.0f}" for k, v in home.items())
+                        + " (moved there when the operator connects, before tracking starts)"
+                    )
+            head_backend = backend
+            print(
+                "  head motors at start: "
+                + ", ".join(f"{k}={v:.0f}" for k, v in backend.start_units.items())
+                + " (this pose is 'looking ahead'; re-centre in the headset facing the same way)"
+            )
         else:
             model = bundle.model
             start = _start_pose(args, parser, model.movable_joint_names)
@@ -322,8 +797,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                     pitch_joint,
                     camera_frame=camera_frame,
                     camera_forward_axis=args.camera_forward_axis,
-                    torso_joint=torso_joint,
+                    torso_joint=None if args.hardware_head else torso_joint,
                 )
+                if args.hardware_head:
+                    # Motor space: radians from the start pose, no torso term.
+                    urdf_mapping = mapping
+                    mapping = head_motor_mapping(
+                        head_motors[0],
+                        head_motors[1],
+                        yaw_sign_urdf=urdf_mapping.yaw_sign,
+                        pitch_sign_urdf=urdf_mapping.pitch_sign,
+                        sign_overrides=_parse_signs(args.head_signs, parser),
+                    )
             except ValueError as exc:
                 print(f"Head tracking disabled: {exc}", file=sys.stderr)
             else:
@@ -364,6 +849,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
                 configs = {
                     side: ArmTeleopConfig(
+                        mapping=args.mapping,
                         position_scale=args.position_scale,
                         orientation_enabled=not args.no_orientation,
                         max_speed_m_s=args.max_hand_speed,
@@ -382,6 +868,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         print(
                             f"  {side} gripper: travel not given (--gripper); trigger does nothing."
                         )
+                clutch_name = {"a": "A / X", "grip": "grip", "stick": "thumbstick click"}[
+                    args.clutch
+                ]
+                print(f"Arms: {args.mapping} mapping; hold {clutch_name} to drive an arm.")
 
         if head_tracker is None and arm_teleop is None:
             print("Nothing to teleoperate.", file=sys.stderr)
@@ -400,9 +890,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         camera = _make_camera(args, caption)
         ssl_context = None
-        if args.cert is not None:
+        if tls is not None:
             ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-            ssl_context.load_cert_chain(str(args.cert), str(args.key))
+            ssl_context.load_cert_chain(str(tls[0]), str(tls[1]))
 
         server = VRServer(
             bundle,
@@ -417,9 +907,32 @@ def main(argv: Sequence[str] | None = None) -> int:
             config=VRServerConfig(
                 state_hz=args.state_hz,
                 camera_fov_deg=args.camera_fov,
-                twin_offset_m=_parse_triplet(args.twin_offset, parser, "--twin-offset"),
+                twin_offset_m=None
+                if args.twin_offset == "auto"
+                else _parse_triplet(args.twin_offset, parser, "--twin-offset"),
+                arm_anchor_frame=args.arm_anchor,
+                clutch_button=args.clutch,
+                record_dir=None if args.no_record else args.record_dir,
+                render_videos=not args.no_render,
             ),
         )
+        if not args.no_record:
+            renderer = "off (--no-render)"
+            if not args.no_render:
+                import importlib.util
+
+                from .render import select_gl_backend
+
+                # Not imported here: MuJoCo picks its GL backend on first
+                # import, so that is left to the renderer, which sets it up.
+                if importlib.util.find_spec("mujoco") is None:
+                    renderer = "UNAVAILABLE: pip install mujoco"
+                else:
+                    renderer = f"MuJoCo (MUJOCO_GL={select_gl_backend() or 'default'})"
+            print(
+                f"Recording: B / Y or the page's Record button; files in "
+                f"{args.record_dir.resolve()}; video renderer {renderer}"
+            )
         serve_vr(server, open_browser=args.open_browser)
     finally:
         if pair is not None:
@@ -427,6 +940,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print("stopping control:", "; ".join(pair.stop_control()))
             finally:
                 pair.disconnect()
+        if head_backend is not None:
+            head_backend.close()
+        if leader is not None:
+            leader.disconnect()
+        if follower is not None:
+            follower.disconnect()  # the follower's own convention: torque off on the way out
         loaded.cleanup()
     return 0
 

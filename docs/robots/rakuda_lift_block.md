@@ -31,7 +31,7 @@ RoboVerse / MetaSim が入っている環境に robopy を入れるだけです�
 robopy が `metasim.packages` エントリポイントでコンテンツパックを登録します。
 
 ```bash
-pip install -e ".[roboverse]"     # robopy のチェックアウトから
+pip install -e ".[sim]"     # robopy のチェックアウトから
 # あるいは MetaSim と MuJoCo が既にあるなら
 pip install robopy
 ```

@@ -18,7 +18,7 @@ import threading
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
-from typing import Any, BinaryIO, Mapping, cast
+from typing import Any, BinaryIO, Literal, Mapping, cast, overload
 
 __all__ = [
     "OP_BINARY",
@@ -242,11 +242,24 @@ class WebSocket:
 
     # -- receiving --------------------------------------------------------
 
-    def recv(self) -> Message:
+    @overload
+    def recv(self) -> Message: ...
+
+    @overload
+    def recv(self, *, control_only: Literal[True]) -> Message | None: ...
+
+    def recv(self, *, control_only: bool = False) -> Message | None:
         """Block until a complete data message arrives.
 
         Control frames are handled here: pings are answered, pongs ignored, and
         a close frame is echoed before :class:`WebSocketClosed` is raised.
+
+        Args:
+            control_only: Return ``None`` as soon as one control frame has
+                been handled instead of waiting on for a data message.  For a
+                sender that only wants to service the peer's pings and closes
+                when its socket becomes readable, without a second thread on
+                the same (possibly TLS) socket.
 
         Raises:
             WebSocketClosed: When the peer closes the connection.
@@ -279,6 +292,8 @@ class WebSocket:
                     self._closed = True
                     self.close_code = code
                     raise WebSocketClosed(code, reason)
+                if control_only and message_opcode is None:
+                    return None
                 continue
             if opcode in (OP_TEXT, OP_BINARY):
                 if message_opcode is not None:

@@ -30,6 +30,9 @@ __all__ = [
     "JpegEncoder",
     "OpenCVFrameSource",
     "SyntheticFrameSource",
+    "RealsenseFrameSource",
+    "RotatedFrameSource",
+    "rotate_frame",
     "to_bgr_uint8",
 ]
 
@@ -207,6 +210,155 @@ class CallableFrameSource:
             self._close()
 
 
+class RealsenseFrameSource:
+    """The colour stream of an Intel RealSense, through :class:`RealsenseCamera`.
+
+    The camera's own capture thread keeps the newest frame; :meth:`read`
+    returns it, or ``None`` when no new frame arrived within ``timeout_ms``
+    (the streamer then simply keeps the previous picture).  Needs the
+    ``realsense`` extra (``pyrealsense2``).
+
+    Args:
+        index: Which RealSense, in the order ``pyrealsense2`` lists them.
+        width: Colour stream width.
+        height: Colour stream height.
+        fps: Colour stream rate.
+        timeout_ms: How long :meth:`read` waits for a new frame.
+        reconnect_after_s: Restart the pipeline after this long without a frame.
+    """
+
+    def __init__(
+        self,
+        index: int = 0,
+        *,
+        width: int = 640,
+        height: int = 480,
+        fps: int = 30,
+        timeout_ms: float = 100.0,
+        reconnect_after_s: float = 5.0,
+    ) -> None:
+        from robopy.config.sensor_config.visual_config.camera_config import (
+            RealsenseCameraConfig,
+        )
+        from robopy.sensors.visual.realsense_camera import RealsenseCamera
+
+        config = RealsenseCameraConfig(
+            name=f"realsense{index}",
+            index=index,
+            width=width,
+            height=height,
+            fps=fps,
+            color_mode="rgb",
+            is_depth_camera=False,
+        )
+        self._camera: Any = RealsenseCamera(config=config)
+        self._camera.connect()
+        self._timeout_ms = timeout_ms
+        self.reconnect_after_s = reconnect_after_s
+        self.failures = 0
+        self.reconnects = 0
+        self._last_frame_s = time.monotonic()
+
+    def read(self) -> NDArray[np.uint8] | None:
+        """The newest colour frame as BGR ``uint8``, or ``None`` if none is new.
+
+        Any failure of the device counts as "no frame"; after
+        ``reconnect_after_s`` without one the pipeline is restarted, since a
+        RealSense that stops delivering (USB hiccup, a dropped stream) does
+        not come back on its own.
+        """
+        try:
+            frame = self._camera.async_read(timeout_ms=self._timeout_ms)
+        except Exception as exc:  # noqa: BLE001 - timeouts and device errors alike
+            self.failures += 1
+            if not isinstance(exc, TimeoutError):
+                logger.warning("RealSense read failed: %s", exc)
+            self._maybe_reconnect()
+            return None
+        self._last_frame_s = time.monotonic()
+        return to_bgr_uint8(frame, color="rgb")
+
+    def _maybe_reconnect(self) -> None:
+        if time.monotonic() - self._last_frame_s < self.reconnect_after_s:
+            return
+        self._last_frame_s = time.monotonic()  # one attempt per interval
+        self.reconnects += 1
+        logger.warning(
+            "RealSense: no frame for %.0f s; restarting the pipeline (attempt %d)",
+            self.reconnect_after_s,
+            self.reconnects,
+        )
+        try:
+            self._camera.disconnect()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("RealSense disconnect during restart: %s", exc)
+        try:
+            self._camera.connect()
+        except Exception as exc:  # noqa: BLE001
+            logger.error("RealSense restart failed: %s", exc)
+
+    def close(self) -> None:
+        """Stop the pipeline."""
+        self._camera.disconnect()
+
+
+_ROTATIONS = {
+    90: cv2.ROTATE_90_CLOCKWISE,
+    180: cv2.ROTATE_180,
+    270: cv2.ROTATE_90_COUNTERCLOCKWISE,
+}
+
+
+class RotatedFrameSource:
+    """A frame source whose pictures come out turned by a multiple of 90 degrees.
+
+    The correction for a camera mounted askew belongs here, at the source,
+    and nowhere else: everything downstream -- the JPEG stream, the page,
+    the recorded video, the renderer -- sees only the upright picture and
+    has no notion that a rotation ever happened, so nothing can turn it
+    twice.
+
+    Args:
+        source: The camera.
+        degrees: Clockwise rotation, a multiple of 90.
+        mirror: Also flip the picture left-right (after the rotation), for a
+            camera whose image comes out mirrored.
+    """
+
+    def __init__(self, source: FrameSource, degrees: int, *, mirror: bool = False) -> None:
+        if degrees % 90 != 0:
+            raise ValueError("degrees must be a multiple of 90.")
+        self.source = source
+        self.degrees = degrees % 360
+        self.mirror = bool(mirror)
+
+    def read(self) -> NDArray[np.uint8] | None:
+        """The source's frame, upright and the right way round."""
+        frame = self.source.read()
+        if frame is None:
+            return None
+        frame = rotate_frame(frame, self.degrees)
+        if self.mirror:
+            frame = np.ascontiguousarray(frame[:, ::-1])
+        return frame
+
+    def close(self) -> None:
+        """Release the source."""
+        self.source.close()
+
+
+def rotate_frame(frame: NDArray[np.uint8], degrees: int) -> NDArray[np.uint8]:
+    """Rotate an image clockwise by a multiple of 90 degrees (for a camera mounted askew)."""
+    degrees %= 360
+    if degrees == 0:
+        return frame
+    try:
+        code = _ROTATIONS[degrees]
+    except KeyError:
+        raise ValueError("degrees must be a multiple of 90.") from None
+    return np.ascontiguousarray(cv2.rotate(frame, code))
+
+
 class JpegEncoder:
     """Encode BGR frames as JPEG, optionally downscaling first.
 
@@ -266,7 +418,11 @@ class FrameStreamer:
     """
 
     def __init__(
-        self, source: FrameSource, *, fps: float = 30.0, encoder: JpegEncoder | None = None
+        self,
+        source: FrameSource,
+        *,
+        fps: float = 30.0,
+        encoder: JpegEncoder | None = None,
     ) -> None:
         if fps <= 0.0:
             raise ValueError("fps must be positive.")

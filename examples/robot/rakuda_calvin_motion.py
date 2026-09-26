@@ -34,7 +34,7 @@ try:
 except ImportError as exc:  # pragma: no cover - depends on the environment
     raise SystemExit(
         f"this example needs RoboVerse/MetaSim and MuJoCo ({exc}).\n"
-        "From a robopy checkout:  pip install -e '.[roboverse]'"
+        "From a robopy checkout:  pip install -e '.[sim]'"
     ) from exc
 
 from robopy.roboverse.ik import Arm, ScriptedRun, solve_ik
