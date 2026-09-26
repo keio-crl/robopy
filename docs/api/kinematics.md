@@ -228,11 +228,48 @@ python -m robopy.kinematics.urdf_audit robot.urdf --package-dir pkgs --json
         - collision_report
         - distance_jacobian_row
 
+### 関節範囲の解決
+
+UI・ソルバ・実機アダプタが同じ範囲を読むための1か所です。URDF → 上書き（理由必須）→ ソフト制限
+（狭めるだけ）の順で解決し、continuous 関節の角度は前回値に連続になるよう unwrap します。
+
+::: robopy.kinematics.joint_limits.resolve_joint_limits
+    options:
+      show_root_heading: true
+
+::: robopy.kinematics.joint_limits.JointLimitProfile
+    options:
+      show_root_heading: true
+      members:
+        - bounds
+        - slider_bounds
+        - violations
+        - unvalidated
+        - summary_lines
+
+::: robopy.kinematics.joint_limits.JointLimit
+    options:
+      show_root_heading: true
+
+::: robopy.kinematics.joint_limits.check_home_pose
+    options:
+      show_root_heading: true
+
+::: robopy.kinematics.joint_limits.unwrap_towards
+    options:
+      show_root_heading: true
+
 ### 双腕IK
 
 胴体yawは左右の共通祖先にある**1変数**として扱われます。左右を別々に解いて胴体角を平均する
 実装は行いません。頭部はモデルには入りますが（衝突形状を動かすため）、QPの決定変数からは
 外れているので、IKが頭部を動かすことはありません。
+
+`task_priority_mode="hierarchical"`（既定）では手のタスクを第1段で解き、二次目的（姿勢参照・限界回避・
+平滑化・運動コスト）は第1段の零空間だけで解きます。`orientation_mode` は `position_only` / `pose` /
+`axis_aligned`（接近軸の向きだけを S² 上で拘束）です。加速度上限は前回ステップの実速度に対して掛かり、
+`gain_time_constant_s` で誤差を時定数で追います。位置限界上では境界から離れる運動しか許さず、逸脱は
+報告します（無理に押し戻しません）。
 
 ::: robopy.kinematics.dual_arm_ik.DualArmIK
     options:
@@ -242,6 +279,10 @@ python -m robopy.kinematics.urdf_audit robot.urdf --package-dir pkgs --json
         - solve_step
         - reset
         - set_posture_reference
+        - set_orientation_mode
+        - set_task_costs
+        - seed_velocity
+        - orientation_mode
 
 ::: robopy.kinematics.dual_arm_ik.DualArmIKConfig
     options:
@@ -254,6 +295,54 @@ python -m robopy.kinematics.urdf_audit robot.urdf --package-dir pkgs --json
         - is_commandable
 
 ::: robopy.kinematics.dual_arm_ik.DualArmIKStatus
+    options:
+      show_root_heading: true
+
+### 接近軸タスク
+
+::: robopy.kinematics.axis_alignment_task.AxisAlignmentTask
+    options:
+      show_root_heading: true
+      members:
+        - set_target_direction
+        - set_target_from_pose
+        - current_axis
+        - angle_error
+        - compute_jacobian
+
+### 手先の参照軌道
+
+目標へ一度に飛ばさず、速度・加速度・角速度・角加速度の上限のもとで動く参照を作り、
+微分IKを1サンプルずつ適用して時刻付きの関節軌道を返します。ビューアの `mode: "trajectory"` と
+実機の `cartesian_teleop` が使います。
+
+::: robopy.kinematics.cartesian_trajectory.TrajectoryLimits
+    options:
+      show_root_heading: true
+
+::: robopy.kinematics.cartesian_trajectory.PoseReference
+    options:
+      show_root_heading: true
+      members:
+        - set_goal
+        - advance
+        - remaining
+        - arrived
+
+::: robopy.kinematics.cartesian_trajectory.run_trajectory
+    options:
+      show_root_heading: true
+
+::: robopy.kinematics.cartesian_trajectory.JointTrajectory
+    options:
+      show_root_heading: true
+      members:
+        - duration_s
+        - final_joints
+        - reference_at
+        - describe
+
+::: robopy.kinematics.cartesian_trajectory.TrajectorySample
     options:
       show_root_heading: true
 

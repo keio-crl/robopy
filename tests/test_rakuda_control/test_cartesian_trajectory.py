@@ -213,11 +213,14 @@ class TestRunTrajectory:
         assert worst < 2e-3
         # Joint velocities and accelerations respect the solver's own bounds.
         speeds = joint_speeds(trajectory.samples)
+        v_max = ik.config.max_joint_velocity_rad_s
+        a_max = ik.config.max_joint_acceleration_rad_s2
+        assert isinstance(v_max, float) and isinstance(a_max, float)
         for v in speeds:
-            assert max(abs(x) for x in v.values()) <= ik.config.max_joint_velocity_rad_s + 1e-6
+            assert max(abs(x) for x in v.values()) <= v_max + 1e-6
         for a, b in zip(speeds[1:], speeds[2:]):
             for k in a:
-                assert abs(b[k] - a[k]) <= ik.config.max_joint_acceleration_rad_s2 * 0.02 + 1e-6
+                assert abs(b[k] - a[k]) <= a_max * 0.02 + 1e-6
         # The undriven arm kept its joints.
         for name in trajectory.samples[-1].joints:
             if "right" in name and "head" not in name:
@@ -246,6 +249,29 @@ class TestRunTrajectory:
         assert "stopped improving" in trajectory.message
         assert trajectory.samples[-1].goal_error_m["left"] > 0.5
         assert not trajectory.truncated
+
+    def test_a_goal_beyond_reach_stalls_while_the_reference_brakes(self, whole_body_model) -> None:
+        # With lag braking the reference never "arrives" at an unreachable
+        # goal: it waits near the hand. The run must still end as a stall
+        # within the budget, not run the budget out as "tracking" (which the
+        # page would keep continuing for ever).
+        model = whole_body_model
+        start = bent(model)
+        goal = left_target_ahead(model, start, 0.4)
+        ik = make_ik(model, orientation_mode="position_only", gain_time_constant_s=GAIN_TAU)
+        trajectory = run_trajectory(
+            ik,
+            start,
+            {"left": goal},
+            LIMITS,  # lag tolerance 2 cm: the reference brakes for the hand
+            dt=0.02,
+            max_duration_s=8.0,
+            frames=FRAMES,
+        )
+        assert trajectory.status.is_stall, (trajectory.status, trajectory.message)
+        assert not trajectory.truncated
+        assert trajectory.duration_s < 8.0
+        assert any(s.braking for s in trajectory.samples)
 
     def test_the_duration_budget_truncates_and_can_be_resumed(self, whole_body_model) -> None:
         model = whole_body_model

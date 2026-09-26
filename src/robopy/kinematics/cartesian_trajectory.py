@@ -503,7 +503,7 @@ def run_trajectory(
     inactive_arm_policy: InactiveArmPolicy = InactiveArmPolicy.HOLD_JOINTS,
     references: Mapping[str, PoseReference] | None = None,
     settle_samples: int = 40,
-    progress_tolerance_m: float = 1e-6,
+    progress_tolerance_m: float = 1e-5,
     step_hook: Callable[[TrajectorySample], None] | None = None,
 ) -> JointTrajectory:
     """Walk the reference to the goals and follow it with the solver.
@@ -523,10 +523,12 @@ def run_trajectory(
         inactive_arm_policy: For the undriven hand.
         references: Governors to resume from (a re-target during playback);
             a side without one starts at rest at its current TCP.
-        settle_samples: How many samples without progress after the reference
-            has arrived count as a stall.
+        settle_samples: How many samples without progress count as a stall,
+            once the reference has arrived or is braking for a lagging hand.
         progress_tolerance_m: Improvement of the summed goal error below which
-            a sample counts as "no progress".
+            a sample counts as "no progress" (the default is half a millimetre
+            per second at the 20 ms period: a hand creeping slower than that
+            against its reach is not making progress).
         step_hook: Called with each sample as it is produced.
     """
     if dt <= 0.0 or max_duration_s <= 0.0:
@@ -663,7 +665,13 @@ def run_trajectory(
             message = "the reference arrived and the hands are within tolerance"
             break
         total = sum(goal_error.values())
-        if arrived:
+        if arrived or lagging:
+            # The reference is at the goal, or it is waiting for a hand that
+            # lags it: either way the hands should now be closing the gap.
+            # A gap that stops closing for a settle window is a stall, and
+            # the binding constraint names its kind.  (While the reference is
+            # still travelling with the hands on it, a pause in the goal error
+            # is not evidence of anything.)
             if total < best_error - progress_tolerance_m:
                 best_error = total
                 stalled_for = 0
@@ -674,6 +682,7 @@ def run_trajectory(
                 break
         else:
             best_error = min(best_error, total)
+            stalled_for = 0
     else:
         truncated = True
         status = DualArmIKStatus.TRACKING

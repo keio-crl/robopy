@@ -223,7 +223,7 @@ obs = robot.record_parallel(max_frame=100, fps=20)
 | モード | 入力と動作 | IK | 使用する制御モード |
 | --- | --- | --- | --- |
 | `position_teleop` | 既存どおり、リーダ関節位置をフォロワへ送る | 不要 | 位置制御(3) |
-| `cartesian_teleop` | 左右TCP目標からフォロワ関節目標を生成する | 双腕IK | 位置制御(3) |
+| `cartesian_teleop` | 左右TCP目標からフォロワ関節目標を生成する（目標へは飛ばず、`control.trajectory` の上限で動く参照を追従） | 双腕IK | 位置制御(3) |
 | `bilateral_joint` | 両側の関節位置・速度から仮想ばね・ダンパのトルクを計算する | 使用しない | 電流制御(0) |
 
 ### 実機なしで動かす
@@ -252,6 +252,13 @@ system = pair.start_control()      # configure → align → start
 pair.stop_control()                # 停止方針を適用してバスを返す
 ```
 
+`cartesian_teleop` では、操作者の目標（`set_target()`）は**そのままIKへ渡されません**。駆動する手ごとに
+**実測TCPから始まる参照姿勢**を作り、`control.trajectory` の速度・加速度上限のもとで目標へ進め、
+その参照を1周期ずつ解きます。実測の手が参照から `lag_tolerance_m` 以上遅れると参照は待ちます（目標を
+手の位置で上書きして誤差を隠すことはしません）。上限が1つでも未設定なら `cartesian_teleop` は
+起動を拒否します（ビューアの模擬プロファイルにフォールバックしません）。参照の状態は
+`system.last_reference` / `system.report()["reference"]` で読めます。
+
 `start_control()` 実行中は両バスの指令権を制御システムが保持し、
 `control_step()` / `send_follower_action()` などの旧経路は明示的に拒否されます
 （1ポート1書き手）。観測API (`get_observation()`) は配列の形・順序・単位（degree）を
@@ -264,6 +271,7 @@ pair.stop_control()                # 停止方針を適用してバスを返す
 UFactory Studio の「モデルだけを動かして確認する」に相当するブラウザUIです。
 関節角度（スライダ／数値／±ジョグ）またはエンドエフェクタ姿勢（xyz・roll/pitch/yaw のスライダ／数値／±ジョグ）で
 モデルを動かし、3D表示で確認できます。3D表示上のTCPの球を**直接ドラッグ**（クリック、またはタップ＆ホールド）しても動かせます。
+手先の移動は**時刻付きの軌道**として計算され、その時間で再生されます（最終姿勢へ飛びません）。
 **ページ上の何もモータへは送られません。**
 
 ```bash
@@ -281,31 +289,76 @@ uv run robopy-viewer --synthetic
 uv run robopy-viewer --urdf <path>/assembly_2.urdf --package-dir <models> \
     --soft-limit torso_yaw_dof=-1.57,1.57
 
-# .robopy/rakuda/config.yaml の control.model（URDF・ソフト制限・TCP・関節グループ）を使う
+# .robopy/rakuda/config.yaml の control.model（URDF・上書き・ソフト制限・TCP・関節グループ・ホーム姿勢）、
+# control.ik（ソルバ設定）、control.trajectory（参照軌道の上限）を使う。urdf_path: null なら同梱モデル
 uv run robopy-viewer --config
 ```
 
-**関節範囲は実機 leader-follower と同じ「モータの可動範囲」に揃えてあります**: スライダは
-0〜4095カウント（ゼロ点2048）に対応する **±180°**、初期値は 0°（＝ゼロカウント）です。
-CADエクスポート（URDF）が宣言する範囲ではありません — URDF側は `shoulder_roll_left_dof` が
-−22.5°〜197.5°、`elbow_yaw_left_dof` が −139.1°〜220.9° のように非対称で、実機で動かせる範囲と一致しません。
-ただしこれは**サーボが許す範囲**であって可動域の実測ではありません。実際に止まる位置は計測値なので、
-`.robopy/rakuda/config.yaml`（`--config`）か `--soft-limit` でソフト制限として与えてください（与えればスライダも狭まります）。
-ソルバ（IK）は従来どおりURDFの範囲＋ソフト制限を守ります。その範囲外へスライダで動かしてから solve すると、
-実機と同じく「limits を既に逸脱している」と言って動きません。
+起動時に**出所ログ**を出します: コードのリビジョン、モデルファイルとそのSHA-256、関節ごとの範囲の出典
+（URDF / 上書きとその理由 / ソフト制限と検証済みか / 表示専用）、TCPの検証状態、ホーム姿勢、IKの関節グループと設定、
+軌道プロファイル、自己衝突の評価有無。実機での挙動をどの設定に遡れるかを残すためのものです。
+
+**関節範囲は1か所で解決され、スライダ・ソルバ・実機アダプタが同じ値を読みます**
+（`robopy.kinematics.joint_limits.resolve_joint_limits`）。優先順位は
+URDF → `joint_limit_overrides_rad`（URDFの範囲を置き換える。理由の記載が必須）→ ソフト制限
+（**狭めることしかできません**。`validated: true` で実機で確認済みと宣言、それ以外は暫定）です。
+continuous 関節（胴体yaw・両肩pitch）はURDFに範囲が無いので、同梱モデルではサーボの可動範囲 ±180° を
+**暫定・シミュレーション専用**の範囲として与え、その旨をログとツールチップに出します。実際に止まる位置は計測値なので、
+`.robopy/rakuda/config.yaml`（`--config`）か `--soft-limit` で与えてください（与えればスライダも狭まります）。
+範囲外へスライダで動かしてから move すると、実機と同じく「limits を既に逸脱している」と言い、
+**限界上の関節を無理に動かすことはしません**（境界上では境界から離れる向きの運動だけを許し、逸脱は関節名と量で報告）。
+URDFの範囲外へ出た continuous 関節の角度は前回値に連続になるよう unwrap されるので、±π で跳ぶことはありません。
 
 `http://127.0.0.1:8765` を開きます（`--port`, `--host`, `--no-browser`, `--no-ik` あり）。
 
 | タブ | 内容 |
 | --- | --- |
-| Joints | 胴体／左腕／右腕／頭部ごとのスライダ・数値入力・±ジョグ（deg/rad切替、ステップ幅）。範囲はモータ可動範囲 ±180°（初期値0°）、ツールチップに出典とソルバ側の範囲を表示。`zero all`、`copy JSON`（rad） |
-| End effector | 左右TCPの現在姿勢（mm / deg）と目標。3Dビュー上の球を直接ドラッグ、各成分のスライダ（ドラッグ中も逐次IK）・数値入力・±ジョグ、`capture`、左右の `track TCP`、非操作腕の follow torso / hold TCP in world、胴体方針 fixed/manual/optimize、姿勢モード soft/keep/free、`solve`／ジョグごとに自動solve |
-| Info | URDFパス、nq/nv、IKの関節グループ（名前から推定した場合もここに明示）、モデル監査の警告 |
+| Joints | 胴体／左腕／右腕／頭部ごとのスライダ・数値入力・±ジョグ（deg/rad切替、ステップ幅）。範囲は解決済みの関節範囲（出典と検証状態をツールチップに表示）。`zero all`、`home`（`home_positions_rad` が設定され、範囲・特異性の検査を通ったとき）、`copy JSON`（rad） |
+| End effector | **arm: left / right / both**（起動時は片腕）、胴体方針 fixed/manual/optimize、非操作腕の follow torso / hold TCP in world、**orientation: position_only / pose / axis_aligned** と重み、左右TCPの現在姿勢（mm / deg）と目標。3Dビュー上の球を直接ドラッグ、各成分のスライダ・数値入力・±ジョグ、`capture`、`move`／ジョグごとに自動move、`reset session`。セッション行（駆動している手・方針・モード・衝突評価の有無・軌道プロファイル）と、状態語彙で書かれたステータス |
+| Info | URDFパス、nq/nv、関節範囲の出典と上書きの理由、ホーム姿勢・TCPの検証状態、IKの関節グループ・優先モード・姿勢モード・接近軸、衝突評価の有無、軌道プロファイル、ソルバ設定、モデル監査の警告 |
 
-片腕操作では、反対側の `track TCP` を外してください。既定の `follow torso (keep joints)`
-では非操作腕の6関節にIKによる運動を指令せず、TCPのワールド座標は共有胴体と一緒に変化します。
-両方の `track TCP` が有効なら、両手の目標を追跡します。再度有効にした腕の目標は、
-その時点のTCP姿勢で取り直します。
+操作対象は **arm** セレクタで `left` / `right` / `both` と明示します（起動時は片腕）。UIの表示と
+送信する目標の `enabled` は常に一致し、セッション行に「driving: left / idle: right」のように出ます。
+既定の `follow torso (keep joints)` では非操作腕の6関節にIKによる運動を指令せず、TCPのワールド座標は
+共有胴体と一緒に変化します。非操作腕も関節範囲と（登録されていれば）衝突判定の対象のままです。
+腕を切り替えると、新たに駆動する手の目標をその時点のTCP姿勢で取り直し、セッションをリセットします。
+
+### 時刻付き軌道と再生
+
+`move`（ジョグ・ドラッグ・スライダも同じ）は `/api/ik` の `mode: "trajectory"` を呼びます。サーバは
+手先の**参照姿勢**を現在のTCPから目標へ、`control.trajectory`（未設定ならビューアの模擬プロファイル:
+0.25 m/s・1 m/s²・1.5 rad/s・6 rad/s²、20 ms）の上限で進め — 静止からの1区間は直線＋回転の測地線
+（Euler角の成分差は使いません）— 各サンプルで微分IKを1ステップ解いて、`time_from_start_s`・関節角・TCP・
+参照・目標誤差・active limits を時刻付きで返します。ページは**その時刻どおり**に再生します
+（350 ms のトゥイーンも、ドラッグ時の最終姿勢への瞬間移動もありません）。描画周期と制御周期は別で、
+再生クロックはサンプル周期のタイマ、描画は間に合う分だけです。隣り合うサンプル間は関節角を線形補間し
+（回転関節では `integrate` に一致）、補間で表示した姿勢のTCPと計算済みTCPのずれを「display path deviation」
+として報告します。
+
+- **再目標化**: 再生中のジョグ・ドラッグは `resume: {seq, t}` を付けて送られ、参照はその時点の姿勢と速度から、
+  ソルバはその時点の関節速度から続きます。動きは**曲がる**のであって、止まってやり直しません。
+- **順序と取消**: 要求には連番（`seq`）が付き、古い応答は捨てられます。手動で関節を編集した後に届いた応答も捨てます。
+- **継続**: 予算（2 s）で切れた軌道は `truncated` で返り、ページが再生の終わる前に続きを取りに行きます。
+- **手の遅れ**: 速度上限などで手が参照から `lag_tolerance_m` 以上遅れると、参照は減速・停止して待ちます。
+  目標をTCPの位置で上書きすることはありません。
+- **セッション状態**: 速度履歴と姿勢参照は操作の間保持されます。リセットは起動時、arm／orientation／torso の
+  切り替え、手動の関節編集（編集の後の最初の move で1回、その姿勢に錨を下ろす）、`reset session` に限ります。
+  `/api/ik/reset` がその入口で、`/api/model` の `ik.resets` で回数が読めます。
+- 3Dビューでは、計算済みTCPの**軌跡**（腕の色）、追従中の**参照**（白い小さな印）、**目標**（球）を描きます（`path` で表示切替）。
+
+### 状態語彙
+
+| status | 意味 |
+| --- | --- |
+| `tracking` | まだ動いている（予算切れなら `truncated` も true） |
+| `converged` | 参照が到着し、手が許容誤差内 |
+| `locally_stalled` | 拘束は効いていないのに残差が減らない。局所法がこの姿勢から進めないだけで、目標が到達不能である証明ではない |
+| `limits_blocked` | 位置限界が効いた状態で残差が減らない（効いている関節名を併記） |
+| `collision_blocked` | 衝突対（安全距離）が効いた状態で残差が減らない |
+| `stale` / `solver_error` / `infeasible` / `limit_violation` / `collision_at_start` | 要求が使えない、QPが失敗、この姿勢から拘束を全て満たす一歩が無い、既に範囲外、既に衝突。姿勢は変えない |
+
+衝突対がモデルに登録されていなければ、End effector タブとセッション行に「self-collision NOT evaluated」と
+出します。**collision URDF を読み込んだだけでは回避は有効になりません。**
 
 **胴体の既定は `optimize`** です。片腕の届く範囲を決めているのは共有胴体で、`fixed` にすると
 その腕の6関節だけで到達しなければならず、「もう片腕が動かなくて済む範囲」までしか手先が動きません
@@ -333,39 +386,92 @@ Python APIも同じ既定動作です。例えば右腕のみなら
 - **運動学は全てサーバ側**（`WholeBodyModel` / `DualArmIK`）。ページはFK/IKの結果を描くだけなので、
   表示と制御スタックの解が食い違いません。Pinocchio/Pinkが必要（`kinematics` extra）。
 - 3D描画は three.js を**同梱**（`src/robopy/viewer/static/vendor/`、MIT）。オフラインの実験室でも動きます。
-- **関節範囲の出典**: `/api/model` は各関節について、スライダ範囲（`lower`/`upper`）とその出典（`limit_source`:
-  `motor` / `soft` / `urdf` / `display`）、そしてソルバが守る範囲（`model_lower`/`model_upper`）を別々に返します。
-  「実機で動かせる範囲」と「モデルが認める範囲」を混ぜないための区別です。`--synthetic` の合成モデルには
-  モータが無いので、従来どおりURDFの範囲を使います。
+- **関節範囲の出典**: `/api/model` は各関節について、解決済みの範囲（`lower`/`upper`）、その出典（`limit_source`:
+  `urdf` / `override` / `soft` / `display`）、検証済みか（`validated`）、URDF側の値、上書きの理由、注記を返します。
+  スライダ・ソルバ・実機アダプタは同じ解決済み範囲を読みます。
 - **接地面**: グリッドは床です。関節で動かないジオメトリ（＝土台）の最下面に置きます。モデル原点ではありません —
   Rakudaのエクスポートでは原点は土台の底から約 26 cm 上にあり、原点に描いていたグリッドは胴体を突き抜けていました。
   土台を描かないモデルでは従来どおり root フレーム（z = 0）に置きます。
 - **手先の直接ドラッグ**: 各TCPに置いた球が目標そのものです。掴むとカメラに正対する平面上を追従し（残り1軸は視点を回すか、
-  Shiftを押しながら掴んで鉛直移動）、ドラッグ中は逐次IK、離した時点でフル反復でもう一度解きます。姿勢（roll/pitch/yaw）は
-  変更せず位置のみ動かします。ポインタイベントで実装しているのでタップ＆ホールドでも同じで、球以外を掴んだときは
-  従来どおりカメラが回ります（OrbitControls より先に capture フェーズで判定しているため、掴んだ瞬間に視点が回ることはありません）。
+  Shiftを押しながら掴んで鉛直移動）、ドラッグ中は短い予算（0.6 s）で再目標化を繰り返し、離した時点でフル予算（2 s）でもう一度
+  計画します。姿勢（roll/pitch/yaw）は変更せず位置のみ動かします。ポインタイベントで実装しているのでタップ＆ホールドでも同じで、
+  球以外を掴んだときは従来どおりカメラが回ります（OrbitControls より先に capture フェーズで判定しているため、掴んだ瞬間に視点が回ることはありません）。
 - **目標値のスライダ**: xyz の範囲は「肩から腕を伸ばしきった長さ」（サーバが `ik.workspace` として返す上界）で、
-  到達可能性の主張ではありません。ドラッグ中は反復150回・トゥイーンなしで解き、離した時点でフル反復でもう一度解きます。
-  リクエストはFKと同じく合流（coalesce）するので、速くドラッグしても古い解が溜まりません。
+  到達可能性の主張ではありません。リクエストはFKと同じく合流（coalesce）するので、速くドラッグしても古い解が溜まりません。
 - 実モデルの視覚メッシュ（53 MB / 137個）があればサーバから配信し、初回ロードに数秒かかります。なければ凸包（2.9 MB）を描画します。
 - メッシュは非同期にダウンロードされ、FK の応答より後に届いたものにも最新の姿勢が適用されます（以前は遅く届いたパーツが原点に置かれたままになり、回線が遅いとロボットがバラバラに見えました）。ブラウザ実機の回帰テストは
   `uv run --extra kinematics --with playwright pytest tests/test_rakuda_control/test_viewer_browser.py`（Playwright は任意依存）。
 - TCPは `gripper_*_dof` からのオフセット**ゼロ**で置かれ、Infoタブにその旨の警告が出ます（実測が必要）。
 - continuous関節にソフト制限を与えない場合、スライダ範囲は表示用の ±π、IKは「幾何学的検討のみ」と表示。
-- **姿勢モード（orientation）**: Rakudaの手首は2軸（yaw・pitch）で球面手首ではないため、
-  「姿勢を完全に保ったまま平行移動」は6自由度あっても一般に到達不能です（実モデルで確認:
-  垂れた腕から +30 mm の平行移動は大域探索でも最良 7.4 mm 残る）。この場合ソルバは重み付きの妥協点で
-  止まり、APIは `stalled: true` を返し、ページは「これ以上変わらない」と明示します。
-  `free`（姿勢重み0）にすると位置だけを追うので、xArmのCartesianジョグに相当する使い方ができます。
-  `soft`（0.15、既定）は位置優先、`keep`（1.0）は両方同等です。
+- **姿勢モード（orientation）**: `position_only`（位置だけ。既定）、`pose`（位置＋完全姿勢、重み付き）、
+  `axis_aligned`（位置＋グリッパの接近軸の向き。軸まわりの回転は自由。`control.ik.approach_axis_tcp` で接近軸を
+  明示したときだけ選べます — 軸は仮定しません）。`axis_aligned` は S² 上の2自由度タスクとして書かれており、
+  Euler角の1成分を0にする実装ではありません（反平行では決定的な逃げ方向を選び、角度誤差は連続）。
+  「姿勢を保ったまま平行移動できるか」は手首だけの性質ではなく、腕全体の配置・その点のヤコビアン・関節範囲で決まり、
+  姿勢ごとに変わります。できない要求は `locally_stalled` / `limits_blocked` / `collision_blocked` のどれかで終わり、
+  何が効いていたかを併記します。
+- **タスク優先度**: `control.ik.task_priority_mode` が `hierarchical`（既定）なら手のタスクを第1段で解き、
+  姿勢参照・限界回避・平滑化・運動コスト（胴体は腕より高い）を第2段で**手のタスクの零空間**だけで解きます
+  （第2段が第1段の残差を増やしたら第1段の解へ戻し、理由を記録）。`weighted` は従来どおり1つの重み付きQPで、
+  二次目的が手のタスクと競合します。数値比較は下の表を参照。
 - **初期姿勢の注意**: 全関節0の姿勢では腕が伸びきって垂れており、手先は最大到達距離の約96%（実モデルで計測）
   にあります。高さを保った平行移動の多くは作業空間の外なので、Joints タブで肘を曲げてから
   Cartesian ジョグしてください（UFactory Studio の home 姿勢に相当）。肘は片方向にしか曲がりません —
   この URDF では `elbow_pitch_left_dof` は正（0〜+2.31 rad）、`elbow_pitch_right_dof` は負（−2.79〜0 rad）。
-  例えば左 +0.8 / 右 −0.8 rad に曲げた姿勢からは、実モデルで ±x/±y/±z の 30 mm ジョグが
-  soft/free とも 9〜34 反復・1 mm 未満で収束します（計測済み）。到達できない場合、ページは
-  「限界に座っている関節」か「作業空間の外」かを区別して説明します。
+  `home_positions_rad` を設定すると `home` ボタンで戻れます（起動時に範囲内・特異性を検査し、
+  通らなければ理由付きで拒否）。到達できない場合、ページは状態語彙で何が効いていたかを説明します。
 - `/api/fk`, `/api/ik`, `/api/model` はJSONのSI単位APIです。DORA等の外部ノードから叩くこともできます。
+
+### 自然な手先動作の設定（`control.ik` / `control.trajectory`）
+
+ビューアと実機は**同じ** `control.ik` から `DualArmIKConfig` を作ります（ビューアだけの値はサンプル周期と模擬プロファイルのみ）。
+`examples/config/rakuda_control.example.yaml` に全項目のコメントがあります。主なもの:
+
+| 項目 | 意味 |
+| --- | --- |
+| `task_priority_mode` | `hierarchical`（既定）/ `weighted` |
+| `orientation_mode`, `approach_axis_tcp` | 姿勢モードと、`axis_aligned` に必要な接近軸（TCP座標） |
+| `preferred_posture_rad` | 二次目的が引き戻す姿勢。未設定なら整列時／リセット時の姿勢 |
+| `posture_cost`, `joint_motion_cost`, `velocity_smoothing_cost`, `limit_avoidance_*` | 二次目的の重み（胴体の運動コストを腕より高く） |
+| `gain_time_constant_s` | 誤差を1ステップで消さず、時定数で追う（加速度上限と両立） |
+| `max_joint_velocity_rad_s`, `max_joint_acceleration_rad_s2`, `position_limit_margin_rad` | 関節側の上限（加速度は前回ステップの速度に対して） |
+| `singularity_sigma_min`, `singularity_damping` | 正規化した特異値に応じた減衰 |
+| `trajectory.*` | 参照軌道の速度・加速度・角速度・角加速度の上限、`lag_tolerance_m`。**実機は全て必須** |
+
+### 数値評価（合成モデル）
+
+`scripts/evaluate_ik_profiles.py` が、同じ開始姿勢・同じ目標を優先モード×姿勢モードで走らせて比較します
+（合成モデル、模擬プロファイル。実機の計測ではありません）。抜粋:
+
+| シナリオ | プロファイル | status | 時間 (s) | 目標誤差 | 経路誤差 平均/最大 (mm) | 胴体 (rad) | ms/step |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 左 6 cm 前 | weighted / position_only | converged | 1.00 | 1.0 mm | 5.5 / 14.6 | 0.000 | 1.0 |
+| 左 6 cm 前 | hierarchical / position_only | converged | 0.62 | 1.0 mm | 6.8 / 13.9 | 0.001 | 1.3 |
+| 左 12 cm 体の前を横切る | weighted / pose | tracking（6 s 予算切れ） | 6.00 | 5.5 mm / 1.8° | 7.3 / 20.4 | 0.004 | 1.0 |
+| 左 12 cm 体の前を横切る | hierarchical / pose | converged | 1.56 | 1.0 mm / 0.4° | 8.3 / 20.1 | 0.263 | 1.3 |
+| 左 12 cm 体の前を横切る | hierarchical / axis_aligned | converged | 0.88 | 0.9 mm / 軸 0.2°（完全姿勢は 43.5° 自由） | 9.7 / 18.0 | 0.007 | 1.9 |
+| 両手 5 cm 上 | hierarchical / pose | converged | 0.72 | 0.9 mm / 0.1°（両手） | 10.1 / 22.5 | 0.000 | 1.5 |
+| 左 40 cm 前（到達不能） | weighted / position_only | tracking（6 s 予算切れ） | 6.00 | 296 mm | 19.4 / 21.9 | 0.030 | 1.1 |
+| 左 40 cm 前（到達不能） | hierarchical / position_only | locally_stalled | 2.86 | 144 mm | 18.7 / 20.8 | 1.144 | 1.3 |
+
+読み方: 経路誤差は手が参照に対して遅れている距離で、関節速度上限（1 rad/s）と加速度上限（8 rad/s²）に当たると
+2 cm（`lag_tolerance_m`）まで遅れ、参照が待ちます。`weighted` は姿勢タスクと二次目的が競合して 12 cm の移動を
+5.5 mm 残したまま這い続け、到達不能な目標でも胴体をほとんど使わず 6 s 這い続けます。`hierarchical` は
+手のタスクを優先するので胴体を回して届く所まで行き、進まなくなった時点で `locally_stalled` と言います。
+計算時間はどのプロファイルも 1〜2 ms/step（合成モデル、衝突評価なし）です。
+
+### 未計測のパラメータ（実機で決めるもの）
+
+コードは合成モデルと同梱URDFで検証しており、以下は**実機の計測値が入るまで暫定**です:
+
+- continuous 関節（`torso_yaw_dof`、両 `shoulder_pitch_*_dof`）の実際の可動範囲（現在はサーボ可動範囲 ±180° の暫定値）
+- URDFが宣言する非対称な範囲が実機と一致しない関節の上書き（`joint_limit_overrides_rad`、理由付き）
+- TCPオフセット（`gripper_*_dof` から把持中心まで。現在はゼロのプレースホルダ）
+- 接近軸 `approach_axis_tcp`（グリッパの実際の向き）
+- `home_positions_rad` / `preferred_posture_rad`（実機で確認した姿勢）
+- `control.trajectory` の速度・加速度上限（実機は未設定だと Cartesian モードを拒否）
+- 関節速度・加速度上限、`gain_time_constant_s`（サーボの応答に合わせる）
+- 衝突対の登録（凸包URDFを読むだけでは評価されません）
 
 実機の状態をこのページに**ミラー表示**する機能は未実装です（サーボループのスナップショットを
 `/api/fk` 相当の入力にすれば実現できますが、初回では対象外）。
