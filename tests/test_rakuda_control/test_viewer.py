@@ -402,3 +402,251 @@ class TestOrientationWeightAndStall:
             },
         )
         assert status == 400
+
+
+class TestTrajectoryMode:
+    """``mode: trajectory``: timed samples, a session that resumes, explicit resets."""
+
+    def _start(self, bundle: ModelBundle) -> Dict[str, float]:
+        start = {name: 0.0 for name in bundle.joint_order}
+        start["elbow_pitch_left_dof"] = -0.6
+        start["elbow_pitch_right_dof"] = -0.6
+        return start
+
+    def _goal(self, server: ViewerServer, start: Dict[str, float], dx: float) -> Dict[str, Any]:
+        _, cur = _call(server, "/api/fk", {"joints": start})
+        left = dict(cur["tcp"]["left"])
+        left["p"] = [left["p"][0] + dx, left["p"][1], left["p"][2]]
+        return left
+
+    def test_a_move_is_a_timed_trajectory_within_the_ceilings(
+        self, server: ViewerServer, bundle: ModelBundle
+    ) -> None:
+        start = self._start(bundle)
+        goal = self._goal(server, start, 0.06)
+        _call(server, "/api/ik/reset", {"joints": start})
+        status, res = _call(
+            server,
+            "/api/ik",
+            {"mode": "trajectory", "seq": 1, "joints": start, "targets": {"left": goal}},
+        )
+        assert status == 200, res
+        assert res["mode"] == "trajectory" and res["seq"] == 1
+        assert res["status"] == "converged" and res["commandable"] is True
+        assert res["enabled"] == ["left"]
+        assert res["goal_error_m"]["left"] < 2e-3
+        samples = res["samples"]
+        assert len(samples) == res["n_samples"] >= 5
+        assert samples[0]["t"] == 0.0 and samples[0]["joints"] == pytest.approx(start)
+        # 60 mm at <= 0.25 m/s with 1 m/s^2 of acceleration is not 350 ms.
+        assert res["duration_s"] > 0.35
+        limits = res["limits"]
+        for a, b in zip(samples, samples[1:]):
+            dt = b["t"] - a["t"]
+            assert dt == pytest.approx(res["dt_s"])
+            pa, pb = np.array(a["tcp"]["left"]["p"]), np.array(b["tcp"]["left"]["p"])
+            assert np.linalg.norm(pb - pa) / dt <= limits["max_linear_velocity_m_s"] * 1.05 + 1e-3
+        assert res["reference"]["left"]["p"] == pytest.approx(goal["p"], abs=1e-6)
+        assert res["goals"]["left"]["p"] == pytest.approx(goal["p"])
+        assert "collision_modelled" in res and res["priority_mode"] == "hierarchical"
+        assert res["orientation_mode"] == "position_only"
+        assert len(res["poses"]["geometries"]) == len(bundle.geometries)
+
+    def test_a_retarget_resumes_from_the_playing_trajectory(
+        self, server: ViewerServer, bundle: ModelBundle
+    ) -> None:
+        start = self._start(bundle)
+        goal = self._goal(server, start, 0.08)
+        _call(server, "/api/ik/reset", {"joints": start})
+        _, first = _call(
+            server,
+            "/api/ik",
+            {
+                "mode": "trajectory",
+                "seq": 7,
+                "joints": start,
+                "targets": {"left": goal},
+                "max_duration_s": 0.2,
+            },
+        )
+        assert first["truncated"] is True and first["status"] == "tracking"
+        # The page is 0.1 s into the playback when the operator pushes the
+        # target further: the continuation starts from the joints at that
+        # instant and the reference keeps its velocity.
+        t = 0.1
+        at = next(s for s in first["samples"] if s["t"] >= t)
+        further = dict(goal)
+        further["p"] = [goal["p"][0] + 0.02, goal["p"][1], goal["p"][2]]
+        _, second = _call(
+            server,
+            "/api/ik",
+            {
+                "mode": "trajectory",
+                "seq": 8,
+                "joints": at["joints"],
+                "targets": {"left": further},
+                "resume": {"seq": 7, "t": t},
+            },
+        )
+        assert second["resumed_from"] == {"seq": 7, "t": t}
+        assert second["status"] == "converged", second["message"]
+        assert second["samples"][0]["joints"] == pytest.approx(at["joints"])
+        # The reference did not restart from rest: its first step is about the
+        # speed it had, not the crawl of a fresh start.
+        r0 = np.array(second["samples"][0]["reference"]["left"]["p"])
+        r1 = np.array(second["samples"][1]["reference"]["left"]["p"])
+        v_resumed = np.linalg.norm(r1 - r0) / second["dt_s"]
+        f0 = np.array(first["samples"][0]["reference"]["left"]["p"])
+        f1 = np.array(first["samples"][1]["reference"]["left"]["p"])
+        v_fresh = np.linalg.norm(f1 - f0) / first["dt_s"]
+        assert v_resumed > 3 * v_fresh
+        # A resume for a sequence the session no longer holds starts at rest.
+        _, third = _call(
+            server,
+            "/api/ik",
+            {
+                "mode": "trajectory",
+                "seq": 9,
+                "joints": start,
+                "targets": {"left": goal},
+                "resume": {"seq": 3, "t": 0.5},
+            },
+        )
+        assert third["resumed_from"] is None
+
+    def test_reset_is_explicit_and_counted(self, server: ViewerServer, bundle: ModelBundle) -> None:
+        _, before = _call(server, "/api/model")
+        status, res = _call(server, "/api/ik/reset", {"joints": self._start(bundle)})
+        assert status == 200 and res["ok"] is True
+        _, after = _call(server, "/api/model")
+        assert after["ik"]["resets"] == before["ik"]["resets"] + 1 == res["resets"]
+        status, _ = _call(server, "/api/ik/reset", {"joints": 3})
+        assert status == 400
+
+    def test_bad_requests(self, server: ViewerServer, bundle: ModelBundle) -> None:
+        start = self._start(bundle)
+        goal = self._goal(server, start, 0.01)
+        status, err = _call(
+            server, "/api/ik", {"mode": "teleport", "joints": start, "targets": {"left": goal}}
+        )
+        assert status == 400 and "mode" in err["error"]
+        status, err = _call(
+            server,
+            "/api/ik",
+            {"mode": "trajectory", "joints": start, "targets": {"left": goal}, "max_duration_s": 0},
+        )
+        assert status == 400
+        status, err = _call(
+            server,
+            "/api/ik",
+            {
+                "mode": "trajectory",
+                "joints": start,
+                "targets": {"left": goal},
+                "orientation_mode": "axis_aligned",
+            },
+        )
+        assert status == 400 and "approach_axis_tcp" in err["error"]
+
+    def test_the_description_states_the_session(self, server: ViewerServer) -> None:
+        _, model = _call(server, "/api/model")
+        ik = model["ik"]
+        assert ik["priority_mode"] == "hierarchical"
+        assert ik["orientation_mode"] == "position_only"
+        assert ik["orientation_modes"] == ["position_only", "pose"]  # no approach axis stated
+        assert ik["approach_axis_tcp"] is None
+        assert ik["collision_modelled"] is False  # the fixture registers no pairs
+        traj = ik["trajectory"]
+        assert traj["profile"] == "simulation"
+        assert traj["sample_period_s"] == 0.02
+        assert traj["max_linear_velocity_m_s"] == 0.25
+        assert ik["config"]["task_priority_mode"] == "hierarchical"
+        assert ik["config"]["limit_avoidance_enabled"] is True
+
+    def test_pose_mode_reports_orientation_and_a_weight_is_range_checked(
+        self, server: ViewerServer, bundle: ModelBundle
+    ) -> None:
+        start = self._start(bundle)
+        goal = self._goal(server, start, 0.02)
+        status, res = _call(
+            server,
+            "/api/ik",
+            {
+                "mode": "trajectory",
+                "joints": start,
+                "targets": {"left": goal},
+                "orientation_mode": "pose",
+                "orientation_weight": 0.5,
+            },
+        )
+        assert status == 200
+        assert res["orientation_mode"] == "pose" and res["orientation_weight"] == 0.5
+        assert res["goal_orientation_error_rad"]["left"] < 0.05
+        status, _ = _call(
+            server,
+            "/api/ik",
+            {
+                "mode": "trajectory",
+                "joints": start,
+                "targets": {"left": goal},
+                "orientation_mode": "pose",
+                "orientation_weight": 11,
+            },
+        )
+        assert status == 400
+        # Back to the page's default so later tests see the described state.
+        _call(
+            server,
+            "/api/ik",
+            {
+                "mode": "trajectory",
+                "joints": start,
+                "targets": {"left": goal},
+                "orientation_mode": "position_only",
+            },
+        )
+
+
+class TestTrajectoryProfileFromConfig:
+    """``control.trajectory`` decides the viewer's ceilings; gaps are named."""
+
+    def test_unset_config_runs_the_simulation_profile(self) -> None:
+        from robopy.config.robot_config.rakuda_config import RakudaTrajectoryConfig
+        from robopy.viewer.cli import _trajectory_from_config
+        from robopy.viewer.server import SIMULATION_TRAJECTORY_LIMITS
+
+        kwargs, note = _trajectory_from_config(RakudaTrajectoryConfig())
+        assert kwargs["trajectory_profile"] == "simulation"
+        assert kwargs["trajectory_limits"] == SIMULATION_TRAJECTORY_LIMITS
+        assert kwargs["sample_period_s"] == 0.02
+        assert note and "simulation profile" in note
+
+    def test_a_partial_config_is_filled_and_said_so(self) -> None:
+        from robopy.config.robot_config.rakuda_config import RakudaTrajectoryConfig
+        from robopy.viewer.cli import _trajectory_from_config
+
+        kwargs, note = _trajectory_from_config(
+            RakudaTrajectoryConfig(max_linear_velocity_m_s=0.1, sample_period_s=0.01)
+        )
+        assert kwargs["trajectory_profile"] == "config+simulation"
+        assert kwargs["trajectory_limits"].max_linear_velocity_m_s == 0.1
+        assert kwargs["trajectory_limits"].max_linear_acceleration_m_s2 == 1.0
+        assert kwargs["sample_period_s"] == 0.01
+        assert note and "max_linear_acceleration_m_s2" in note and "refuse" in note
+
+    def test_a_complete_config_is_used_as_given(self) -> None:
+        from robopy.config.robot_config.rakuda_config import RakudaTrajectoryConfig
+        from robopy.viewer.cli import _trajectory_from_config
+
+        kwargs, note = _trajectory_from_config(
+            RakudaTrajectoryConfig(
+                sample_period_s=0.01,
+                max_linear_velocity_m_s=0.1,
+                max_linear_acceleration_m_s2=0.5,
+                max_angular_velocity_rad_s=1.0,
+                max_angular_acceleration_rad_s2=3.0,
+                lag_tolerance_m=0.01,
+            )
+        )
+        assert note is None and kwargs["trajectory_profile"] == "config"
+        assert kwargs["trajectory_limits"].lag_tolerance_m == 0.01

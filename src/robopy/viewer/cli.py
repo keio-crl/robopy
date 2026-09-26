@@ -129,6 +129,14 @@ class LoadedModel:
         if self.ik is not None:
             lines.append(f"IK groups: {self.ik.groups}")
             lines.append(f"IK settings: {self.ik.describe_config()}")
+            lines.append(
+                f"trajectory profile: {self.ik.trajectory_profile} "
+                f"(sample {self.ik.sample_period_s} s, {self.ik.trajectory_limits.describe()})"
+            )
+            lines.append(
+                "self-collision: "
+                + ("evaluated" if self.ik.collision_modelled else "NOT evaluated (no pairs)")
+            )
         else:
             lines.append("IK: not available")
         return lines
@@ -140,6 +148,60 @@ class LoadedModel:
         if self._tmpdir is not None:
             self._tmpdir.cleanup()
             self._tmpdir = None
+
+
+def _trajectory_from_config(trajectory: Any) -> Tuple[Dict[str, Any], str | None]:
+    """``IKSetup`` keyword arguments for the configuration's ``control.trajectory``.
+
+    Ceilings the configuration sets are used as given; any it leaves unset
+    falls back to the viewer's simulation profile, and the note says which,
+    so a page never runs a profile nobody can account for.  The machine does
+    not fall back: it refuses Cartesian mode with a ceiling it was not given.
+    """
+    from robopy.kinematics.cartesian_trajectory import TrajectoryLimits  # noqa: PLC0415
+
+    from .server import SIMULATION_SAMPLE_PERIOD_S, SIMULATION_TRAJECTORY_LIMITS  # noqa: PLC0415
+
+    defaults = SIMULATION_TRAJECTORY_LIMITS
+    missing = trajectory.missing()
+    values = {
+        name: getattr(trajectory, name)
+        if getattr(trajectory, name) is not None
+        else getattr(defaults, name)
+        for name in (
+            "max_linear_velocity_m_s",
+            "max_linear_acceleration_m_s2",
+            "max_angular_velocity_rad_s",
+            "max_angular_acceleration_rad_s2",
+        )
+    }
+    lag = trajectory.lag_tolerance_m
+    limits = TrajectoryLimits(
+        **values, lag_tolerance_m=defaults.lag_tolerance_m if lag is None else lag
+    )
+    period = trajectory.sample_period_s or SIMULATION_SAMPLE_PERIOD_S
+    if len(missing) == 5:
+        profile, note = (
+            "simulation",
+            (
+                "control.trajectory sets no ceiling: the viewer runs its simulation profile "
+                f"({limits.describe()}, sample {period} s)."
+            ),
+        )
+    elif missing:
+        profile, note = (
+            "config+simulation",
+            (
+                f"control.trajectory leaves {missing} unset: those take the viewer's simulation "
+                "values. The machine will refuse Cartesian mode until they are set."
+            ),
+        )
+    else:
+        profile, note = "config", None
+    return (
+        {"trajectory_limits": limits, "sample_period_s": period, "trajectory_profile": profile},
+        note,
+    )
 
 
 def _code_revision() -> str:
@@ -239,6 +301,8 @@ def load_model(
     control_config = None
     provisional = False
     config_ik: Dict[str, Any] = {}
+    trajectory_kwargs: Dict[str, Any] = {}
+    trajectory_note: str | None = None
 
     if args.config:
         from robopy.config.dotrobopy import apply_rakuda_dotconfig
@@ -272,6 +336,9 @@ def load_model(
             "head_joints": spec.head_joints or None,
         }
         config_ik = cfg.control.ik.solver_overrides()
+        trajectory_kwargs, trajectory_note = _trajectory_from_config(cfg.control.trajectory)
+        if trajectory_note:
+            say(f"  {trajectory_note}")
 
     tmpdir = None
     synthetic = False
@@ -358,7 +425,12 @@ def load_model(
     merged_overrides: Dict[str, Any] = {**config_ik, **(ik_overrides or {})}
     if not args.no_ik:
         try:
-            ik = IKSetup(bundle, config_overrides=merged_overrides, **groups)  # type: ignore[arg-type]
+            ik = IKSetup(
+                bundle,
+                config_overrides=merged_overrides,
+                **trajectory_kwargs,
+                **groups,  # type: ignore[arg-type]
+            )
             if ik.geometric_study_only:
                 say(
                     "IK: continuous joint(s) "

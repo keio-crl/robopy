@@ -17,6 +17,7 @@ from robopy.config.robot_config.rakuda_config import (  # noqa: E402
     RakudaJointCalibrationSpec,
     RakudaModelConfig,
     RakudaTcpSpec,
+    RakudaTrajectoryConfig,
 )
 from robopy.control.types import DualArmTarget, TorsoPolicy  # noqa: E402
 from robopy.kinematics.synthetic_dual_arm import (  # noqa: E402
@@ -47,6 +48,17 @@ def _bus() -> SimulatedDynamixelBus:
     }
     joints = {name: SimulatedJoint() for name in MOTORS}
     return SimulatedDynamixelBus(motors, joints=joints, auto_step=False)
+
+
+# The machine refuses Cartesian mode without every ceiling; these are the
+# fixture's, not measurements of the real arm.
+TRAJECTORY = RakudaTrajectoryConfig(
+    max_linear_velocity_m_s=0.25,
+    max_linear_acceleration_m_s2=1.0,
+    max_angular_velocity_rad_s=1.5,
+    max_angular_acceleration_rad_s2=6.0,
+    lag_tolerance_m=0.02,
+)
 
 
 def _config(urdf: Path) -> RakudaControlConfig:
@@ -96,6 +108,7 @@ def _config(urdf: Path) -> RakudaControlConfig:
             build_collision=False,
             geometry_only=True,
         ),
+        trajectory=TRAJECTORY,
     )
 
 
@@ -268,3 +281,53 @@ class TestConfigurationErrors:
         system = RakudaControlSystem.from_buses(config, _bus(), _bus())
         assert Path(system.model.source) == bundled.convex_collision_urdf
         assert "head_camera_link" in system.model.frame_names
+
+
+class TestCartesianReference:
+    """The machine tracks a governed reference, never the raw goal."""
+
+    def test_missing_ceilings_are_refused(self, synthetic_urdf: Path) -> None:
+        config = _config(synthetic_urdf)
+        config.trajectory = RakudaTrajectoryConfig(max_linear_velocity_m_s=0.1)
+        with pytest.raises(ValueError, match="max_linear_acceleration_m_s2"):
+            RakudaControlSystem.from_buses(config, _bus(), _bus())
+
+    def test_the_hands_move_under_the_ceilings_and_arrive(self, cartesian_system) -> None:
+        system, _leader, follower = cartesian_system
+        model = system.model
+        system.configure()
+        system.align()
+        system.prepare_running()
+        start = {urdf: follower.joint(motor).position_rad for motor, urdf in MOTOR_TO_URDF.items()}
+        start_pose = model.frame_pose(model.q_from_positions(start), "left_tcp")
+        goal = start_pose.copy()
+        goal[0, 3] -= 0.10  # 10 cm back, towards the body: reachable with the elbow
+        goal[2, 3] += 0.05
+        system.set_target(
+            DualArmTarget(left_target=goal, right_enabled=False, torso_policy=TorsoPolicy.FIXED)
+        )
+        dt = 0.01
+        travelled = []
+        for cycle in range(400):
+            follower.step(dt)
+            system.loop.run_once(dt)
+            reached = {
+                urdf: follower.joint(motor).position_rad for motor, urdf in MOTOR_TO_URDF.items()
+            }
+            pose = model.frame_pose(model.q_from_positions(reached), "left_tcp")
+            travelled.append(float(np.linalg.norm(pose[:3, 3] - start_pose[:3, 3])))
+            if cycle == 9:
+                # 0.1 s in: the reference has covered at most a/2 t^2 = 5 mm.
+                ref = system.last_reference["left"]
+                assert 0.0 < travelled[-1] < 0.012, travelled[-1]
+                assert ref["remaining_m"] > 0.09
+                assert not ref["arrived"]
+        # The hand arrived, and no cycle moved the reference faster than allowed.
+        assert travelled[-1] == pytest.approx(
+            np.linalg.norm(goal[:3, 3] - start_pose[:3, 3]), abs=5e-3
+        )
+        speeds = [(b - a) / dt for a, b in zip(travelled, travelled[1:])]
+        assert max(speeds) <= 0.25 * 1.1 + 0.01
+        assert system.last_reference["left"]["arrived"]
+        assert system.report()["reference"]["left"]["remaining_m"] < 1e-3
+        assert system.manager.faults == ()

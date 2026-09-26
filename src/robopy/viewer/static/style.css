@@ -64,6 +64,11 @@ label { color: var(--dim); display: inline-flex; align-items: center; gap: 4px; 
 .pose input[type=range]:disabled { opacity: .35; }
 .status { margin-top: 8px; padding: 8px; border-radius: 6px; background: var(--panel-2); font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; }
 .status.ok { border-left: 3px solid var(--ok); } .status.bad { border-left: 3px solid var(--bad); } .status.warn { border-left: 3px solid var(--warn); }
+.status.busy { border-left: 3px solid var(--accent); }
+.session { margin-top: 8px; padding: 6px 8px; border-radius: 6px; border: 1px dashed var(--line); font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); white-space: pre-wrap; }
+.side .role { font-size: 11px; font-weight: 600; letter-spacing: .04em; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); }
+.side .role.driven { color: var(--ok); border-color: var(--ok); }
+.side.idle .pose { opacity: .55; }
 .notice { padding: 8px; border-radius: 6px; background: var(--panel-2); margin-bottom: 10px; }
 .notice.warn { border-left: 3px solid var(--warn); }
 .info { display: grid; grid-template-columns: 90px 1fr; gap: 4px 10px; font-size: 12px; }

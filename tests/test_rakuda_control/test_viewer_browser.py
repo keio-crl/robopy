@@ -22,6 +22,7 @@ import pytest
 pytest.importorskip("pink", reason="needs the 'kinematics' optional extra")
 playwright_api = pytest.importorskip("playwright.sync_api", reason="browser tests need playwright")
 
+from robopy.kinematics.cartesian_trajectory import TrajectoryLimits  # noqa: E402
 from robopy.models import find_rakuda_model  # noqa: E402
 from robopy.viewer.model_bundle import ModelBundle  # noqa: E402
 from robopy.viewer.server import IKSetup, ViewerServer  # noqa: E402
@@ -76,7 +77,21 @@ def server():  # type: ignore[no-untyped-def]
     bundle = ModelBundle.load(
         rakuda.convex_collision_urdf, package_dirs=rakuda.package_dirs, soft_limits=SOFT_LIMITS
     )
-    srv = ViewerServer(bundle, host="127.0.0.1", port=0, ik=IKSetup(bundle))
+    # A slow motion profile: headless Chromium renders the 137 meshes in
+    # software at a few frames a second, and the tests below watch the motion
+    # happen, which needs it to span many frames.
+    slow = TrajectoryLimits(
+        max_linear_velocity_m_s=0.05,
+        max_linear_acceleration_m_s2=0.2,
+        max_angular_velocity_rad_s=0.5,
+        max_angular_acceleration_rad_s2=2.0,
+    )
+    srv = ViewerServer(
+        bundle,
+        host="127.0.0.1",
+        port=0,
+        ik=IKSetup(bundle, trajectory_limits=slow, trajectory_profile="test-slow"),
+    )
     thread = threading.Thread(target=srv.serve_forever, daemon=True)
     thread.start()
     yield srv
@@ -181,6 +196,12 @@ def _bend_the_elbows(page) -> None:  # type: ignore[no-untyped-def]
     page.wait_for_timeout(200)
 
 
+def _drive(page, arm: str) -> None:  # type: ignore[no-untyped-def]
+    """Choose which arm(s) the solver drives; the selector resets the session."""
+    page.locator("#arm-select").select_option(arm)
+    page.wait_for_timeout(300)
+
+
 class TestCanvasSizing:
     """The canvas needs its CSS size set, not only its backing store."""
 
@@ -280,6 +301,7 @@ class TestDraggingTheHand:
         page, errors = _open(browser, server.url, mesh_delay_s=0.0)
         try:
             _bend_the_elbows(page)
+            _drive(page, "both")  # both handles are in the scene for this one
             handle = page.evaluate("() => window.__robopy_state.handleScreen('left')")
             assert handle is not None
             page.mouse.move(handle["x"], handle["y"])
@@ -306,15 +328,23 @@ class TestDraggingTheHand:
 
     def test_an_untracked_hand_keeps_no_handle(self, server: ViewerServer, browser) -> None:
         # A hand nothing tracks must not leave a grabbable target behind: its
-        # arm holds its joints and its TCP goes where the torso takes it.
+        # arm holds its joints and its TCP goes where the torso takes it. The
+        # page starts driving one arm, and the selector is what changes that.
         page, errors = _open(browser, server.url, mesh_delay_s=0.0)
         try:
             _bend_the_elbows(page)
+            assert page.evaluate("() => document.querySelector('#arm-select').value") == "left"
             assert page.evaluate("() => window.__robopy_state.handleScreen('left')") is not None
-            page.locator(".side[data-side=left] .ee-enable").uncheck()
-            page.wait_for_timeout(300)
+            assert page.evaluate("() => window.__robopy_state.handleScreen('right')") is None
+            _drive(page, "right")
             assert page.evaluate("() => window.__robopy_state.handleScreen('left')") is None
             assert page.evaluate("() => window.__robopy_state.handleScreen('right')") is not None
+            # What the page sends matches what it shows.
+            enabled = page.evaluate(
+                "() => Object.entries(window.__robopy_state.ee)"
+                ".filter(([, e]) => e.enabled).map(([s]) => s)"
+            )
+            assert enabled == ["right"]
             assert errors == []
         finally:
             page.close()
@@ -332,8 +362,7 @@ class TestDraggingTheHand:
                 page.evaluate("() => document.querySelector('#torso-policy').value") == "optimize"
             )
             _bend_the_elbows(page)
-            page.locator(".side[data-side=left] .ee-enable").uncheck()
-            page.wait_for_timeout(300)
+            _drive(page, "right")
 
             idle = """() => Object.fromEntries(Object.entries(window.__robopy_state.joints)
                 .filter(([name]) => name.includes('left') && !name.includes('head')))"""
@@ -370,6 +399,78 @@ class TestDraggingTheHand:
             # was commanded (the hand is where it was).
             assert abs(handle_after["x"] - handle_before["x"]) > 5.0
             assert after == before
+            assert errors == []
+        finally:
+            page.close()
+
+
+class TestTimedPlayback:
+    """A move is played back at the trajectory's own timing, never as a jump."""
+
+    def test_a_jog_is_played_back_over_time(self, server: ViewerServer, browser) -> None:
+        page, errors = _open(browser, server.url, mesh_delay_s=0.0)
+        try:
+            _bend_the_elbows(page)
+            before = page.evaluate("() => window.__robopy_state.ee.left.current.p")
+            field = page.locator(".side[data-side=left] input[data-tgt=x]")
+            field.fill(f"{before[0] * 1000 + 80:.1f}")
+            field.press("Enter")
+            # Sample the displayed hand while the motion plays.
+            trace = []
+            t0 = time.monotonic()
+            while time.monotonic() - t0 < 6.0:
+                x = page.evaluate("() => window.__robopy_state.ee.left.current.p[0]")
+                trace.append((time.monotonic() - t0, x - before[0]))
+                page.wait_for_timeout(40)
+            moved = [(t, dx) for t, dx in trace if dx > 0.002]
+            assert moved, trace
+            # 80 mm under 0.05 m/s and 0.2 m/s^2 is about 1.85 s of motion:
+            # several distinct intermediate positions, none of them a jump.
+            intermediate = sorted({round(dx, 3) for _, dx in trace if 0.005 < dx < 0.07})
+            assert len(intermediate) >= 4, trace
+            first_t = moved[0][0]
+            arrival = next((t for t, dx in trace if dx > 0.07), None)
+            assert arrival is not None, trace
+            assert arrival - first_t > 1.0, (first_t, arrival)
+            steps = [b - a for (_, a), (_, b) in zip(trace, trace[1:])]
+            assert max(steps) < 0.03, steps  # no frame moved the hand 3 cm at once
+            status = page.locator("#ik-status").inner_text()
+            assert "CONVERGED" in status
+            assert page.evaluate("() => window.__robopy_state.trail.left.length") > 5
+            session = page.locator("#ik-session").inner_text()
+            assert "driving: left" in session and "idle: right" in session
+            assert "NOT evaluated" in session  # this fixture registers no collision pairs
+            assert errors == []
+        finally:
+            page.close()
+
+    def test_a_manual_joint_edit_resets_the_session(self, server: ViewerServer, browser) -> None:
+        page, errors = _open(browser, server.url, mesh_delay_s=0.0)
+        try:
+            _bend_the_elbows(page)
+            resets = "() => fetch('/api/model').then((r) => r.json()).then((m) => m.ik.resets)"
+            before = page.evaluate(resets)
+            page.locator(".tab[data-tab=joints]").click()
+            plus = page.locator("[data-joint='shoulder_roll_left_dof'] button.jog[data-dir='1']")
+            plus.click()
+            plus.click()
+            page.wait_for_timeout(300)
+            # The edits themselves send nothing; the next move resets the
+            # session once, at the pose the burst of edits ended on.
+            assert page.evaluate(resets) == before
+            page.locator(".tab[data-tab=ee]").click()
+            page.locator("#ee-capture-all").click()
+            move = page.locator(".side[data-side=left] button.jog[data-jog=x][data-dir='1']")
+            move.click()
+            page.wait_for_function(
+                "(n) => fetch('/api/model').then((r) => r.json()).then((m) => m.ik.resets === n)",
+                arg=before + 1,
+                timeout=10_000,
+            )
+            page.wait_for_timeout(1500)
+            move.click()  # a second move in the same session: no reset
+            page.wait_for_timeout(800)
+            assert page.evaluate(resets) == before + 1
             assert errors == []
         finally:
             page.close()

@@ -26,6 +26,7 @@ from robopy.config.robot_config.rakuda_config import (  # noqa: E402
     RakudaJointCalibrationSpec,
     RakudaModelConfig,
     RakudaTcpSpec,
+    RakudaTrajectoryConfig,
 )
 from robopy.kinematics.synthetic_dual_arm import (  # noqa: E402
     SYNTHETIC_ARM_JOINTS,
@@ -713,6 +714,15 @@ def _config(urdf: Path, mode: str = "cartesian_teleop") -> RakudaControlConfig:
             ),
             soft_limits_rad=dict(SOFT_LIMITS),
             geometry_only=True,
+        ),
+        # Cartesian mode refuses to start without every ceiling of the hand
+        # reference; these are the simulated plant's, not measurements.
+        trajectory=RakudaTrajectoryConfig(
+            max_linear_velocity_m_s=0.25,
+            max_linear_acceleration_m_s2=1.0,
+            max_angular_velocity_rad_s=1.5,
+            max_angular_acceleration_rad_s2=6.0,
+            lag_tolerance_m=0.02,
         ),
     )
 

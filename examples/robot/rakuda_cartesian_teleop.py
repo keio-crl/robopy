@@ -41,6 +41,7 @@ from robopy.config.robot_config.rakuda_config import (
     RakudaJointCalibrationSpec,
     RakudaModelConfig,
     RakudaTcpSpec,
+    RakudaTrajectoryConfig,
 )
 from robopy.control.types import DualArmTarget, TorsoPolicy
 from robopy.kinematics.synthetic_dual_arm import (
@@ -160,6 +161,16 @@ def make_config(
             build_collision=build_collision,
             collision_exclusions=list(exclusions or []),
             geometry_only=True,
+        ),
+        # The hands track a reference that moves under these ceilings; the
+        # machine refuses Cartesian mode without them. Simulated plant values:
+        # measure the real arm's before using them there.
+        trajectory=RakudaTrajectoryConfig(
+            max_linear_velocity_m_s=0.25,
+            max_linear_acceleration_m_s2=1.0,
+            max_angular_velocity_rad_s=1.5,
+            max_angular_acceleration_rad_s2=6.0,
+            lag_tolerance_m=0.02,
         ),
     )
 

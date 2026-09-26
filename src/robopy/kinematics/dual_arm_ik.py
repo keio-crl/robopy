@@ -649,6 +649,16 @@ class DualArmIK:
 
     # -- lifecycle ----------------------------------------------------------
 
+    @property
+    def left_frame(self) -> str:
+        """The frame the left task drives (the left TCP)."""
+        return self._left_frame
+
+    @property
+    def right_frame(self) -> str:
+        """The frame the right task drives (the right TCP)."""
+        return self._right_frame
+
     def reset(self, q: NDArray[np.float64] | None = None) -> None:
         """Clear latched state: hold targets, velocity history and posture reference.
 
@@ -667,6 +677,33 @@ class DualArmIK:
     def set_posture_reference(self, positions_rad: Mapping[str, float]) -> None:
         """Set the configuration the posture objective pulls towards."""
         self._posture_q = self._model.q_from_positions(positions_rad, require_all=False)
+
+    def seed_velocity(self, velocities_rad_s: Mapping[str, float], dt: float) -> None:
+        """Hand the solver the velocity the machine (or a playback) is at right now.
+
+        The acceleration bound and the smoothing objective compare each step
+        with the previous one.  When a run resumes from the middle of an
+        earlier trajectory -- a re-target during playback -- the previous
+        step is the one at that instant, not the last one this object
+        computed; this replaces it.  Active joints absent from the mapping
+        count as at rest.
+        """
+        if dt <= 0.0:
+            raise ValueError("dt must be positive.")
+        self._previous_step = np.asarray(
+            [float(velocities_rad_s.get(name, 0.0)) * dt for name in self._active_joints]
+        )
+        self._previous_dt = dt
+
+    @property
+    def previous_velocities_rad_s(self) -> Dict[str, float] | None:
+        """The velocity the last step implied, per active joint, or ``None`` after a reset."""
+        if self._previous_step is None or not self._previous_dt:
+            return None
+        return {
+            name: float(self._previous_step[i] / self._previous_dt)
+            for i, name in enumerate(self._active_joints)
+        }
 
     def set_orientation_mode(self, mode: str) -> None:
         """Change which part of a hand target is a task, without rebuilding.
@@ -895,7 +932,13 @@ class DualArmIK:
                     A, b, P2, c2, lb, ub, G, h, damping + lm
                 )
             else:
-                P = A.T @ A + P2 + (damping + lm) * np.eye(n_free)
+                # The secondary regularisation is part of the secondary
+                # objective in this mode too: without a minimum-motion term
+                # the null space of a position-only task drifts (shoulder and
+                # elbow pitch counter-rotating at full speed while the hand
+                # stands still), and the acceleration window then keeps that
+                # drift alive.
+                P = A.T @ A + P2 + (damping + lm + cfg.secondary_regularisation) * np.eye(n_free)
                 P = 0.5 * (P + P.T)
                 c = A.T @ b + c2
                 solution = self._qpsolvers.solve_qp(P, c, G=G, h=h, lb=lb, ub=ub, solver=cfg.solver)
