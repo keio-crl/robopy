@@ -16,6 +16,12 @@
 //   B / Y                   start / stop recording on the server
 //   page checkboxes         robot twin, its mirror, "image follows head"
 //
+// Bare hands (WebXR Hand Input; put the controllers down and the Quest tracks
+// the hands): the page streams the 25 joint poses of each hand and draws them;
+// the server reads every gesture (by default: pinch thumb and index to drive
+// the arm, curl the other fingers for the gripper, pinch thumb and middle on
+// both hands to re-centre, hold that pinch on one hand to record).
+//
 // The mirror: the twin is drawn again, reflected in a vertical plane a
 // chosen distance in front of the robot's head, so the operator -- who stands
 // inside the twin -- sees the machine face them as in a mirror, left on the
@@ -40,6 +46,7 @@ const state = {
   sendHz: 60, lastSendMs: 0,
   sent: 0, received: 0, lastRttMs: null,
   controllers: {},       // index -> {handedness, grip, source}
+  hands: { left: null, right: null },   // drawn joints per tracked hand
   buttonsPrev: { left: {}, right: {} },
   cameraLocked: true,
   clutchButton: 'a',     // 'a' (A/X), 'grip' or 'stick'; from hello
@@ -346,6 +353,7 @@ function send(obj) {
   return true;
 }
 state.send = send;   // for tests: window.__robopy_vr.send({...})
+state.handEntry = (frame, refSpace, source) => handEntry(frame, refSpace, source);   // for tests
 
 // --------------------------------------------------------------- camera socket
 function connectCamera() {
@@ -428,6 +436,70 @@ function xrPose(transform) {
   return { p: [p.x, p.y, p.z], q: [q.x, q.y, q.z, q.w] };
 }
 
+// --------------------------------------------------------------- hands
+// A tracked hand is sent as its joints (position each, orientation for the
+// wrist) and drawn as small spheres, green while the server says that arm is
+// clutched.  Positions are rounded to 0.1 mm to keep the message small.
+const HAND_JOINT_RADIUS = 0.008;
+const handMaterials = {
+  idle: new THREE.MeshStandardMaterial({ color: 0xd8dde6, roughness: 0.7 }),
+  clutched: new THREE.MeshStandardMaterial({ color: 0x4ce07a, roughness: 0.7 }),
+  wrist: new THREE.MeshStandardMaterial({ color: 0xff9f43, roughness: 0.7 }),
+};
+const handSphere = new THREE.SphereGeometry(1, 12, 8);
+const r4 = (v) => Math.round(v * 1e4) / 1e4;
+
+function handDrawing(side) {
+  let drawing = state.hands[side];
+  if (!drawing) {
+    drawing = { group: new THREE.Group(), joints: {} };
+    scene.add(drawing.group);
+    state.hands[side] = drawing;
+  }
+  return drawing;
+}
+
+function hideHand(side) {
+  const drawing = state.hands[side];
+  if (drawing) drawing.group.visible = false;
+}
+
+function handEntry(frame, refSpace, source) {
+  const hand = source.hand;
+  if (!hand) return null;
+  const joints = {};
+  const drawing = handDrawing(source.handedness);
+  const arm = state.lastState && state.lastState.arms && state.lastState.arms[source.handedness];
+  const clutched = !!(arm && arm.clutched);
+  let any = false;
+  for (const [name, space] of hand.entries()) {
+    const pose = frame.getJointPose(space, refSpace);
+    let mesh = drawing.joints[name];
+    if (!mesh) {
+      mesh = new THREE.Mesh(handSphere, handMaterials.idle);
+      drawing.joints[name] = mesh;
+      drawing.group.add(mesh);
+    }
+    if (!pose) { mesh.visible = false; continue; }
+    const p = pose.transform.position;
+    const entry = { p: [r4(p.x), r4(p.y), r4(p.z)] };
+    if (name === 'wrist') {
+      const q = pose.transform.orientation;
+      entry.q = [q.x, q.y, q.z, q.w];
+    }
+    joints[name] = entry;
+    any = true;
+    mesh.visible = true;
+    mesh.position.set(p.x, p.y, p.z);
+    const radius = pose.radius || HAND_JOINT_RADIUS;
+    mesh.scale.setScalar(radius);
+    mesh.material = name === 'wrist' ? handMaterials.wrist : (clutched ? handMaterials.clutched : handMaterials.idle);
+  }
+  drawing.group.visible = any;
+  if (!any) return null;
+  return { hand: { joints } };
+}
+
 function controllerEntry(frame, refSpace, source) {
   if (!source.gripSpace) return null;
   const pose = frame.getPose(source.gripSpace, refSpace);
@@ -460,14 +532,23 @@ function collectAndSend(frame, timeMs) {
   const viewer = frame.getViewerPose(refSpace);
   const msg = { type: 'pose', t: performance.now(), head: viewer ? xrPose(viewer.transform) : null, left: null, right: null };
   const session = renderer.xr.getSession();
+  const handSeen = { left: false, right: false };
   for (const source of session.inputSources) {
     if (source.handedness !== 'left' && source.handedness !== 'right') continue;
+    if (source.hand) {
+      // A tracked hand; the server reads its gestures.
+      handSeen[source.handedness] = true;
+      msg[source.handedness] = handEntry(frame, refSpace, source);
+      continue;
+    }
     const entry = controllerEntry(frame, refSpace, source);
     msg[source.handedness] = entry;
     handleButtons(source.handedness, entry);
   }
-  // Re-centre: both thumbsticks clicked.
-  const l = msg.left && msg.left.buttons.stick, r = msg.right && msg.right.buttons.stick;
+  for (const side of ['left', 'right']) if (!handSeen[side]) hideHand(side);
+  // Re-centre: both thumbsticks clicked (hands do it with both middle pinches, server-side).
+  const l = msg.left && msg.left.buttons && msg.left.buttons.stick;
+  const r = msg.right && msg.right.buttons && msg.right.buttons.stick;
   if (l && r && !state.recenterHeld) { state.recenterHeld = true; send({ type: 'recenter' }); }
   if (!(l && r)) state.recenterHeld = false;
   send(msg);
@@ -563,6 +644,12 @@ function renderStatus() {
     if (h.arms) {
       lines.push(`arms      ${h.arms.left.mapping} mapping  clutch ${h.clutch_button === 'a' ? 'A/X' : h.clutch_button}  scale ${h.arms.left.position_scale}  orientation ${h.arms.left.orientation_enabled ? 'on' : 'off'}  grippers L:${h.arms.left.gripper_available ? 'on' : 'unmeasured'} R:${h.arms.right.gripper_available ? 'on' : 'unmeasured'}`);
     } else lines.push('arms      off (no teleop)');
+    if (h.hands) {
+      const g = h.hands;
+      const clutch = g.clutch_gesture === 'pinch' ? 'pinch (thumb+index)' : 'always while tracked';
+      const gripper = { curl: 'curl the other fingers', pinch: 'pinch strength', none: 'off' }[g.gripper_gesture] || g.gripper_gesture;
+      lines.push(`hands     clutch ${clutch}  gripper ${gripper}  at ${g.reference}  re-centre: both middle pinches  record: hold one ${g.record_hold_s}s`);
+    } else lines.push('hands     ignored (controllers only)');
   }
   lines.push(recordingLine());
   const recBtn = $('#record');
@@ -579,8 +666,17 @@ function renderStatus() {
     for (const side of ['left', 'right']) {
       const a = (s.arms || {})[side];
       if (!a) continue;
-      const hint = { a: side === 'left' ? 'hold X' : 'hold A', grip: 'squeeze grip', stick: 'click stick' }[state.clutchButton] || 'hold the clutch';
-      lines.push(`${side.padEnd(9)} ${a.tracked ? (a.clutched ? 'CLUTCHED - following' : `idle (${hint} to drive)`) : 'controller not tracked'}${a.gripper_rad != null ? `  gripper ${(a.gripper_rad * DEG).toFixed(0)}°` : ''}`);
+      let hint = { a: side === 'left' ? 'hold X' : 'hold A', grip: 'squeeze grip', stick: 'click stick' }[state.clutchButton] || 'hold the clutch';
+      let lost = 'controller not tracked';
+      let extra = '';
+      if (a.input === 'hand') {
+        hint = 'pinch thumb+index';
+        lost = a.hand && a.hand.problem ? `hand: ${a.hand.problem}` : (state.hello && state.hello.hands ? 'hand not tracked' : 'hand ignored (server started without hands)');
+        if (a.hand && a.hand.tracked) {
+          extra = `  pinch ${a.hand.pinch_m != null ? (a.hand.pinch_m * 1000).toFixed(0) + 'mm' : '—'}${a.hand.curl != null ? `  curl ${(a.hand.curl * 100).toFixed(0)}%` : ''}${a.hand.middle_pinch ? '  MIDDLE PINCH' : ''}`;
+        }
+      }
+      lines.push(`${side.padEnd(9)} ${a.tracked ? (a.clutched ? 'CLUTCHED - following' : `idle (${hint} to drive)`) : lost}${a.gripper_rad != null ? `  gripper ${(a.gripper_rad * DEG).toFixed(0)}°` : ''}${extra}`);
     }
     if (s.ik) {
       const e = s.ik.errors || {};

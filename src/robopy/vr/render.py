@@ -271,6 +271,7 @@ class RakudaVideoRenderer:
         Args:
             view: ``"third_person"`` or ``"first_person"``.
             controllers: ``{side: {"p_base": [x, y, z], "clutched": bool} | None}``
+                (a tracked hand is drawn the same way, at its reference point)
                 markers to draw.
             targets: ``{side: [x, y, z] | None}`` hand targets to draw.
         """
@@ -588,7 +589,7 @@ def _caption(t: float, frame: Mapping[str, Any]) -> List[str]:
     for side in ("left", "right"):
         entry = controllers.get(side)
         if not entry:
-            state = "no controller"
+            state = "not tracked"
         elif entry.get("clutched"):
             residual = ik.get(f"{side}_position_m")
             state = "CLUTCHED" + ("" if residual is None else f"  {residual * 1e3:.0f} mm")

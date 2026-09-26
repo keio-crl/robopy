@@ -139,3 +139,56 @@ def test_idle_page_keeps_its_socket_until_the_operator_enters_vr(server: VRServe
         assert page.evaluate("() => window.__robopy_vr.mirrorOn") is True
     finally:
         page.close()
+
+
+def test_hand_joints_are_sent_the_way_the_server_reads_them(server: VRServer, browser) -> None:  # type: ignore[no-untyped-def]
+    """The page's hand entry, built from a stand-in XRFrame, parses on the server.
+
+    Headless Chromium has no hands to track, so the WebXR objects are faked:
+    a map-like ``hand`` of joint names and a frame whose ``getJointPose``
+    returns a pose per joint.  What matters is the contract: the message the
+    page builds is what :class:`robopy.vr.hand_tracking.HandFrame` expects.
+    """
+    from robopy.vr.hand_tracking import HAND_JOINTS, HandFrame, HandInput
+
+    page = browser.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    page.goto(server.vr_url)
+    page.wait_for_function(OVERLAY_HIDDEN, timeout=30_000)
+    entry = page.evaluate(
+        """(names) => {
+          const hand = new Map(names.map((n) => [n, { name: n }]));
+          const frame = {
+            getJointPose: (space) => {
+              if (space.name === 'ring-finger-tip') return null;   // an untracked joint
+              const i = names.indexOf(space.name);
+              return {
+                radius: 0.009,
+                transform: {
+                  position: { x: 0.1 * i, y: 1.2, z: -0.3 - 0.001 * i },
+                  orientation: { x: 0, y: 0, z: 0, w: 1 },
+                },
+              };
+            },
+          };
+          return window.__robopy_vr.handEntry(frame, null, { hand, handedness: 'left' });
+        }""",
+        list(HAND_JOINTS),
+    )
+    assert errors == []
+    joints = entry["hand"]["joints"]
+    assert set(joints) == set(HAND_JOINTS) - {"ring-finger-tip"}
+    assert joints["wrist"] == {"p": [0.0, 1.2, -0.3], "q": [0, 0, 0, 1]}
+    assert "q" not in joints["thumb-tip"]
+    frame = HandFrame.from_message(entry["hand"])
+    assert frame is not None and frame.has("wrist", "thumb-tip", "pinky-finger-tip")
+    # The missing joint is exactly what the server reports back.
+    reading = HandInput("left").update(frame, 0.0)
+    assert not reading.tracked and reading.problem == "joints not tracked: ring-finger-tip"
+    # And the joint spheres were drawn (all but the untracked one).
+    visible = page.evaluate(
+        "() => Object.values(window.__robopy_vr.hands.left.joints).filter((m) => m.visible).length"
+    )
+    assert visible == len(HAND_JOINTS) - 1
+    page.close()

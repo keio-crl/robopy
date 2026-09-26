@@ -42,8 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="robopy-vr",
         description=(
             "VR teleoperation of the Rakuda from a WebXR headset: the headset drives the "
-            "head, the controllers drive the arms, the head camera is shown in front of the "
-            "operator. Simulated unless --hardware is given."
+            "head, the controllers or the tracked bare hands drive the arms, the head camera "
+            "is shown in front of the operator. Simulated unless --hardware is given."
         ),
     )
     add_model_arguments(parser)
@@ -173,6 +173,52 @@ def build_parser() -> argparse.ArgumentParser:
         "Without it the trigger does nothing: the travel is a measurement, not a default.",
     )
     arms.add_argument("--target-ttl", type=float, default=0.25, help="seconds a target stays valid")
+
+    hands = parser.add_argument_group(
+        "hands",
+        "Bare-hand tracking (WebXR Hand Input). Put the controllers down and the Quest tracks "
+        "the hands; the page streams their joints and the server reads the gestures. Both "
+        "kinds of input work in the same session.",
+    )
+    hands.add_argument(
+        "--no-hands", action="store_true", help="ignore tracked hands; controllers only"
+    )
+    hands.add_argument(
+        "--hand-clutch",
+        choices=["pinch", "always"],
+        default="pinch",
+        help="what drives an arm from a hand: pinch (thumb and index fingertips together; "
+        "default) or always (the arm follows whenever the hand is tracked)",
+    )
+    hands.add_argument(
+        "--hand-gripper",
+        choices=["curl", "pinch", "none"],
+        default="curl",
+        help="the gripper signal from a hand: curl (middle, ring and little fingers closed "
+        "into the palm; default), pinch (the index pinch; only with --hand-clutch always) "
+        "or none. As with the trigger, nothing moves without --gripper",
+    )
+    hands.add_argument(
+        "--hand-reference",
+        choices=["palm", "wrist", "pinch"],
+        default="palm",
+        help="which point of the hand is its position: the palm centre (default), the wrist "
+        "joint or the pinch point between thumb and index tips",
+    )
+    hands.add_argument(
+        "--pinch-on",
+        type=float,
+        default=0.02,
+        metavar="M",
+        help="fingertip distance below which a pinch engages (default 0.02 m)",
+    )
+    hands.add_argument(
+        "--pinch-off",
+        type=float,
+        default=0.035,
+        metavar="M",
+        help="fingertip distance above which a held pinch releases (default 0.035 m)",
+    )
 
     hw = parser.add_argument_group("hardware")
     hw.add_argument(
@@ -613,6 +659,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     from .arm_teleop import ArmTeleopConfig, DualArmTeleop
     from .backend import ControlSystemBackend, SimulationBackend
+    from .hand_tracking import HandTrackingConfig
     from .head_only import HeadOnlyFollowerBackend, head_motor_mapping
     from .head_tracking import HeadJointMapping, HeadTracker, HeadTrackingConfig
     from .server import VRServer, VRServerConfig, serve_vr
@@ -877,6 +924,35 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("Nothing to teleoperate.", file=sys.stderr)
             return 1
 
+        # -- hands ----------------------------------------------------------
+        hands_config = None
+        if not args.no_hands:
+            try:
+                hands_config = HandTrackingConfig(
+                    clutch_gesture=args.hand_clutch,
+                    gripper_gesture=args.hand_gripper,
+                    reference=args.hand_reference,
+                    pinch_on_m=args.pinch_on,
+                    pinch_off_m=args.pinch_off,
+                )
+            except ValueError as exc:
+                parser.error(str(exc))
+            drive = (
+                "pinch thumb and index to drive an arm"
+                if hands_config.clutch_gesture == "pinch"
+                else "an arm follows its hand whenever the hand is tracked"
+            )
+            gripper_hint = {
+                "curl": "curl the other fingers for the gripper",
+                "pinch": "the pinch is the gripper",
+                "none": "no gripper from the hands",
+            }[hands_config.gripper_gesture]
+            print(
+                f"Hands: {drive}; {gripper_hint}; hand position at the {hands_config.reference}. "
+                "Pinch thumb and middle finger on both hands to re-centre, hold it on one hand "
+                f"for {hands_config.record_hold_s:g} s to record."
+            )
+
         # -- camera, TLS, server -------------------------------------------
         def caption() -> str:
             joints = backend.joint_positions()
@@ -912,6 +988,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 else _parse_triplet(args.twin_offset, parser, "--twin-offset"),
                 arm_anchor_frame=args.arm_anchor,
                 clutch_button=args.clutch,
+                hands=hands_config,
                 record_dir=None if args.no_record else args.record_dir,
                 render_videos=not args.no_render,
             ),
