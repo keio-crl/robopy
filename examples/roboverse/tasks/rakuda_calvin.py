@@ -32,8 +32,6 @@ from __future__ import annotations
 import torch
 from metasim.constants import PhysicStateType
 from metasim.scenario.objects import ArticulationObjCfg, PrimitiveCubeCfg
-from metasim.scenario.scenario import ScenarioCfg
-from metasim.scenario.simulator_params import SimParamCfg
 from metasim.task.base import BaseTaskEnv
 from metasim.task.registry import register_task
 
@@ -50,6 +48,7 @@ from calvin_table_asset import (
     find_calvin_table,
 )
 
+from staging import staged
 from workspace import OBJECT_ZONE, hand_position
 
 __all__ = [
@@ -118,19 +117,27 @@ def _table_cfg() -> ArticulationObjCfg:
             "examples/roboverse/assets/calvin_table/, so this is a broken checkout"
         )
     mjcf = table / "mjcf" / "calvin_table.xml"
-    if not mjcf.is_file():
-        raise FileNotFoundError(
-            f"{mjcf} has not been generated; run python examples/roboverse/calvin_table_asset.py"
-        )
-    # No `scale=` here on purpose.  MetaSim's MuJoCo handler loads an
-    # articulation's MJCF as it finds it, so a scale set here goes nowhere and
-    # the table would come out full size under scaled block positions -- which
-    # is exactly how the blocks ended up inside it.  The export bakes CALVIN's
-    # global_scaling in instead.
+    urdf = table / "urdf" / "calvin_table_scaled.urdf"
+    for path in (mjcf, urdf):
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"{path} has not been generated; run "
+                "python examples/roboverse/calvin_table_asset.py"
+            )
+    # The *generated* URDF, not the upstream one. MuJoCo reads the MJCF and
+    # everything else reads the URDF, and the two have to be the same table:
+    # both come out of `calvin_table_asset._prepared_urdf`, with CALVIN's
+    # global_scaling baked in and the bench's concave collision mesh replaced by
+    # boxes. The upstream URDF has neither, so a backend that loaded it would
+    # get a full-size table under scaled block positions, standing on a wedge.
+    #
+    # No `scale=` here on purpose, for the same reason. It reaches Isaac Sim's
+    # UsdFileCfg but not MuJoCo's MJCF loader, so setting it would scale the
+    # table on one backend and not the other.
     return ArticulationObjCfg(
         name=TABLE,
         mjcf_path=str(mjcf),
-        urdf_path=str(table / "urdf" / "calvin_table_D.urdf"),
+        urdf_path=str(urdf),
         fix_base_link=True,
     )
 
@@ -194,18 +201,10 @@ class RakudaAtCalvinTableEnv(BaseTaskEnv):
     blocks are ordinary rigid bodies.
     """
 
-    supported_simulators = ("mujoco",)
+    supported_simulators = ("mujoco", "isaacsim")
     max_episode_steps = 500
 
-    scenario = ScenarioCfg(
-        objects=[_table_cfg(), _pedestal_cfg(), *_blocks()],
-        robots=[ROBOT],
-        simulator="mujoco",
-        sim_params=SimParamCfg(dt=0.005),
-        decimation=4,
-        num_envs=1,
-        headless=True,
-    )
+    scenario = staged(objects=[_table_cfg(), _pedestal_cfg(), *_blocks()], robots=[ROBOT])
 
     def _get_initial_states(self) -> list[dict]:
         robot = self.scenario.robots[0]
@@ -340,17 +339,11 @@ class RakudaCalvinPickEnv(BaseTaskEnv):
     off the bench does not count.
     """
 
-    supported_simulators = ("mujoco",)
+    supported_simulators = ("mujoco", "isaacsim")
     max_episode_steps = 900
 
-    scenario = ScenarioCfg(
-        objects=[_table_cfg(), _pick_pedestal_cfg(), *_blocks()],
-        robots=[GRIPPER_ROBOT],
-        simulator="mujoco",
-        sim_params=SimParamCfg(dt=0.005),
-        decimation=4,
-        num_envs=1,
-        headless=True,
+    scenario = staged(
+        objects=[_table_cfg(), _pick_pedestal_cfg(), *_blocks()], robots=[GRIPPER_ROBOT]
     )
 
     def __init__(self, scenario=None, device=None) -> None:

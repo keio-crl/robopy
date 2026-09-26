@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The ground CALVIN's play table stands on, and a sky over it.
+
+  MetaSim loads this as `ScenarioCfg.scene`, which makes it the *root* of the
+  MJCF the MuJoCo backend assembles: the table, the robot and the blocks are
+  attached into it. So it owns what is true of the whole scene rather than of
+  any one object.
+
+  Pass `add_default_ground=False` alongside it. MetaSim's own floor is a grey
+  checker plane at z=0 and would land in exactly the same place as this one,
+  z-fighting with it.
+
+  CALVIN itself has no scene beyond the floor: `calvin_env` loads
+  `plane/plane.urdf` and leaves the rest of the frame to whatever the viewport
+  clears to, which is black. That is honest for a policy which only ever sees
+  two camera feeds cropped to the bench, and useless for looking at, which is
+  what these examples are for. So the floor here is CALVIN's, measured off its
+  own asset, and the sky is this file's addition.
+
+  Walls were tried and taken out again. From 8 m a 2.6 m wall covers the top of
+  a frame from most angles and not from the corners, so an orbit pans a bright
+  wedge of sky in and out; taller walls just put flat grey where the sky is.
+  Floor meeting sky has a horizon and no seams.
+
+  No lights here, on purpose. They come from `ScenarioCfg.lights` (see
+  `tasks/rakuda_calvin.py`), which is the one lighting description both the
+  MuJoCo and the Isaac Sim backends read.
+-->
+<mujoco model="calvin_room">
+  <asset>
+    <!--
+      A sky, so the upper half of every frame is not #000000. Gradient rather
+      than an HDRI: MuJoCo's skybox is not image-based lighting, it only fills
+      the background, so a 12 KB procedural gradient buys exactly as much as a
+      30 MB .hdr would. The Isaac Sim backend gets the real thing instead, from
+      `RenderCfg.hdri_path` / `DomeLightCfg.texture_file`.
+    -->
+    <texture name="skybox" type="skybox" builtin="gradient"
+             rgb1="0.55 0.64 0.74" rgb2="0.84 0.88 0.92" width="256" height="1536"/>
+
+    <!-- CALVIN's floor, unmodified. -->
+    <texture name="calvin_floor" type="2d" file="textures/checker_blue.png"/>
+    <!--
+      Both numbers are measured off `plane/plane.obj` and `plane.mtl` rather
+      than picked, so the floor comes out the size and the shade calvin_env
+      renders it:
+
+        texrepeat  plane.obj is 30 m across with UVs running 0..15, so the
+                   image tiles once every 2 m; with texuniform the unit of
+                   texrepeat is repeats per metre, hence 0.5. The image is a
+                   4x4 checker, so a square is 0.5 m, which is what a CALVIN
+                   frame shows.
+        rgba       `Kd 0.588` in plane.mtl. The image itself is white on very
+                   light grey; without that factor the floor blows out to a
+                   white sheet, which is what the first attempt here did.
+    -->
+    <material name="calvin_floor" texture="calvin_floor" texrepeat="0.5 0.5" texuniform="true"
+              rgba="0.588 0.588 0.588 1" specular="0.1" shininess="0.1" reflectance="0.03"/>
+  </asset>
+
+  <worldbody>
+    <!--
+      30 m, the size of CALVIN's own plane. The horizon then sits far enough
+      out that an orbiting camera never reaches the edge of it.
+    -->
+    <geom name="floor" type="plane" size="15 15 0.05" pos="0 0 0" material="calvin_floor"
+          condim="3" conaffinity="15" friction="1 0.005 0.0001"/>
+  </worldbody>
+</mujoco>

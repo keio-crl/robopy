@@ -25,11 +25,10 @@ from __future__ import annotations
 import torch
 from metasim.constants import PhysicStateType
 from metasim.scenario.objects import PrimitiveSphereCfg
-from metasim.scenario.scenario import ScenarioCfg
-from metasim.scenario.simulator_params import SimParamCfg
 from metasim.task.base import BaseTaskEnv
 from metasim.task.registry import register_task
 
+from staging import staged
 from workspace import REACH_TARGET_BOX, RakudaMount, hand_position
 
 __all__ = ["RakudaBimanualReachEnv", "RakudaReachEnv"]
@@ -185,14 +184,9 @@ class RakudaReachEnv(_ReachBase):
     hands = ("right",)
     markers = {"right": "target_right"}
 
-    scenario = ScenarioCfg(
+    scenario = staged(
         objects=[MOUNT.pedestal(PEDESTAL), _marker("target_right", (0.85, 0.25, 0.25))],
         robots=[ROBOT],
-        simulator="mujoco",
-        sim_params=SimParamCfg(dt=0.005),
-        decimation=4,
-        num_envs=1,
-        headless=True,
     )
 
 
@@ -209,16 +203,11 @@ class RakudaBimanualReachEnv(_ReachBase):
     hands = ("right", "left")
     markers = {"right": "target_right", "left": "target_left"}
 
-    scenario = ScenarioCfg(
+    scenario = staged(
         objects=[
             MOUNT.pedestal(PEDESTAL),
             _marker("target_right", (0.85, 0.25, 0.25)),
             _marker("target_left", (0.25, 0.45, 0.85)),
         ],
         robots=[ROBOT],
-        simulator="mujoco",
-        sim_params=SimParamCfg(dt=0.005),
-        decimation=4,
-        num_envs=1,
-        headless=True,
     )

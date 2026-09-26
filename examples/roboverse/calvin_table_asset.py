@@ -18,8 +18,15 @@ The LED and the bulb do not light.  ``calvin_scene_D.yaml`` wires them up with
 reacting to the button and switch joints; the URDF only has the geometry.  A
 task that wants them lit can read the joint and set the geoms' ``rgba``.
 
-Textures do not come across either, so the table is drawn in the URDF's own
-flat colours rather than its wood grain.
+Textures, on the other hand, now do.  MuJoCo's URDF importer ignores ``mtllib``,
+so the bench used to arrive with its texture coordinates intact and nothing to
+put on them; the export reads the same MTLs PyBullet reads and writes MuJoCo
+``<texture>``/``<material>`` pairs itself.  See :func:`_apply_materials`.
+
+Neither did anything look right before that, for a second reason: the importer
+puts visuals in geom group 1 and leaves collisions at group 0, and MuJoCo draws
+both.  Every one of the 45 boxes below was being painted over the bench.  See
+:data:`_COLLISION_GROUP`.
 
 The bench, and why it is boxes
 ------------------------------
@@ -59,6 +66,7 @@ __all__ = [
     "decompose_to_boxes",
     "CalvinTableExportReport",
     "export_calvin_table_mjcf",
+    "export_calvin_table_urdf",
     "find_calvin_table",
 ]
 
@@ -93,6 +101,25 @@ CALVIN_WORK_SURFACE_Z: float = 0.44
 
 MODEL_NAME = "calvin_table"
 _URDF_NAME = "calvin_table_D.urdf"
+#: The generated URDF, for the backends that cannot read an MJCF.
+_SCALED_URDF_NAME = "calvin_table_scaled.urdf"
+
+_URDF_HEADER = """
+  CALVIN's play table, scaled and with the bench boxed.
+  GENERATED, DO NOT EDIT BY HAND.
+
+  source:      calvin_table_D.urdf (calvin_env, MIT)
+  regenerate:  python examples/roboverse/calvin_table_asset.py
+
+  This is the file the non-MuJoCo backends load; MuJoCo loads mjcf/calvin_table.xml,
+  which is generated from the same two steps. CALVIN's global_scaling of 0.8 is
+  baked in rather than left to the simulator, and base_link's concave collision
+  mesh is replaced by an exact box decomposition, because every engine but
+  PyBullet convex-hulls a collision mesh and the hull of this bench is a wedge
+  that flings anything placed on it away.
+
+  Textures come from the MTLs beside the OBJs, which Isaac Sim's importer reads.
+"""
 
 
 @dataclass
@@ -110,6 +137,8 @@ class CalvinTableExportReport:
     joints: List[str] = field(default_factory=list)
     size_m: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     work_surface_z: float = 0.0
+    materials: List[str] = field(default_factory=list)
+    num_hidden_collision_geoms: int = 0
 
     def summary(self) -> str:
         """A short human-readable report."""
@@ -122,6 +151,9 @@ class CalvinTableExportReport:
                 f"{self.size_m[0]:.3f} x {self.size_m[1]:.3f} x {self.size_m[2]:.3f} m "
                 f"at scale {self.scale:g}",
                 f"  {self.num_collision_boxes} boxes in place of {_BOXED_LINK}'s concave mesh",
+                f"  {self.num_hidden_collision_geoms} collision geoms moved to group "
+                f"{_COLLISION_GROUP} so they stop being drawn",
+                f"  textured: {', '.join(self.materials) or 'nothing (no MTLs found)'}",
                 f"  work surface at z = {self.work_surface_z:.3f}",
                 f"  moving parts: {', '.join(self.joints)}",
             ]
@@ -274,6 +306,129 @@ def decompose_to_boxes(
     return boxes
 
 
+#: MuJoCo renders geom groups 0, 1 and 2 by default and hides group 3, which is
+#: the convention MuJoCo's own models use for collision geometry.  The URDF
+#: importer knows nothing of it: it puts every visual in group 1 and leaves
+#: collisions at the default 0, so the 45 boxes of the bench, and the convex
+#: hulls of the drawer, the door and the switch, were all drawn *over* the
+#: meshes they stand in for.  That is what made the table look like a pile of
+#: white blocks.  The export moves them to group 3; MuJoCo's viewer still shows
+#: them on demand, and the physics is untouched -- a group is a rendering hint.
+_COLLISION_GROUP = "3"
+
+#: Group the URDF importer gives a ``<visual>``.
+_VISUAL_GROUP = "1"
+
+#: Specular and shininess for the wood.  The URDF has no shading information at
+#: all -- ``rgba 1 1 1 1`` on every textured link, which is the "modulate the
+#: texture by white" convention -- so these are chosen, not imported: enough
+#: sheen to read as varnished chipboard under a key light, not enough to look
+#: like plastic.
+_WOOD_SPECULAR = "0.25"
+_WOOD_SHININESS = "0.35"
+
+
+def _mtl_texture(mtl_path: Path) -> str | None:
+    """The ``map_Kd`` of a Wavefront MTL, as a bare file name, or ``None``."""
+    if not mtl_path.is_file():
+        return None
+    for line in mtl_path.read_text().splitlines():
+        if line.strip().startswith("map_Kd"):
+            return Path(line.split(maxsplit=1)[1].strip()).name
+    return None
+
+
+def _hide_collision_geoms(mjcf: ET.Element) -> int:
+    """Move every geom the URDF importer left ungrouped into :data:`_COLLISION_GROUP`.
+
+    Returns:
+        How many geoms were moved.
+    """
+    moved = 0
+    for geom in mjcf.iter("geom"):
+        if geom.get("group") is None:
+            geom.set("group", _COLLISION_GROUP)
+            moved += 1
+    return moved
+
+
+def _apply_materials(mjcf: ET.Element, table: Path, output_dir: Path) -> List[str]:
+    """Give the visual meshes the textures their MTLs name.
+
+    MuJoCo's URDF importer ignores ``mtllib``: it reads the geometry of an OBJ
+    and nothing else, so the bench arrived with its texture coordinates intact
+    and no texture to put on them.  This walks the same MTLs PyBullet reads --
+    one beside each OBJ -- and turns each ``map_Kd`` into a MuJoCo
+    ``<texture>``/``<material>`` pair, then points the link's visual geom at it.
+
+    Links whose mesh is an STL (the button, the LED, the bulb) have no texture
+    coordinates and no MTL; they keep the URDF's flat ``rgba``, which is what
+    CALVIN draws them in too.
+
+    Args:
+        mjcf: The parsed MJCF, after ``MjSpec.to_xml``.
+        table: The vendored table directory.
+        output_dir: Where the MJCF is being written, for relative asset paths.
+
+    Returns:
+        The names of the materials created, in the order they were added.
+    """
+    import os
+
+    asset = mjcf.find("asset")
+    if asset is None:
+        return []
+
+    # link name -> texture file name, read from the MTL beside its mesh.
+    textures: Dict[str, str] = {}
+    for mesh in asset.findall("mesh"):
+        name = mesh.get("name") or ""
+        texture = _mtl_texture(table / "meshes" / f"{name}.mtl")
+        if texture is not None and (table / "textures" / texture).is_file():
+            textures[name] = texture
+
+    created: List[str] = []
+    by_file: Dict[str, str] = {}
+    for link, texture in textures.items():
+        if texture not in by_file:
+            tex_name = f"tex_{Path(texture).stem}"
+            ET.SubElement(
+                asset,
+                "texture",
+                {
+                    "name": tex_name,
+                    "type": "2d",
+                    "file": os.path.relpath(table / "textures" / texture, output_dir),
+                },
+            )
+            by_file[texture] = tex_name
+        material = f"mat_{link}"
+        ET.SubElement(
+            asset,
+            "material",
+            {
+                "name": material,
+                "texture": by_file[texture],
+                # The meshes carry their own UVs from Blender, so the texture
+                # must follow them rather than be projected on a cube: with
+                # texuniform="true" the wood grain would ignore the unwrap.
+                "texuniform": "false",
+                "specular": _WOOD_SPECULAR,
+                "shininess": _WOOD_SHININESS,
+            },
+        )
+        created.append(material)
+
+    for geom in mjcf.iter("geom"):
+        link = geom.get("mesh")
+        if geom.get("group") == _VISUAL_GROUP and link in textures:
+            geom.set("material", f"mat_{link}")
+            # rgba multiplies the texture; the URDF's "white" is the identity,
+            # but say so rather than leave the reader to check.
+            geom.set("rgba", "1 1 1 1")
+    return created
+
+
 def _exclude_cabinet_contacts(mjcf: ET.Element) -> None:
     """Stop the cabinet from pushing its own drawer open.
 
@@ -371,6 +526,153 @@ def _scale_urdf(root: ET.Element, scale: float) -> None:
                 limit.set(key, repr(float(value) * scale))
 
 
+def _prepared_urdf(table: Path, scale: float) -> Tuple[ET.ElementTree, int]:
+    """The upstream URDF with the bench boxed and the whole model scaled.
+
+    Both exports start here, so a table loaded through MJCF and a table loaded
+    through URDF are the same table: same box decomposition standing in for the
+    bench's concave collision mesh, same ``global_scaling`` baked in rather than
+    left to the simulator.
+
+    Args:
+        table: The vendored table directory.
+        scale: CALVIN's ``global_scaling``.
+
+    Returns:
+        The tree, and how many boxes replaced the concave mesh.
+    """
+    tree = ET.parse(table / "urdf" / _URDF_NAME)
+    root = tree.getroot()
+    # Boxes first, in the mesh's own units, then scale everything together.
+    num_boxes = _boxify_collision(root, table / "meshes", _BOXED_LINK)
+    _scale_urdf(root, scale)
+    return tree, num_boxes
+
+
+def export_calvin_table_urdf(
+    output_path: Path | str | None = None,
+    table_dir: Path | str | None = None,
+    scale: float = CALVIN_SCALE,
+) -> CalvinTableExportReport:
+    """Write the scaled URDF the non-MuJoCo backends load.
+
+    MuJoCo is the only backend in MetaSim that reads an MJCF.  Isaac Sim, and
+    PyBullet, SAPIEN and Genesis with it, read URDF -- Isaac Sim by running
+    Isaac Lab's ``UrdfConverter`` over it once and caching the USD beside it
+    (``metasim/utils/isaacsim_asset_util.py``).  So a scene that is to run on
+    more than MuJoCo needs the table as a URDF as well, and it has to be *this*
+    URDF rather than the upstream one, for two reasons:
+
+    **Scale.**  ``ArticulationObjCfg.scale`` does reach Isaac Sim's
+    ``UsdFileCfg`` but not MuJoCo's MJCF loader.  Setting it would give a table
+    0.8x on one backend and full size on the other, under block positions that
+    are scaled either way.  Baking the scale into both exports is the only way
+    the two agree.
+
+    **The bench's collision mesh.**  Upstream marks it ``concave="yes"``, which
+    PyBullet honours; PhysX, like MuJoCo, convex-hulls a collision mesh unless
+    it is told to do SDF or mesh decomposition, and the hull of this bench is a
+    wedge that flings anything placed on it away.  The box decomposition is
+    exact and every engine understands boxes.
+
+    The textures come across on this path too, and by a shorter route than the
+    MJCF's: the URDF points at OBJs, the OBJs name their MTLs, and Isaac Sim's
+    importer reads MTLs -- which is the one thing MuJoCo's URDF importer does
+    not do.
+
+    Args:
+        output_path: Where the ``.urdf`` goes.  Defaults to
+            ``urdf/calvin_table_scaled.urdf`` inside the vendored table.
+        table_dir: The vendored table directory.  Found automatically by default.
+        scale: CALVIN's ``global_scaling``, baked in.
+
+    Returns:
+        A :class:`CalvinTableExportReport`.  It is filled in by compiling the
+        written URDF *in MuJoCo* and measuring it, which is what makes this an
+        export and not a copy: the work surface and the bounding box in the
+        report are measured off the URDF, and ``test_calvin_table`` checks they
+        match the MJCF's to the millimetre.
+
+    Raises:
+        FileNotFoundError: If the vendored table cannot be found.
+        ImportError: If ``mujoco`` is not installed.
+    """
+    try:
+        import mujoco
+        import numpy as np
+    except ImportError as exc:  # pragma: no cover - depends on the environment
+        raise ImportError(
+            "verifying the exported URDF needs MuJoCo: pip install 'robopy[sim]'"
+        ) from exc
+
+    table = Path(table_dir) if table_dir is not None else find_calvin_table()
+    if table is None:
+        raise FileNotFoundError(
+            "the CALVIN play table was not found; it is vendored beside this file "
+            "directory as calvin_table/, so this is a broken checkout"
+        )
+    table = Path(table).resolve()
+    output_path = Path(output_path) if output_path else table / "urdf" / _SCALED_URDF_NAME
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    tree, num_boxes = _prepared_urdf(table, scale)
+    root = tree.getroot()
+    root.set("name", MODEL_NAME)
+    # A <mujoco> block inside a URDF is the standard way to tell MuJoCo's
+    # importer what it cannot infer, and every other URDF parser ignores an
+    # element it does not know. It is here so that *this* file, read straight
+    # into MuJoCo, is the same table as the MJCF: without it the importer
+    # discards the visual meshes and fuses the static links away, and the model
+    # comes out 3.16 kg of collision boxes with no wood on them.
+    wrapper = ET.Element("mujoco")
+    ET.SubElement(
+        wrapper,
+        "compiler",
+        {"balanceinertia": "true", "discardvisual": "false", "strippath": "false", "fusestatic": "false"},
+    )
+    root.insert(0, wrapper)
+    _indent(root)
+    output_path.write_text(
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        f"<!--{_URDF_HEADER}-->\n" + ET.tostring(root, encoding="unicode").rstrip() + "\n",
+        encoding="utf-8",
+    )
+
+    # Measure what was written, the same way the MJCF export measures itself.
+    verified = mujoco.MjModel.from_xml_path(str(output_path))
+    data = mujoco.MjData(verified)
+    mujoco.mj_kinematics(verified, data)
+    low, high = _mesh_bounds(verified, data, np)
+    # MuJoCo's URDF importer leaves collisions in group 0, where its ray-caster
+    # was looking before the MJCF export moved them; measure them where they are.
+    surface = _work_surface_height(verified, data, mujoco, np, group=0)
+    return CalvinTableExportReport(
+        output_path=output_path,
+        scale=scale,
+        num_collision_boxes=num_boxes,
+        num_bodies=int(verified.nbody),
+        num_joints=int(verified.njnt),
+        num_geoms=int(verified.ngeom),
+        num_meshes=int(verified.nmesh),
+        total_mass_kg=float(verified.body_mass.sum()),
+        joints=[
+            mujoco.mj_id2name(verified, mujoco.mjtObj.mjOBJ_JOINT, i) for i in range(verified.njnt)
+        ],
+        size_m=tuple(float(v) for v in (high - low)),
+        work_surface_z=surface,
+        # No materials are written here: the OBJs name their own MTLs and the
+        # importers that read this file read those. Report which links that
+        # covers, so a missing MTL shows up in the export log either way.
+        materials=[
+            f"{mtl.stem} <- {texture}"
+            for mtl, texture in sorted(
+                (mtl, _mtl_texture(mtl)) for mtl in (table / "meshes").glob("*.mtl")
+            )
+            if texture
+        ],
+    )
+
+
 def export_calvin_table_mjcf(
     output_path: Path | str | None = None,
     table_dir: Path | str | None = None,
@@ -411,11 +713,8 @@ def export_calvin_table_mjcf(
     output_path = Path(output_path) if output_path else table / "mjcf" / f"{MODEL_NAME}.xml"
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    tree = ET.parse(table / "urdf" / _URDF_NAME)
+    tree, num_boxes = _prepared_urdf(table, scale)
     root = tree.getroot()
-    # Boxes first, in the mesh's own units, then scale everything together.
-    num_boxes = _boxify_collision(root, table / "meshes", _BOXED_LINK)
-    _scale_urdf(root, scale)
     # The URDF says "../meshes/x.obj"; MuJoCo gets a meshdir instead.
     for mesh in root.iter("mesh"):
         mesh.set("filename", mesh.get("filename", "").replace("../meshes/", ""))
@@ -459,16 +758,22 @@ def export_calvin_table_mjcf(
             if source.is_file():
                 mesh.set("file", os.path.relpath(source, output_path.parent))
 
+    materials = _apply_materials(mjcf, table, output_path.parent)
+    hidden = _hide_collision_geoms(mjcf)
     _exclude_cabinet_contacts(mjcf)
     _indent(mjcf)
     header = (
         "\n  CALVIN's play table. GENERATED, DO NOT EDIT BY HAND.\n\n"
         f"  source:      {_URDF_NAME} (calvin_env, MIT)\n"
         "  regenerate:  python examples/roboverse/calvin_table_asset.py\n\n"
-        "  The LED and the bulb do not light: that behaviour lives in calvin_env's\n"
-        "  Python, not in the URDF. base_link's concave collision mesh has been\n"
-        "  replaced by an exact box decomposition, because MuJoCo would otherwise\n"
-        "  hull it into a wedge and fling anything placed on the bench away.\n"
+        "  The LED and the bulb do not light by themselves: that behaviour lives in\n"
+        "  calvin_env's Python, not in the URDF. examples/roboverse/tasks/rakuda_calvin.py\n"
+        "  drives them from the button and switch joints.\n\n"
+        "  base_link's concave collision mesh has been replaced by an exact box\n"
+        "  decomposition, because MuJoCo would otherwise hull it into a wedge and\n"
+        f"  fling anything placed on the bench away. Those boxes are in geom group\n"
+        f"  {_COLLISION_GROUP}, which MuJoCo hides; the wood grain comes from the MTLs\n"
+        "  the URDF importer does not read.\n"
     )
     output_path.write_text(
         '<?xml version="1.0" encoding="utf-8"?>\n'
@@ -479,18 +784,7 @@ def export_calvin_table_mjcf(
     verified = mujoco.MjModel.from_xml_path(str(output_path))
     data = mujoco.MjData(verified)
     mujoco.mj_kinematics(verified, data)
-    low = np.full(3, np.inf)
-    high = np.full(3, -np.inf)
-    for geom in range(verified.ngeom):
-        mesh_id = verified.geom_dataid[geom]
-        if mesh_id < 0:
-            continue
-        start = verified.mesh_vertadr[mesh_id]
-        count = verified.mesh_vertnum[mesh_id]
-        verts = verified.mesh_vert[start : start + count].reshape(-1, 3)
-        world = verts @ data.geom_xmat[geom].reshape(3, 3).T + data.geom_xpos[geom]
-        low = np.minimum(low, world.min(axis=0))
-        high = np.maximum(high, world.max(axis=0))
+    low, high = _mesh_bounds(verified, data, np)
 
     return CalvinTableExportReport(
         output_path=output_path,
@@ -506,10 +800,29 @@ def export_calvin_table_mjcf(
         ],
         size_m=tuple(float(v) for v in (high - low)),
         work_surface_z=_work_surface_height(verified, data, mujoco, np),
+        materials=materials,
+        num_hidden_collision_geoms=hidden,
     )
 
 
-def _work_surface_height(model, data, mujoco, np) -> float:
+def _mesh_bounds(model, data, np):
+    """World-space bounding box of every mesh geom, as ``(low, high)``."""
+    low = np.full(3, np.inf)
+    high = np.full(3, -np.inf)
+    for geom in range(model.ngeom):
+        mesh_id = model.geom_dataid[geom]
+        if mesh_id < 0:
+            continue
+        start = model.mesh_vertadr[mesh_id]
+        count = model.mesh_vertnum[mesh_id]
+        verts = model.mesh_vert[start : start + count].reshape(-1, 3)
+        world = verts @ data.geom_xmat[geom].reshape(3, 3).T + data.geom_xpos[geom]
+        low = np.minimum(low, world.min(axis=0))
+        high = np.maximum(high, world.max(axis=0))
+    return low, high
+
+
+def _work_surface_height(model, data, mujoco, np, group: int | None = None) -> float:
     """Height of the bench where CALVIN drops objects, measured by ray-casting.
 
     Not the tallest point of the furniture, and not the top of any one link: the
@@ -519,11 +832,15 @@ def _work_surface_height(model, data, mujoco, np) -> float:
     :data:`CALVIN_TABLE_SURFACE`, so that is what this drops a ray onto -- the
     one measurement that answers "will a block rest here".
 
-    Only collision geoms (MuJoCo group 0, as the URDF importer assigns them)
-    take part, since the visual mesh is not what an object comes to rest on.
+    Only collision geoms take part, since the visual mesh is not what an object
+    comes to rest on.  Which geom group that means depends on what is being
+    measured: the MJCF export has just moved them to :data:`_COLLISION_GROUP`,
+    while a URDF read straight into MuJoCo still has them in group 0 where the
+    importer put them.  ``group`` says which, and defaults to the MJCF's.
     """
     (x0, y0), (x1, y1) = CALVIN_TABLE_SURFACE
-    collision_only = np.array([1, 0, 0, 0, 0, 0], dtype=np.uint8)
+    collision_only = np.zeros(6, dtype=np.uint8)
+    collision_only[int(_COLLISION_GROUP) if group is None else group] = 1
     above = 5.0
     lowest = None
     for fx in (0.1, 0.5, 0.9):
@@ -561,8 +878,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("-o", "--output", type=Path, default=None)
     parser.add_argument("--table-dir", type=Path, default=None)
     parser.add_argument("--scale", type=float, default=CALVIN_SCALE, help="CALVIN's global_scaling")
+    parser.add_argument(
+        "--format",
+        choices=("both", "mjcf", "urdf"),
+        default="both",
+        help="which asset to write; the scene needs both (MuJoCo reads the MJCF, everything else the URDF)",
+    )
     args = parser.parse_args(argv)
-    print(export_calvin_table_mjcf(args.output, args.table_dir, args.scale).summary())
+    if args.output is not None and args.format == "both":
+        parser.error("--output names one file; pass --format mjcf or --format urdf with it")
+    if args.format in ("both", "mjcf"):
+        print(export_calvin_table_mjcf(args.output, args.table_dir, args.scale).summary())
+    if args.format in ("both", "urdf"):
+        print(export_calvin_table_urdf(args.output, args.table_dir, args.scale).summary())
     return 0
 
 

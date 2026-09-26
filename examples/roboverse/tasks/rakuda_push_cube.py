@@ -23,11 +23,10 @@ from __future__ import annotations
 import torch
 from metasim.constants import PhysicStateType
 from metasim.scenario.objects import PrimitiveCubeCfg
-from metasim.scenario.scenario import ScenarioCfg
-from metasim.scenario.simulator_params import SimParamCfg
 from metasim.task.base import BaseTaskEnv
 from metasim.task.registry import register_task
 
+from staging import staged
 from workspace import OBJECT_ZONE, RakudaMount, hand_position
 
 __all__ = ["RakudaPushCubeEnv"]
@@ -72,7 +71,7 @@ class RakudaPushCubeEnv(BaseTaskEnv):
     supported_simulators = ("mujoco",)
     max_episode_steps = 400
 
-    scenario = ScenarioCfg(
+    scenario = staged(
         objects=[
             MOUNT.pedestal(PEDESTAL),
             MOUNT.table("table", depth=TABLE_DEPTH, width=TABLE_WIDTH),
@@ -93,11 +92,6 @@ class RakudaPushCubeEnv(BaseTaskEnv):
             ),
         ],
         robots=[ROBOT],
-        simulator="mujoco",
-        sim_params=SimParamCfg(dt=0.005),
-        decimation=4,
-        num_envs=1,
-        headless=True,
     )
 
     def __init__(self, scenario=None, device=None) -> None:
