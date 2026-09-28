@@ -1239,16 +1239,34 @@ async function pollMachine() {
     status.textContent = `machine (read-only): ${parts.join('  |  ')}`;
     status.classList.toggle('warn', Boolean(m.error || out.length));
     if (!follow || m.error) return;
-    manualPoseEdit();
-    for (const [name, v] of Object.entries(m.joints)) if (name in state.joints) state.joints[name] = v;
-    refreshJointInputs();
-    requestFK();
+    applyMachinePose(m);
   } catch (err) {
     status.textContent = `machine: ${err.message}`;
   } finally {
     machine.inFlight = false;
   }
 }
+
+function applyMachinePose(m) {
+  manualPoseEdit();
+  for (const [name, v] of Object.entries(m.joints)) if (name in state.joints) state.joints[name] = v;
+  refreshJointInputs();
+  requestFK();
+}
+
+// The button: the machine's pose at this moment, once, whatever the checkbox says.
+$('#machine-take').onclick = async () => {
+  try {
+    const m = await api('/api/machine');
+    if (!m.available) return setStats('machine mirror not available');
+    if (m.error) return setStats(`machine read error: ${m.error}`);
+    applyMachinePose(m);
+    const out = machineOutOfRange(m.joints);
+    setStats(`took the machine pose (${Object.keys(m.joints).length} joints)` + (out.length ? `; OUTSIDE the range: ${out.join(', ')}` : ''));
+  } catch (err) {
+    setStats(`machine: ${err.message}`);
+  }
+};
 
 // ------------------------------------------------------------------ boot
 (async function boot() {
@@ -1272,6 +1290,7 @@ async function pollMachine() {
     buildInfo(model);
     if (model.machine_mirror) {
       $('#machine-follow-wrap').hidden = false;
+      $('#machine-take').hidden = false;
       $('#machine-status').hidden = false;
       setInterval(pollMachine, 100);
     }

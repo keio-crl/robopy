@@ -474,3 +474,59 @@ class TestTimedPlayback:
             assert errors == []
         finally:
             page.close()
+
+
+class _FakeMachine:
+    """Stands in for the read-only follower mirror."""
+
+    motors = ["torso_yaw", "r_arm_sh_roll"]
+    unmapped: dict = {}
+
+    def __init__(self) -> None:
+        self.joints = {"torso_yaw_dof": 0.3, "shoulder_roll_right_dof": -0.5}
+
+    def snapshot(self) -> dict:
+        return {
+            "available": True,
+            "read_only": True,
+            "joints": dict(self.joints),
+            "counts": {},
+            "motors": {},
+            "unmapped": {},
+            "missing": [],
+            "age_s": 0.01,
+            "reads": 1,
+            "error": None,
+        }
+
+
+def test_take_machine_pose_sets_the_joints_once(browser) -> None:  # type: ignore[no-untyped-def]
+    rakuda = find_rakuda_model()
+    if rakuda is None:
+        pytest.skip("committed Rakuda model not found")
+    bundle = ModelBundle.load(
+        rakuda.convex_collision_urdf, package_dirs=rakuda.package_dirs, soft_limits=SOFT_LIMITS
+    )
+    machine = _FakeMachine()
+    srv = ViewerServer(bundle, host="127.0.0.1", port=0, machine=machine)
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    try:
+        page, errors = _open(browser, srv.url, mesh_delay_s=0.0)
+        assert page.is_visible("#machine-take") and page.is_visible("#machine-follow-wrap")
+        page.click("#machine-take")
+        page.wait_for_function(
+            "() => Math.abs(window.__robopy_state.joints['torso_yaw_dof'] - 0.3) < 1e-9"
+        )
+        joints = page.evaluate("() => window.__robopy_state.joints")
+        assert joints["shoulder_roll_right_dof"] == pytest.approx(-0.5)
+        # Once: the machine moves on, the page stays where the button put it
+        # (follow machine is not ticked).
+        machine.joints = {"torso_yaw_dof": -0.2, "shoulder_roll_right_dof": -0.1}
+        page.wait_for_timeout(500)
+        taken = page.evaluate("() => window.__robopy_state.joints['torso_yaw_dof']")
+        assert taken == pytest.approx(0.3)
+        assert not errors
+    finally:
+        srv.shutdown()
+        srv.server_close()
