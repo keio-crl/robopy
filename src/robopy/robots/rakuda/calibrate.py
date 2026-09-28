@@ -251,6 +251,9 @@ class ArmCalibrator:
         move_threshold_counts: Count change that counts as "the joint moved"
             when finding the direction.
         move_timeout_s: How long to wait for that movement.
+        urdf_ranges: ``{joint: (type, lower, upper)}`` of the model
+            (:func:`urdf_joint_ranges`): joint names typed by the operator are
+            checked against it, and the review table compares the travel.
     """
 
     def __init__(
@@ -265,6 +268,7 @@ class ArmCalibrator:
         move_threshold_counts: int = 40,
         move_timeout_s: float = 20.0,
         current_reader: Callable[[str], float] | None = None,
+        urdf_ranges: Mapping[str, Tuple[str, float | None, float | None]] | None = None,
     ) -> None:
         if side not in ("leader", "follower"):
             raise ValueError("side must be 'leader' or 'follower'.")
@@ -282,7 +286,15 @@ class ArmCalibrator:
         self.move_threshold = move_threshold_counts
         self.move_timeout_s = move_timeout_s
         self.current_reader = current_reader
+        self.urdf_ranges = dict(urdf_ranges) if urdf_ranges is not None else None
         self.results: Dict[str, JointResult] = {m: JointResult(motor=m) for m in self.motors}
+        self.pose_description = ""
+        self.torque_constants = True
+        # The two ends as raw counts, so a redone zero or direction re-derives
+        # the limits without moving the joint to its stops again.
+        self._ends: Dict[str, Tuple[int, int]] = {}
+        # Notes per step, so redoing a step replaces its note instead of piling up.
+        self._notes: Dict[str, Dict[str, str]] = {m: {} for m in self.motors}
 
     # -- readings -----------------------------------------------------------
 
@@ -305,9 +317,41 @@ class ArmCalibrator:
     def _position(self, motor: str) -> int:
         return int(self.bus.read(XControlTable.PRESENT_POSITION, motor))
 
-    def _positions(self) -> Dict[str, int]:
-        values = self.bus.sync_read(XControlTable.PRESENT_POSITION, self.motors)
+    def _positions(self, motors: Sequence[str] | None = None) -> Dict[str, int]:
+        values = self.bus.sync_read(XControlTable.PRESENT_POSITION, list(motors or self.motors))
         return {m: int(v) for m, v in values.items()}
+
+    def _mark(self, motor: str, *keys: str) -> None:
+        measured = self.results[motor].measured
+        measured += [k for k in keys if k not in measured]
+
+    def _forget(self, motor: str, *keys: str) -> None:
+        result = self.results[motor]
+        result.measured = [k for k in result.measured if k not in keys]
+
+    def _note(self, motor: str, step: str, text: str = "") -> None:
+        """Set (or, with no text, clear) the note of one step."""
+        notes = self._notes[motor]
+        if text:
+            notes[step] = text
+        else:
+            notes.pop(step, None)
+        self.results[motor].notes = "".join(notes.values())
+
+    def _ask_positive(self, prompt: str) -> float | None:
+        """A positive number; asked again when mistyped, ``None`` on an empty answer."""
+        while True:
+            answer = self.console.ask(f"{prompt} (Enter alone cancels)").strip()
+            if not answer:
+                return None
+            try:
+                value = float(answer)
+            except ValueError:
+                self.console.say(f"    '{answer}' is not a number; again")
+                continue
+            if value > 0.0 and math.isfinite(value):
+                return value
+            self.console.say("    must be positive; again")
 
     # -- steps --------------------------------------------------------------
 
@@ -329,32 +373,58 @@ class ArmCalibrator:
                 f"current_limit={r.current_limit_a:.2f} A -> using {result.current_limit_a:.2f} A"
             )
 
-    def confirm_urdf_joints(self) -> None:
-        """Step 2: which model joint each motor drives (proposal by chain order)."""
+    def confirm_urdf_joints(self, motors: Sequence[str] | None = None) -> None:
+        """Step 2: which model joint each motor drives (proposal by chain order).
+
+        A name the URDF does not have is asked again; the same name typed
+        twice in a row is taken as meant.
+        """
         self.console.say(
             f"\n[{self.side}] motor -> URDF joint (chain order is a proposal, not a rule)"
         )
-        for motor in self.motors:
-            proposal = self.urdf_joints.get(motor, "")
+        for motor in motors or self.motors:
+            result = self.results[motor]
+            proposal = result.urdf_joint or self.urdf_joints.get(motor, "")
             answer = self.console.ask(f"  {motor}: URDF joint", proposal)
-            self.results[motor].urdf_joint = answer or None
-            self.results[motor].measured.append("urdf_joint")
+            while self.urdf_ranges is not None and answer and answer not in self.urdf_ranges:
+                self.console.say(
+                    f"    '{answer}' is not a movable joint of the URDF; type it again to keep it"
+                )
+                again = self.console.ask(f"  {motor}: URDF joint", proposal)
+                if again == answer:
+                    break
+                answer = again
+            result.urdf_joint = answer or None
+            self._mark(motor, "urdf_joint")
 
-    def measure_zero(self, pose_description: str) -> None:
-        """Step 3: the encoder count at the model's zero pose."""
+    def measure_zero(self, pose_description: str, motors: Sequence[str] | None = None) -> None:
+        """Step 3: the encoder count at the model's zero pose.
+
+        Args:
+            pose_description: The reference pose, as told to the operator.
+            motors: Re-measure only these (the others keep their zero);
+                every motor by default.  Travel already measured is
+                re-derived from the new zero.
+        """
+        targets = list(motors or self.motors)
         self.console.say(f"\n[{self.side}] zero pose")
-        self.bus.torque_disabled(self.motors)
+        self.bus.torque_disabled(targets)
+        what = f"the {self.side}" if motors is None else ", ".join(targets)
         self.console.ask(
-            f"  Put the {self.side} in the reference pose: {pose_description}\n  Then press Enter"
+            f"  Put {what} in the reference pose: {pose_description}\n  Then press Enter"
         )
-        for motor, count in self._positions().items():
+        for motor, count in self._positions(targets).items():
             self.results[motor].zero_count = count
-            self.results[motor].measured.append("zero_count")
+            self._mark(motor, "zero_count")
             self.console.say(f"  {motor:16s} zero_count={count}")
+            self._apply_limits(motor)
 
     def measure_direction(self, motor: str) -> int | None:
         """Step 4: which way the count runs for the model's positive direction."""
         result = self.results[motor]
+        result.direction = 1
+        self._forget(motor, "direction")
+        self._note(motor, "direction")
         joint = result.urdf_joint or "?"
         self.console.say(
             f"\n  {motor} -> {joint}: move the joint by hand in the direction the model calls "
@@ -367,14 +437,16 @@ class ArmCalibrator:
         while abs(delta) < self.move_threshold:
             if time.monotonic() > deadline and polls > 0:
                 self.console.say("  no movement seen; direction left as +1 (NOT measured)")
-                result.notes += "direction not measured; "
+                self._note(motor, "direction", "direction not measured; ")
+                self._apply_limits(motor)
                 return None
             self.console.sleep(0.05)
             polls += 1
             delta = self._position(motor) - start
         result.direction = 1 if delta > 0 else -1
-        result.measured.append("direction")
+        self._mark(motor, "direction")
         self.console.say(f"  count {start} -> {start + delta}: direction={result.direction:+d}")
+        self._apply_limits(motor)
         return result.direction
 
     def measure_limits(self, motor: str) -> None:
@@ -383,24 +455,41 @@ class ArmCalibrator:
         zero = result.zero_count
         if zero is None:
             raise RuntimeError("measure_zero() must run before the limits.")
-        caps = self.bus.capabilities(motor)
-        rad_per_count = 2.0 * math.pi / caps.counts_per_revolution
-        ends: List[float] = []
+        rad_per_count = self._rad_per_count(motor)
+        counts: List[int] = []
         for which in ("one end", "the other end"):
             self.console.ask(
                 f"  {motor}: move the joint to {which} of its travel, then press Enter"
             )
-            count = self._position(motor)
-            ends.append(result.direction * (count - zero) * rad_per_count)
-            self.console.say(f"    count={count} -> {ends[-1]:+.3f} rad")
-        lo, hi = sorted(ends)
+            counts.append(self._position(motor))
+            rad = result.direction * (counts[-1] - zero) * rad_per_count
+            self.console.say(f"    count={counts[-1]} -> {rad:+.3f} rad")
+        self._ends[motor] = (counts[0], counts[1])
+        self._apply_limits(motor, announce=False)
+
+    def _rad_per_count(self, motor: str) -> float:
+        return 2.0 * math.pi / self.bus.capabilities(motor).counts_per_revolution
+
+    def _apply_limits(self, motor: str, *, announce: bool = True) -> None:
+        """The limits from the recorded ends, the zero and the direction."""
+        result = self.results[motor]
+        ends = self._ends.get(motor)
+        if ends is None or result.zero_count is None:
+            return
+        zero, rad_per_count = result.zero_count, self._rad_per_count(motor)
+        lo, hi = sorted(result.direction * (c - zero) * rad_per_count for c in ends)
+        result.lower_limit_rad = result.upper_limit_rad = None
+        self._forget(motor, "lower_limit_rad", "upper_limit_rad")
         if hi - lo < 1e-6:
             self.console.say("  the two ends coincide; limits NOT recorded")
-            result.notes += "limits not measured; "
+            self._note(motor, "limits", "limits not measured; ")
             return
+        self._note(motor, "limits")
         result.lower_limit_rad = round(lo, 4)
         result.upper_limit_rad = round(hi, 4)
-        result.measured += ["lower_limit_rad", "upper_limit_rad"]
+        self._mark(motor, "lower_limit_rad", "upper_limit_rad")
+        if announce:
+            self.console.say(f"    {motor}: travel now [{lo:+.3f}, {hi:+.3f}] rad")
 
     def measure_torque_constant(
         self,
@@ -428,11 +517,18 @@ class ArmCalibrator:
             The torque constant, or ``None`` when the operator skipped it.
         """
         result = self.results[motor]
+        if result.torque_constant_nm_per_a is not None:
+            self.console.say(
+                f"    recorded now: {result.torque_constant_nm_per_a} N m / A (N keeps it)"
+            )
         answer = self.console.ask(
             f"  {motor}: measure the torque constant with a known weight? (y/N)", "n"
         )
         if answer.lower() not in ("y", "yes"):
             return None
+        result.torque_constant_nm_per_a = None
+        self._forget(motor, "torque_constant_nm_per_a")
+        self._note(motor, "kt")
         caps = self.bus.capabilities(motor)
         unit = float(caps.current_unit_a)
 
@@ -463,10 +559,15 @@ class ArmCalibrator:
             self.console.sleep(settle_s)
             free = average()
             self.console.say(f"    holding current without load: {free:.3f} A")
-            mass = float(self.console.ask("  mass hung on the link, kg"))
-            lever = float(self.console.ask("  lever arm from the joint axis to the mass, m"))
-            if mass <= 0.0 or lever <= 0.0:
-                raise ValueError("mass and lever arm must be positive.")
+            mass = self._ask_positive("  mass hung on the link, kg")
+            lever = (
+                None
+                if mass is None
+                else self._ask_positive("  lever arm from the joint axis to the mass, m")
+            )
+            if mass is None or lever is None:
+                self.console.say("  cancelled; torque constant NOT recorded")
+                return None
             self.console.ask("  hang the mass, let it settle, then press Enter")
             self.console.sleep(settle_s)
             loaded = average()
@@ -477,30 +578,126 @@ class ArmCalibrator:
         delta = abs(loaded - free)
         if delta < 1e-4:
             self.console.say("  no current difference seen; torque constant NOT recorded")
-            result.notes += "torque constant: no current difference; "
+            self._note(motor, "kt", "torque constant: no current difference; ")
             return None
         kt = mass * GRAVITY_M_S2 * lever / delta
         result.torque_constant_nm_per_a = round(kt, 4)
-        result.measured.append("torque_constant_nm_per_a")
-        result.notes += f"Kt from {mass} kg at {lever} m ({loaded:.3f}-{free:.3f} A); "
+        self._mark(motor, "torque_constant_nm_per_a")
+        self._note(motor, "kt", f"Kt from {mass} kg at {lever} m ({loaded:.3f}-{free:.3f} A); ")
         self.console.say(f"    torque constant = {kt:.3f} N m / A")
         return kt
 
+    # -- redoing -------------------------------------------------------------
+
+    def _redo_letters(self) -> str:
+        return "uzdl" + ("k" if self.torque_constants else "")
+
+    def _redo_help(self) -> str:
+        kt = ", k Kt" if self.torque_constants else ""
+        return f"u URDF joint, z zero, d direction, l travel{kt}, r = d+l{'+k' if kt else ''}"
+
+    def redo(self, motor: str, letters: str) -> bool:
+        """Measure one joint's steps again, named by letter (see :meth:`_redo_help`).
+
+        The steps run in the procedure's order whatever order they are typed
+        in.  Returns ``False`` (and does nothing) on an unknown letter.
+        """
+        letters = letters.lower().replace("r", "dl" + ("k" if self.torque_constants else ""))
+        unknown = sorted(set(letters) - set(self._redo_letters()))
+        if unknown:
+            self.console.say(f"    unknown step(s) {''.join(unknown)!r}: {self._redo_help()}")
+            return False
+        if "u" in letters:
+            self.confirm_urdf_joints([motor])
+        if "z" in letters:
+            self.measure_zero(self.pose_description, [motor])
+        if "d" in letters:
+            self.measure_direction(motor)
+        if "l" in letters:
+            self.measure_limits(motor)
+        if "k" in letters:
+            self.measure_torque_constant(motor)
+        return True
+
+    def summary_lines(self) -> List[str]:
+        """One numbered line per motor with what is recorded (and the URDF check)."""
+        ranges = self.urdf_ranges
+        lines = [
+            f"  {'#':>2s} {'motor':16s} {'URDF joint':26s} {'dir':>3s} {'zero':>5s} "
+            f"{'travel (rad)':>17s}"
+            + (f" {'Kt':>7s}" if self.torque_constants else "")
+            + ("  check" if ranges is not None else "")
+        ]
+        for index, (motor, r) in enumerate(self.results.items(), start=1):
+            direction = f"{r.direction:+d}" if "direction" in r.measured else "?"
+            zero = "?" if r.zero_count is None else str(r.zero_count)
+            travel = (
+                "not measured"
+                if r.lower_limit_rad is None or r.upper_limit_rad is None
+                else f"[{r.lower_limit_rad:+.3f}, {r.upper_limit_rad:+.3f}]"
+            )
+            line = (
+                f"  {index:>2d} {motor:16s} {r.urdf_joint or '?':26s} {direction:>3s} {zero:>5s} "
+                f"{travel:>17s}"
+            )
+            if self.torque_constants:
+                kt = r.torque_constant_nm_per_a
+                line += f" {'-' if kt is None else f'{kt:.3f}':>7s}"
+            if ranges is not None:
+                line += "  " + ("; ".join(_urdf_check(r, ranges)[1]) or "ok")
+            lines.append(line)
+        return lines
+
+    def review(self) -> None:
+        """Show everything recorded and redo what the operator names, until Enter."""
+        while True:
+            self.console.say(f"\n[{self.side}] review before writing")
+            for line in self.summary_lines():
+                self.console.say(line)
+            answer = self.console.ask(
+                "  redo: '<#|motor> <steps>' (" + self._redo_help() + "), "
+                "'zero' for the whole reference pose; Enter = write"
+            ).strip()
+            if not answer:
+                return
+            words = answer.split()
+            if words[0].lower() == "zero" and len(words) == 1:
+                self.measure_zero(self.pose_description)
+                continue
+            motor = self._motor_named(words[0])
+            if motor is None or len(words) > 2:
+                self.console.say(f"    not understood: {answer!r} (e.g. '3 dl', 'torso_yaw z')")
+                continue
+            self.redo(motor, words[1] if len(words) == 2 else "r")
+
+    def _motor_named(self, word: str) -> str | None:
+        if word.isdigit() and 1 <= int(word) <= len(self.motors):
+            return self.motors[int(word) - 1]
+        return word if word in self.results else None
+
     def finish(self) -> None:
         """Mark complete joints validated and switch torque off."""
-        for result in self.results.values():
+        for motor, result in self.results.items():
             result.validated = result.complete_for_hardware
+            notes = "".join(self._notes[motor].values())
             result.notes = (
                 f"measured by robopy-rakuda-calibrate on {datetime.now():%Y-%m-%d}: "
                 + ", ".join(dict.fromkeys(result.measured))
-                + ("; " + result.notes if result.notes else "")
+                + ("; " + notes if notes else "")
             )
         self.bus.torque_disabled(self.motors)
 
     def run(
-        self, *, pose_description: str, torque_constants: bool = True
+        self, *, pose_description: str, torque_constants: bool = True, review: bool = True
     ) -> Dict[str, JointResult]:
-        """All steps in order."""
+        """All steps in order.
+
+        After each joint the operator may redo any of its steps; with
+        ``review`` every result is shown once more before anything is
+        returned, and any joint (or the whole zero pose) can be redone.
+        """
+        self.pose_description = pose_description
+        self.torque_constants = torque_constants
         self.console.say(
             f"\n=== {self.side.upper()} ===  torque OFF on {len(self.motors)} motors; "
             "support the arms"
@@ -514,6 +711,15 @@ class ArmCalibrator:
             self.measure_limits(motor)
             if torque_constants:
                 self.measure_torque_constant(motor)
+            while True:
+                answer = self.console.ask(
+                    f"  {motor}: Enter = next joint, or redo ({self._redo_help()})"
+                ).strip()
+                if not answer:
+                    break
+                self.redo(motor, answer)
+        if review:
+            self.review()
         self.finish()
         return self.results
 
@@ -692,35 +898,46 @@ def compare_with_urdf(
         f"  {'motor':16s} {'URDF joint':26s} {'URDF range':>17s}   {'machine range':>17s}  check"
     ]
     for motor, r in follower.items():
-        joint = r.urdf_joint or "?"
-        kind, lo_u, hi_u = ranges.get(joint, ("missing", None, None))
         lo_m, hi_m = r.lower_limit_rad, r.upper_limit_rad
-        urdf_text = (
-            "continuous"
-            if kind == "continuous"
-            else ("NOT IN URDF" if kind == "missing" else f"[{lo_u:+.3f}, {hi_u:+.3f}]")
-        )
+        urdf_text, flags = _urdf_check(r, ranges, tolerance_rad=tolerance_rad)
         machine_text = (
             "not measured" if lo_m is None or hi_m is None else f"[{lo_m:+.3f}, {hi_m:+.3f}]"
         )
-        flags: List[str] = []
-        if kind == "missing":
-            flags.append("unknown joint name")
-        if lo_m is not None and hi_m is not None:
-            if lo_m > tolerance_rad or hi_m < -tolerance_rad:
-                flags.append("zero pose outside the travel: check the pose and the direction")
-            if lo_u is not None and hi_u is not None:
-                if lo_m < lo_u - tolerance_rad or hi_m > hi_u + tolerance_rad:
-                    flags.append("machine goes beyond URDF (URDF stays binding)")
-                if lo_m > lo_u + tolerance_rad or hi_m < hi_u - tolerance_rad:
-                    flags.append("URDF wider than machine (soft limit narrows)")
-            elif kind == "continuous":
-                flags.append("URDF has no range (soft limit supplies it)")
         lines.append(
-            f"  {motor:16s} {joint:26s} {urdf_text:>17s}   {machine_text:>17s}  "
+            f"  {motor:16s} {r.urdf_joint or '?':26s} {urdf_text:>17s}   {machine_text:>17s}  "
             + ("; ".join(flags) or "ok")
         )
     return lines
+
+
+def _urdf_check(
+    r: JointResult,
+    ranges: Mapping[str, Tuple[str, float | None, float | None]],
+    *,
+    tolerance_rad: float = 0.05,
+) -> Tuple[str, List[str]]:
+    """The URDF range of ``r``'s joint as text, and what disagrees with the travel."""
+    kind, lo_u, hi_u = ranges.get(r.urdf_joint or "?", ("missing", None, None))
+    lo_m, hi_m = r.lower_limit_rad, r.upper_limit_rad
+    urdf_text = (
+        "continuous"
+        if kind == "continuous"
+        else ("NOT IN URDF" if kind == "missing" else f"[{lo_u:+.3f}, {hi_u:+.3f}]")
+    )
+    flags: List[str] = []
+    if kind == "missing":
+        flags.append("unknown joint name")
+    if lo_m is not None and hi_m is not None:
+        if lo_m > tolerance_rad or hi_m < -tolerance_rad:
+            flags.append("zero pose outside the travel: check the pose and the direction")
+        if lo_u is not None and hi_u is not None:
+            if lo_m < lo_u - tolerance_rad or hi_m > hi_u + tolerance_rad:
+                flags.append("machine goes beyond URDF (URDF stays binding)")
+            if lo_m > lo_u + tolerance_rad or hi_m < hi_u - tolerance_rad:
+                flags.append("URDF wider than machine (soft limit narrows)")
+        elif kind == "continuous":
+            flags.append("URDF has no range (soft limit supplies it)")
+    return urdf_text, flags
 
 
 def write_config(
@@ -1029,6 +1246,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         for arm in arms.values():
             arm.connect()
         buses = {side: arm.motors for side, arm in arms.items()}
+    urdf = args.urdf or _configured_urdf(existing or {})
+    ranges = urdf_joint_ranges(urdf) if urdf is not None and urdf.is_file() else None
     try:
         results: Dict[str, Dict[str, JointResult]] = {}
         for side in sides:
@@ -1039,6 +1258,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 console,
                 current_fraction=args.current_fraction,
                 current_reader=console.current_a if args.simulate else None,
+                urdf_ranges=ranges,
             )
             if args.simulate:
                 for motor in motors:
@@ -1054,10 +1274,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         follower = results.get("follower")
         if follower is not None:
-            urdf = args.urdf or _configured_urdf(control)
-            if urdf is not None and urdf.is_file():
+            if ranges is not None:
                 console.say(f"\nfollower travel against {urdf} (rad):")
-                for line in compare_with_urdf(follower, urdf_joint_ranges(urdf)):
+                for line in compare_with_urdf(follower, ranges):
                     console.say(line)
             else:
                 console.say("\nno URDF found to compare the follower's travel with")

@@ -132,6 +132,97 @@ class TestArmCalibrator:
             ArmCalibrator(bus, "sideways", ["torso_yaw"], console)
 
 
+class TestRedo:
+    def test_a_joint_is_redone_right_away_and_from_the_review(self) -> None:
+        bus = simulated_buses(MOTORS)["follower"]
+        console = ScriptedConsole(
+            bus,
+            [
+                "",
+                "",
+                "",  # URDF joints
+                "",  # zero pose
+                "move:torso_yaw=0.1",  # the ends, pressed too early: almost no travel
+                "move:torso_yaw=0.12",
+                "l",  # redo the travel
+                "move:torso_yaw=-0.6",
+                "move:torso_yaw=0.6",
+                "",  # next joint
+                "move:r_arm_sh_pitch1=0.3",
+                "move:r_arm_sh_pitch1=-0.3",
+                "",
+                "move:l_arm_sh_pitch1=0.2",
+                "move:l_arm_sh_pitch1=-0.4",
+                "",
+                # review: 3 was moved the wrong way when the direction was taken
+                "3 d",
+                "zero",  # then the whole pose again: every joint 0.1 rad off before
+                "",  # write
+            ],
+        )
+        console.nudge = 0.01
+        bus.joint("torso_yaw").position_rad = 0.0
+        cal = ArmCalibrator(bus, "follower", MOTORS, console)
+        cal.read_registers()
+        cal.pose_description = "straight"
+        cal.torque_constants = False
+        cal.confirm_urdf_joints()
+        cal.measure_zero("straight")
+        zero = {m: cal.results[m].zero_count for m in MOTORS}
+        for motor in MOTORS:
+            cal.measure_direction(motor)
+            cal.measure_limits(motor)
+            while answer := console.ask("next?").strip():
+                cal.redo(motor, answer)
+        torso = cal.results["torso_yaw"]
+        assert torso.lower_limit_rad is not None and torso.upper_limit_rad is not None
+        assert torso.upper_limit_rad - torso.lower_limit_rad > 1.0  # the redone travel
+        left = cal.results["l_arm_sh_pitch1"]
+        assert left.direction == 1
+        console.nudge = -0.01  # the operator now turns it the other way
+        for m in MOTORS:  # and puts everything 0.1 rad further for the new zero
+            bus.joint(m).position_rad = 0.1
+        before = (left.lower_limit_rad, left.upper_limit_rad)
+        cal.review()
+        cal.finish()
+        assert left.direction == -1
+        assert left.lower_limit_rad is not None and left.upper_limit_rad is not None
+        assert (left.lower_limit_rad, left.upper_limit_rad) != before  # re-derived, not re-moved
+        assert all(cal.results[m].zero_count != zero[m] for m in MOTORS)
+        assert torso.notes.count("upper_limit_rad") == 1
+        assert "limits not measured" not in torso.notes
+        assert any("review before writing" in line for line in console.lines)
+
+    def test_mistyped_numbers_and_joint_names_are_asked_again(self) -> None:
+        bus = simulated_buses(MOTORS)["follower"]
+        console = ScriptedConsole(
+            bus,
+            ["shoulder_pitch_rigth_dof", "shoulder_pitch_right_dof", "y", "", "0,5", "-1", "0.5"],
+        )
+        cal = ArmCalibrator(
+            bus,
+            "follower",
+            ["r_arm_sh_pitch1"],
+            console,
+            current_reader=lambda m: 0.1,
+            urdf_ranges={"shoulder_pitch_right_dof": ("revolute", -1.0, 1.0)},
+        )
+        cal.confirm_urdf_joints()
+        assert cal.results["r_arm_sh_pitch1"].urdf_joint == "shoulder_pitch_right_dof"
+        assert any("not a movable joint" in line for line in console.lines)
+        # mass: '0,5' and -1 are refused, 0.5 taken; the lever arm is left empty: cancelled
+        assert cal.measure_torque_constant("r_arm_sh_pitch1", settle_s=0.0) is None
+        assert any("not a number" in line for line in console.lines)
+        assert any("must be positive" in line for line in console.lines)
+        assert any("cancelled" in line for line in console.lines)
+        assert bus.registers("r_arm_sh_pitch1").torque_enable == 0
+        # the same unknown name twice is taken as meant
+        console.answers = ["custom_dof", "custom_dof"]
+        cal.confirm_urdf_joints()
+        assert cal.results["r_arm_sh_pitch1"].urdf_joint == "custom_dof"
+        assert not cal.redo("r_arm_sh_pitch1", "x")
+
+
 def _result(motor: str, complete: bool) -> JointResult:
     r = JointResult(
         motor=motor,
