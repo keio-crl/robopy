@@ -14,6 +14,7 @@ from robopy.robots.rakuda.calibrate import (
     ArmCalibrator,
     AutoConsole,
     JointResult,
+    _urdf_check,
     build_control_section,
     compare_with_urdf,
     main,
@@ -221,6 +222,66 @@ class TestRedo:
         cal.confirm_urdf_joints()
         assert cal.results["r_arm_sh_pitch1"].urdf_joint == "custom_dof"
         assert not cal.redo("r_arm_sh_pitch1", "x")
+
+
+class TestSuspiciousResults:
+    def test_moving_another_joint_or_too_little_is_reported(self) -> None:
+        bus = simulated_buses(MOTORS)["follower"]
+        console = ScriptedConsole(
+            bus,
+            [
+                "",  # zero pose
+                # r_arm_sh_pitch1's ends, but the operator moves l_arm_sh_pitch1
+                "move:l_arm_sh_pitch1=0.8",
+                "move:l_arm_sh_pitch1=-0.8",
+                # torso: ends barely apart
+                "move:torso_yaw=0.05",
+                "move:torso_yaw=-0.05",
+            ],
+        )
+        cal = ArmCalibrator(bus, "follower", MOTORS, console)
+        cal.measure_zero("straight")
+        cal.measure_limits("r_arm_sh_pitch1")
+        cal.measure_limits("torso_yaw")
+        table = "\n".join(cal.summary_lines())
+        assert "l_arm_sh_pitch1 moved instead" in table
+        assert "travel only 6 deg" in table
+        assert any("probably swapped" in line for line in console.lines)
+        console.answers = ["move:torso_yaw=1.0", "move:torso_yaw=-1.0"]
+        cal.measure_limits("torso_yaw")  # measured again: the warning goes
+        assert "travel only" not in "\n".join(cal.summary_lines())
+
+    def test_reversed_direction_and_disjoint_travel(self) -> None:
+        ranges = {
+            "shoulder_roll_right_dof": ("revolute", -3.361, 0.478),
+            "elbow_pitch_right_dof": ("revolute", -2.793, 0.0),
+        }
+        roll = _result("r_arm_sh_roll", False)
+        roll.lower_limit_rad, roll.upper_limit_rad = -0.069, 1.842  # as measured on the machine
+        _, flags = _urdf_check(roll, ranges)
+        assert any("direction probably reversed" in f for f in flags)
+        elbow = _result("r_arm_sh_pitch2", False)
+        elbow.urdf_joint = "elbow_pitch_right_dof"
+        elbow.lower_limit_rad, elbow.upper_limit_rad = 0.045, 0.149
+        _, flags = _urdf_check(elbow, ranges)
+        assert any("does not overlap" in f for f in flags)
+        elbow.measured = ["urdf_joint", "zero_count", "direction", "lower_limit_rad"]
+        elbow.measured.append("upper_limit_rad")
+        stale = {
+            "soft_limits_rad": {
+                "elbow_pitch_right_dof": {
+                    "lower": 0.0104,
+                    "upper": 0.1139,
+                    "validated": True,
+                    "note": "follower r_arm_sh_pitch2 travel measured by robopy-rakuda-calibrate",
+                }
+            }
+        }
+        model, notes = model_soft_limits(
+            {"r_arm_sh_pitch2": elbow}, existing_model=stale, urdf_ranges=ranges
+        )
+        assert "elbow_pitch_right_dof" not in model["soft_limits_rad"]  # neither old nor new
+        assert any("does not overlap" in n for n in notes)
 
 
 def _result(motor: str, complete: bool) -> JointResult:

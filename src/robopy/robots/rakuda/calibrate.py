@@ -251,6 +251,8 @@ class ArmCalibrator:
         move_threshold_counts: Count change that counts as "the joint moved"
             when finding the direction.
         move_timeout_s: How long to wait for that movement.
+        min_travel_rad: A travel narrower than this is reported as suspicious
+            (an end not reached, or another joint moved).
         urdf_ranges: ``{joint: (type, lower, upper)}`` of the model
             (:func:`urdf_joint_ranges`): joint names typed by the operator are
             checked against it, and the review table compares the travel.
@@ -267,6 +269,7 @@ class ArmCalibrator:
         current_fraction: float = 0.5,
         move_threshold_counts: int = 40,
         move_timeout_s: float = 20.0,
+        min_travel_rad: float = math.radians(20.0),
         current_reader: Callable[[str], float] | None = None,
         urdf_ranges: Mapping[str, Tuple[str, float | None, float | None]] | None = None,
     ) -> None:
@@ -285,6 +288,7 @@ class ArmCalibrator:
         self.current_fraction = current_fraction
         self.move_threshold = move_threshold_counts
         self.move_timeout_s = move_timeout_s
+        self.min_travel_rad = min_travel_rad
         self.current_reader = current_reader
         self.urdf_ranges = dict(urdf_ranges) if urdf_ranges is not None else None
         self.results: Dict[str, JointResult] = {m: JointResult(motor=m) for m in self.motors}
@@ -295,6 +299,9 @@ class ArmCalibrator:
         self._ends: Dict[str, Tuple[int, int]] = {}
         # Notes per step, so redoing a step replaces its note instead of piling up.
         self._notes: Dict[str, Dict[str, str]] = {m: {} for m in self.motors}
+        # Suspicions per step (another motor moved, travel too small), shown in
+        # the review until the step is measured again.
+        self._warnings: Dict[str, Dict[str, str]] = {m: {} for m in self.motors}
 
     # -- readings -----------------------------------------------------------
 
@@ -430,7 +437,9 @@ class ArmCalibrator:
             f"\n  {motor} -> {joint}: move the joint by hand in the direction the model calls "
             f"POSITIVE (right-hand rule about its axis), then hold."
         )
-        start = self._position(motor)
+        self._suspect(motor, "direction")
+        before = self._positions()
+        start = before[motor]
         deadline = time.monotonic() + self.move_timeout_s
         delta = 0
         polls = 0
@@ -446,6 +455,7 @@ class ArmCalibrator:
         result.direction = 1 if delta > 0 else -1
         self._mark(motor, "direction")
         self.console.say(f"  count {start} -> {start + delta}: direction={result.direction:+d}")
+        self._check_other_motors(motor, "direction", before)
         self._apply_limits(motor)
         return result.direction
 
@@ -456,19 +466,75 @@ class ArmCalibrator:
         if zero is None:
             raise RuntimeError("measure_zero() must run before the limits.")
         rad_per_count = self._rad_per_count(motor)
-        counts: List[int] = []
+        self._suspect(motor, "limits")
+        snapshots: List[Dict[str, int]] = []
         for which in ("one end", "the other end"):
             self.console.ask(
                 f"  {motor}: move the joint to {which} of its travel, then press Enter"
             )
-            counts.append(self._position(motor))
-            rad = result.direction * (counts[-1] - zero) * rad_per_count
-            self.console.say(f"    count={counts[-1]} -> {rad:+.3f} rad")
-        self._ends[motor] = (counts[0], counts[1])
+            snapshots.append(self._positions())
+            count = snapshots[-1][motor]
+            rad = result.direction * (count - zero) * rad_per_count
+            self.console.say(f"    count={count} -> {rad:+.3f} rad")
+        self._ends[motor] = (snapshots[0][motor], snapshots[1][motor])
+        travel = abs(snapshots[1][motor] - snapshots[0][motor]) * rad_per_count
+        if not self._check_other_motors(motor, "limits", snapshots[0], snapshots[1]):
+            if travel < self.min_travel_rad:
+                self._suspect(
+                    motor,
+                    "limits",
+                    f"travel only {math.degrees(travel):.0f} deg: were both ends reached?",
+                    f"travel only {math.degrees(travel):.0f} deg",
+                )
         self._apply_limits(motor, announce=False)
 
     def _rad_per_count(self, motor: str) -> float:
         return 2.0 * math.pi / self.bus.capabilities(motor).counts_per_revolution
+
+    def _suspect(self, motor: str, step: str, text: str = "", short: str = "") -> None:
+        """Set (or clear) a warning: ``text`` now, ``short`` in the review's check column."""
+        if text:
+            self._warnings[motor][step] = f"!! {short or text}"
+            self.console.say(f"  !! {motor}: {text}")
+        else:
+            self._warnings[motor].pop(step, None)
+
+    def _check_other_motors(
+        self,
+        motor: str,
+        step: str,
+        before: Mapping[str, int],
+        after: Mapping[str, int] | None = None,
+    ) -> bool:
+        """Warn when another motor moved clearly more than ``motor`` did.
+
+        That is what a wrong motor -> URDF joint answer looks like: the
+        operator moves the joint the prompt names, and a different motor
+        turns.  Returns whether a warning was given.
+        """
+        after = after if after is not None else self._positions()
+
+        def moved(m: str) -> float:
+            return abs(after[m] - before[m]) * self._rad_per_count(m)
+
+        own = moved(motor)
+        others = [(moved(m), m) for m in self.motors if m != motor and m in after and m in before]
+        if not others:
+            return False
+        most, other = max(others)
+        if most < math.radians(10.0) or most < 2.0 * own:
+            return False
+        joint = self.results[other].urdf_joint or "?"
+        self._suspect(
+            motor,
+            step,
+            f"{other} moved {math.degrees(most):.0f} deg but {motor} only "
+            f"{math.degrees(own):.0f} deg: the joint you moved is {other}'s ({joint}); "
+            f"if that is the joint the prompt meant, the URDF joints of {motor} and {other} "
+            "are probably swapped: fix them with 'u' and measure both again with 'r'",
+            f"{other} moved instead (URDF joints swapped?)",
+        )
+        return True
 
     def _apply_limits(self, motor: str, *, announce: bool = True) -> None:
         """The limits from the recorded ends, the zero and the direction."""
@@ -624,9 +690,7 @@ class ArmCalibrator:
         ranges = self.urdf_ranges
         lines = [
             f"  {'#':>2s} {'motor':16s} {'URDF joint':26s} {'dir':>3s} {'zero':>5s} "
-            f"{'travel (rad)':>17s}"
-            + (f" {'Kt':>7s}" if self.torque_constants else "")
-            + ("  check" if ranges is not None else "")
+            f"{'travel (rad)':>17s}" + (f" {'Kt':>7s}" if self.torque_constants else "") + "  check"
         ]
         for index, (motor, r) in enumerate(self.results.items(), start=1):
             direction = f"{r.direction:+d}" if "direction" in r.measured else "?"
@@ -643,8 +707,10 @@ class ArmCalibrator:
             if self.torque_constants:
                 kt = r.torque_constant_nm_per_a
                 line += f" {'-' if kt is None else f'{kt:.3f}':>7s}"
+            flags = list(self._warnings[motor].values())
             if ranges is not None:
-                line += "  " + ("; ".join(_urdf_check(r, ranges)[1]) or "ok")
+                flags += _urdf_check(r, ranges)[1]
+            line += "  " + ("; ".join(flags) or "ok")
             lines.append(line)
         return lines
 
@@ -817,6 +883,7 @@ def model_soft_limits(
     *,
     existing_model: Mapping[str, Any] | None = None,
     margin_rad: float = 0.0,
+    urdf_ranges: Mapping[str, Tuple[str, float | None, float | None]] | None = None,
 ) -> Tuple[Dict[str, Any], List[str]]:
     """``control.model`` with the follower's measured travel as soft limits.
 
@@ -828,11 +895,18 @@ def model_soft_limits(
     limit on its URDF joint.  A soft limit only narrows: where the machine
     travels further than the URDF allows, the URDF range still stands.
 
+    A soft limit an earlier run wrote for a motor measured now is dropped
+    first (its URDF joint may have been corrected since), and one that would
+    not overlap the URDF range at all -- the model would refuse to load -- is
+    not written.
+
     Args:
         follower: The follower's results.
         existing_model: The current ``control.model`` section; its other
             entries, and soft limits of joints not measured now, are kept.
         margin_rad: Inward margin on each end.
+        urdf_ranges: The URDF's ranges (:func:`urdf_joint_ranges`), to refuse
+            a soft limit outside them.
 
     Returns:
         The model section and notes for the operator.
@@ -840,6 +914,11 @@ def model_soft_limits(
     notes: List[str] = []
     model: Dict[str, Any] = dict(existing_model or {})
     soft: Dict[str, Any] = dict(model.get("soft_limits_rad") or {})
+    for motor in follower:
+        written_before = f"follower {motor} travel "
+        for joint, entry in list(soft.items()):
+            if isinstance(entry, Mapping) and str(entry.get("note", "")).startswith(written_before):
+                del soft[joint]
     for motor, r in follower.items():
         needed = ("zero_count", "direction", "lower_limit_rad", "upper_limit_rad", "urdf_joint")
         missing = [k for k in needed if k not in r.measured]
@@ -850,6 +929,14 @@ def model_soft_limits(
         lower, upper = r.lower_limit_rad + margin_rad, r.upper_limit_rad - margin_rad
         if lower >= upper:
             notes.append(f"{motor}: travel narrower than twice the margin; no soft limit written")
+            continue
+        _, lo_u, hi_u = (urdf_ranges or {}).get(r.urdf_joint, ("", None, None))
+        if lo_u is not None and hi_u is not None and max(lower, lo_u) >= min(upper, hi_u):
+            notes.append(
+                f"{motor}: travel [{lower:+.3f}, {upper:+.3f}] does not overlap the URDF range of "
+                f"{r.urdf_joint} [{lo_u:+.3f}, {hi_u:+.3f}] (wrong joint or direction?); "
+                "no soft limit written"
+            )
             continue
         soft[r.urdf_joint] = {
             "lower": round(lower, 4),
@@ -931,9 +1018,17 @@ def _urdf_check(
         if lo_m > tolerance_rad or hi_m < -tolerance_rad:
             flags.append("zero pose outside the travel: check the pose and the direction")
         if lo_u is not None and hi_u is not None:
-            if lo_m < lo_u - tolerance_rad or hi_m > hi_u + tolerance_rad:
+            beyond = lo_m < lo_u - tolerance_rad or hi_m > hi_u + tolerance_rad
+            flipped_beyond = -hi_m < lo_u - tolerance_rad or -lo_m > hi_u + tolerance_rad
+            if beyond and not flipped_beyond:
+                flags.append(
+                    "direction probably reversed: the flipped travel fits the URDF (redo d)"
+                )
+            elif beyond:
                 flags.append("machine goes beyond URDF (URDF stays binding)")
-            if lo_m > lo_u + tolerance_rad or hi_m < hi_u - tolerance_rad:
+            if max(lo_m, lo_u) >= min(hi_m, hi_u):
+                flags.append("travel does not overlap the URDF range: no soft limit is written")
+            elif lo_m > lo_u + tolerance_rad or hi_m < hi_u - tolerance_rad:
                 flags.append("URDF wider than machine (soft limit narrows)")
         elif kind == "continuous":
             flags.append("URDF has no range (soft limit supplies it)")
@@ -1285,6 +1380,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     follower,
                     existing_model=control.get("model"),
                     margin_rad=math.radians(args.limit_margin_deg),
+                    urdf_ranges=ranges,
                 )
                 control["model"] = model
                 notes += soft_notes
