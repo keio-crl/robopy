@@ -626,7 +626,8 @@ class TestVRServer:
             while time.monotonic() < deadline:
                 client.send_json({"type": "ping", "t": 1.0})
                 reply = client.recv_json()
-                assert reply == {"type": "pong", "t": 1.0}
+                # A ping is answered with the machine's state (joints, twin), t echoed.
+                assert reply["type"] == "state" and reply["t"] == 1.0 and "joints" in reply
                 time.sleep(server.vr_config.teleop_timeout_s / 3)
             client.send_json({"type": "pose", "head": HEAD0, "left": None, "right": None})
             assert client.recv_json()["type"] == "state"  # still driving

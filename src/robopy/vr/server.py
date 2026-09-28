@@ -22,7 +22,9 @@ Client -> server::
               | null,
      "right": {...} | null}
     {"type": "recenter"}
-    {"type": "ping"}                       keepalive; answered with {"type": "pong"}
+    {"type": "ping"}                       keepalive; answered with a full "state" (the machine's
+                                            joints and the twin's poses), so the page shows the
+                                            robot as it stands before the headset streams poses
     {"type": "set", "head_enabled": bool, "arms_enabled": bool,
      "position_scale": float, "orientation_enabled": bool, "want_poses": bool}
 
@@ -374,9 +376,14 @@ class TeleopSession:
             return self._record(message, now_s)
         if kind == "ping":
             # Keepalive from a page that is connected but not yet streaming
-            # poses (before Enter VR); answering it also lets the page measure
-            # the link.
-            return {"type": "pong", "t": message.get("t")}
+            # poses (before Enter VR).  Answered with a full state rather than
+            # a bare pong: the machine's measured joints and the twin's poses
+            # go with it, so the page draws the robot as it actually stands
+            # from the first second, not at the model's zero until the headset
+            # starts sending poses.  The page measures the link from ``t``
+            # either way.
+            state = self._state(now_s, echo_t=message.get("t"), force=True)
+            return state if state is not None else {"type": "pong", "t": message.get("t")}
         return {"type": "error", "message": f"unknown message type {kind!r}"}
 
     # -- recording ----------------------------------------------------------
