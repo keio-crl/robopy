@@ -480,8 +480,13 @@ class RakudaControlSystem:
                     "follow a separate hold/disable policy."
                 )
 
-        leader_motors = cls._motors_for_mode(mode, config, list(leader_bus.motors))
-        follower_motors = cls._motors_for_mode(mode, config, list(follower_bus.motors))
+        leader_motors = cls._motors_for_mode(mode, config, leader_map)
+        follower_motors = cls._motors_for_mode(mode, config, follower_map)
+        if mode is ControlMode.CARTESIAN_TELEOP and not follower_motors:
+            raise JointMapError(
+                "cartesian_teleop: no follower motor has a zero and both travel limits; "
+                "calibrate the follower first (robopy-rakuda-calibrate --side follower)."
+            )
 
         system = cls(
             config,
@@ -509,12 +514,26 @@ class RakudaControlSystem:
     def _motors_for_mode(
         mode: ControlMode,
         config: RakudaControlConfig,
-        all_motors: Sequence[str],
+        joint_map: JointMap,
     ) -> List[str]:
-        """Motors the servo reads and commands in ``mode``."""
+        """Motors the servo reads and commands in ``mode``.
+
+        Cartesian teleoperation drives the motors with a geometry-level
+        calibration (zero and both travel limits): the model's joints through
+        the solver, and a calibrated gripper or head through direct targets.
+        The others -- an uncalibrated head or gripper, or a leader that is not
+        part of the mode -- are left exactly as they are, neither read nor
+        commanded, rather than converted with a zero that was never measured.
+        """
         if mode is ControlMode.BILATERAL_JOINT:
             return list(config.bilateral.coupled_motors)
-        return list(all_motors)
+        if mode is ControlMode.CARTESIAN_TELEOP:
+            return [
+                name
+                for name in joint_map.motor_names
+                if joint_map[name].is_complete(ValidationLevel.GEOMETRY)
+            ]
+        return list(joint_map.motor_names)
 
     # -- properties ---------------------------------------------------------
 

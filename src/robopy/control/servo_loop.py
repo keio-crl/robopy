@@ -264,7 +264,11 @@ class ArmServo:
         self._map = joint_map
         self._manager = manager
         self._config = config or ServoLoopConfig()
-        self._motor_names: Tuple[str, ...] = tuple(motor_names or joint_map.motor_names)
+        # An explicit empty list is respected: such a servo owns its bus but
+        # reads and commands nothing (a leader that is not part of the mode).
+        self._motor_names: Tuple[str, ...] = (
+            tuple(motor_names) if motor_names is not None else tuple(joint_map.motor_names)
+        )
 
         unknown = [n for n in self._motor_names if n not in joint_map]
         if unknown:
@@ -337,9 +341,12 @@ class ArmServo:
                 failure.  The caller decides whether that is a fault.
         """
         started = time.perf_counter()
-        readings, start_ns, end_ns = self._bus.read_state_block(
-            self._motor_names, timeout_s=self._config.read_timeout_s
-        )
+        if self._motor_names:
+            readings, start_ns, end_ns = self._bus.read_state_block(
+                self._motor_names, timeout_s=self._config.read_timeout_s
+            )
+        else:
+            readings, start_ns, end_ns = {}, monotonic_ns(), monotonic_ns()
         self._read_stats.record(time.perf_counter() - started, budget_s=self._config.read_timeout_s)
 
         n = len(self._motor_names)
@@ -392,7 +399,7 @@ class ArmServo:
             )
             if not due:
                 return dict(self._snapshot.diagnostics)
-        values = self._bus.read_diagnostics(self._motor_names)
+        values = self._bus.read_diagnostics(self._motor_names) if self._motor_names else {}
         with self._lock:
             self._snapshot.diagnostics = values
             self._snapshot.diagnostics_ns = now
@@ -407,6 +414,8 @@ class ArmServo:
             as unknown rather than assumed healthy.
         """
         cfg = self._config
+        if not self._motor_names:
+            return []
         with self._lock:
             values = dict(self._snapshot.diagnostics)
             age_ns = monotonic_ns() - self._snapshot.diagnostics_ns
@@ -444,6 +453,8 @@ class ArmServo:
         """Problems visible in one snapshot: validity, age, spread, range, finiteness."""
         cfg = self._config
         problems: List[str] = []
+        if not self._motor_names:
+            return problems
         invalid = [n for i, n in enumerate(state.joint_names) if not state.valid[i]]
         if invalid:
             problems.append(f"{self._name}: no valid reading for {invalid}.")
@@ -512,6 +523,8 @@ class ArmServo:
             ValueError: If the calibration is not complete enough for the mode,
                 or a motor's model does not support the required mode.
         """
+        if not self._motor_names:
+            return  # nothing to configure: this servo takes no part in the mode
         target_mode = {
             ControlMode.POSITION_TELEOP: OperatingMode.POSITION,
             ControlMode.CARTESIAN_TELEOP: OperatingMode.POSITION,
@@ -748,6 +761,8 @@ class ArmServo:
             motor's own ``BUS_WATCHDOG``, configured via
             :attr:`ServoLoopConfig.bus_watchdog_counts`.
         """
+        if not self._motor_names:
+            return f"{self._name}: owns no motor in this mode; nothing to stop."
         policy = self._config.stop_policy
         if policy == StopPolicy.ZERO_CURRENT:
             self._bus.write_goal_current_a(
@@ -883,8 +898,9 @@ class ServoLoop:
                 raise RuntimeError("; ".join(problems))
             states[servo.name] = state
 
-        if len(states) > 1:
-            times = [s.read_end_ns for s in states.values()]
+        # A servo that owns no motor did not read a bus: it has no snapshot to skew.
+        times = [s.read_end_ns for s in states.values() if len(s.joint_names)]
+        if len(times) > 1:
             skew = (max(times) - min(times)) * 1e-9
             if skew > self._config.max_cross_bus_skew_s:
                 raise RuntimeError(

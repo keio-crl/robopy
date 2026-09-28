@@ -282,8 +282,23 @@ def build_parser() -> argparse.ArgumentParser:
     hw.add_argument(
         "--hardware",
         action="store_true",
-        help="drive the real follower via .robopy/rakuda/config.yaml (needs --config and a "
-        "control section in cartesian_teleop mode). THE ROBOT WILL MOVE.",
+        help="drive the real follower via .robopy/rakuda/config.yaml (needs a control section "
+        "in cartesian_teleop mode). Without a leader port the follower alone is driven. "
+        "THE ROBOT WILL MOVE.",
+    )
+    hw.add_argument(
+        "--release-on-exit",
+        action="store_true",
+        help="follower-only --hardware: switch the follower's torque OFF when the session ends "
+        "(the arms go limp: support them). Default: the follower keeps holding its pose with "
+        "torque ON and only the port is closed",
+    )
+    hw.add_argument(
+        "--hardware-check",
+        action="store_true",
+        help="with --hardware: connect, build and validate the control system, print which "
+        "motors it would drive and where the hands are, then exit WITHOUT enabling torque "
+        "or starting the loop",
     )
     hw.add_argument(
         "--hardware-head",
@@ -660,6 +675,17 @@ def _start_pose(
     return {k: v for k, v in DEFAULT_START_POSE.items() if k in joints}
 
 
+def _simulated_leader_bus(cfg: Any) -> Any:
+    """A leader bus that exists only in memory, for a follower-only hardware session."""
+    from robopy.motor.sim_dynamixel_bus import SimulatedDynamixelBus, SimulatedJoint
+    from robopy.robots.rakuda.rakuda_leader import RakudaLeader
+
+    motors = RakudaLeader(cfg)._create_motors()
+    return SimulatedDynamixelBus(
+        motors, joints={name: SimulatedJoint() for name in motors}, auto_step=True
+    )
+
+
 def _machine_start_pose(
     args: argparse.Namespace,
     parser: argparse.ArgumentParser,
@@ -794,6 +820,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     pair = None
     follower = None
     leader = None
+    hardware_system: Any = None
     head_motors: Any = None
     head_backend: Any = None
     try:
@@ -815,10 +842,56 @@ def main(argv: Sequence[str] | None = None) -> int:
                 parser.error(
                     "--hardware needs control.mode: cartesian_teleop in .robopy/rakuda/config.yaml"
                 )
-            print("HARDWARE MODE: connecting to the arms and starting Cartesian control.")
-            pair = RakudaPairSys(cfg)
-            pair.connect()
-            system = pair.start_control()
+            if cfg.leader_port:
+                print("HARDWARE MODE: connecting to both arms and building Cartesian control.")
+                pair = RakudaPairSys(cfg)
+                pair.connect()
+                system = pair.build_control_system()
+            else:
+                # Follower only: the leader takes no part in Cartesian teleoperation,
+                # so its bus is a simulated stand-in that the servo never touches.
+                from robopy.robots.rakuda.rakuda_control import RakudaControlSystem
+                from robopy.robots.rakuda.rakuda_follower import RakudaFollower
+
+                if not cfg.follower_port:
+                    parser.error(
+                        "--hardware needs --follower-port (or follower_port in the config)"
+                    )
+                print(
+                    "HARDWARE MODE: connecting to the follower (no leader port: the follower alone "
+                    "is driven) and building Cartesian control."
+                )
+                follower = RakudaFollower(cfg)
+                follower.connect()
+                system = RakudaControlSystem.from_buses(
+                    cfg.control, _simulated_leader_bus(cfg), follower.motors
+                )
+            driven = list(system.follower.motor_names)
+            idle = sorted(set(system.follower.bus.motors) - set(driven))
+            print(f"  follower motors driven ({len(driven)}): {', '.join(driven)}")
+            if idle:
+                print(f"  left as they are (no geometry calibration): {', '.join(idle)}")
+            for side in ("left", "right"):
+                p = system.hand_pose(side)[:3, 3]
+                print(
+                    f"  {side} hand now at x={p[0]:+.3f} y={p[1]:+.3f} z={p[2]:+.3f} m (robot base)"
+                )
+            if args.hardware_check:
+                report = system.report()
+                gaps = report["calibration_gaps"].get("follower", {})
+                print(f"  follower calibration gaps: {gaps or 'none'}")
+                print(
+                    "check only: torque NOT enabled, loop NOT started. Remove --hardware-check "
+                    "to drive."
+                )
+                return 0
+            print("  enabling torque (the follower holds its pose) and starting the loop")
+            system.configure()
+            system.align()
+            system.start()
+            hardware_system = system
+            if pair is not None:
+                pair._control_system = system  # so pair.stop_control() stops it on the way out
             backend: Any = ControlSystemBackend(system, target_ttl_s=args.target_ttl)
             model = system.model
         elif args.hardware_head:
@@ -1203,10 +1276,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 pair.disconnect()
         if head_backend is not None:
             head_backend.close()
+        if hardware_system is not None and pair is None:
+            try:
+                print("stopping control:", "; ".join(hardware_system.stop()))
+            except Exception as exc:  # noqa: BLE001 - reported, the disconnect still runs
+                print(f"stopping control failed: {exc}")
         if leader is not None:
             leader.disconnect()
         if follower is not None:
-            follower.disconnect()  # the follower's own convention: torque off on the way out
+            if hardware_system is not None and pair is None and not args.release_on_exit:
+                # The stop policy left the follower holding its pose in position
+                # control; keep it that way rather than dropping the arms.
+                print(
+                    "the follower keeps HOLDING its pose with torque ON (--release-on-exit "
+                    "to let it go limp); its port is closed."
+                )
+                follower.motors.close()
+            else:
+                follower.disconnect()  # the follower's own convention: torque off on the way out
         loaded.cleanup()
     return 0
 

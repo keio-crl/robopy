@@ -69,6 +69,7 @@ residuals rather than assumed away.
 
 from __future__ import annotations
 
+import logging
 import math
 import time
 from dataclasses import dataclass, field
@@ -95,6 +96,8 @@ __all__ = [
     "DualArmIKResult",
     "DualArmIKStatus",
 ]
+
+logger = logging.getLogger(__name__)
 
 ORIENTATION_MODES: Tuple[str, ...] = ("position_only", "pose", "axis_aligned")
 PRIORITY_MODES: Tuple[str, ...] = ("weighted", "hierarchical")
@@ -618,6 +621,9 @@ class DualArmIK:
         self._previous_dt: float | None = None
         self._posture_q: NDArray[np.float64] | None = None
         self._has_collision = model.collision_model is not None
+        # Model joints the measured state left out and that were taken as 0
+        # (warned about once; see _configuration_from_state).
+        self._assumed_zero_joints: List[str] = []
         self._stage2_note = ""
 
     # -- properties ---------------------------------------------------------
@@ -1081,11 +1087,24 @@ class DualArmIK:
         }
         missing = sorted(set(self._model.movable_joint_names) - set(known))
         if missing:
-            raise KeyError(
-                f"The measured state does not cover model joint(s) {missing}. The head is not a "
-                "decision variable but its measured angle is still needed, because it moves the "
-                "collision geometry."
-            )
+            if self._has_collision:
+                raise KeyError(
+                    f"The measured state does not cover model joint(s) {missing}. The head is "
+                    "not a decision variable but its measured angle is still needed, because it "
+                    "moves the collision geometry."
+                )
+            # Without collision geometry an unmeasured joint that is not a
+            # decision variable changes nothing the solver decides: take it as
+            # 0 rad (an uncalibrated head), and say so once.
+            if missing != self._assumed_zero_joints:
+                logger.warning(
+                    "The measured state does not cover model joint(s) %s; taken as 0 rad. "
+                    "Calibrate them for their true angle (it only matters for collision "
+                    "geometry, which this model does not carry).",
+                    missing,
+                )
+                self._assumed_zero_joints = missing
+            known.update({name: 0.0 for name in missing})
         return self._model.q_from_positions(known)
 
     def _update_task_targets(

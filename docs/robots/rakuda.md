@@ -528,8 +528,13 @@ uv run --extra kinematics robopy-vr --config --start-pose machine --follower-por
 # 頭部カメラを OpenCV デバイスから配信
 uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem --camera opencv:0
 
-# 実機（.robopy/rakuda/config.yaml の control.mode: cartesian_teleop が必要。ロボットが動きます）
-uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem --config --hardware
+# 実機（.robopy/rakuda/config.yaml の control.mode: cartesian_teleop が必要。ロボットが動きます）。
+#   リーダーのポートが無ければフォロワだけを駆動する。--hardware-check はトルクを入れずに接続・検証・
+#   「どのモータを駆動するか」「手先が今どこにあるか」を表示して終わる（実機に入る前の確認）
+uv run --extra kinematics robopy-vr --hardware --hardware-check --follower-port /dev/ttyUSB0
+uv run --extra kinematics robopy-vr --hardware --follower-port /dev/ttyUSB0 --host 0.0.0.0 --self-signed
+#   駆動するのは URDF 関節・ゼロ・可動域が校正済みのモータだけ（頭・グリッパは未校正なら触らない。未測定の
+#   関節は IK が 0 rad とみなす）。終了時はフォロワがトルク ON のまま姿勢を保持する（--release-on-exit で脱力）
 
 # 実機の頭だけ（腕は動かさない）＋頭部 RealSense の投影。制御系も校正も不要
 uv run --extra kinematics robopy-vr --hardware-head --follower-port /dev/ttyUSB1 --camera realsense \
