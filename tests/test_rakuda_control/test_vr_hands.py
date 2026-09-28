@@ -82,9 +82,19 @@ def hand_entry(**kwargs: Any) -> Dict[str, Any]:
 
 
 def reading(
-    *, tracked: bool = True, middle_pinch: bool = False, stop_sign: bool = False
+    *,
+    tracked: bool = True,
+    middle_pinch: bool = False,
+    stop_sign: bool = False,
+    open_hand: bool = False,
 ) -> HandReading:
-    return HandReading(sample=None, tracked=tracked, middle_pinch=middle_pinch, stop_sign=stop_sign)
+    return HandReading(
+        sample=None,
+        tracked=tracked,
+        middle_pinch=middle_pinch,
+        stop_sign=stop_sign,
+        open_hand=open_hand,
+    )
 
 
 def facing_hand(side: str, *, towards_head: bool = True, curl: float = 0.0) -> Dict[str, Any]:
@@ -222,7 +232,12 @@ class TestHandInput:
         assert not opened.sample.clutch and opened.pinch_m is not None and opened.pinch_m > 0.05
         pinched = hand.update(frame_of(pinch=True), 0.1)
         assert pinched.pinch and pinched.sample is not None and pinched.sample.clutch
-        assert pinched.sample.buttons == {"pinch": True, "middle_pinch": False, "stop_sign": False}
+        assert pinched.sample.buttons == {
+            "pinch": True,
+            "middle_pinch": False,
+            "stop_sign": False,
+            "open_hand": False,
+        }
         assert pinched.sample.engage_radius_m == HandTrackingConfig().engage_radius_m
         # Drift out to 3 cm: still inside the release threshold, still held.
         joints = hand_joints(pinch=True)
@@ -282,6 +297,20 @@ class TestHandInput:
         assert hand.update(frame_of(pinch=True), 0.3).pinch
         with pytest.raises(ValueError):
             HandInput("middle")
+
+    def test_open_hand_is_straight_fingers_not_towards_the_headset(self) -> None:
+        head = np.array([0.0, 0.0, 1.6])
+        hand = HandInput("right")
+        away = HandFrame.from_message({"joints": facing_hand("right", towards_head=False)})
+        shown = HandFrame.from_message({"joints": facing_hand("right")})
+        fist = HandFrame.from_message({"joints": facing_hand("right", curl=1.0)})
+        assert away is not None and shown is not None and fist is not None
+        out = hand.update(away, 0.0, head_position_m=head)
+        assert out.open_hand and not out.stop_sign and out.describe()["open_hand"] is True
+        out = hand.update(shown, 0.1, head_position_m=head)
+        assert out.stop_sign and not out.open_hand  # towards the headset: the stop sign
+        assert not hand.update(fist, 0.2, head_position_m=head).open_hand
+        assert not hand.update(frame_of(pinch=True), 0.3).open_hand
 
     def test_middle_pinch_is_reported_separately(self) -> None:
         hand = HandInput("left")
@@ -344,6 +373,35 @@ class TestTwoHandGestures:
             },
             0.6,
         ).recenter
+
+    def test_both_hands_held_open_recentre_once_without_resuming(self) -> None:
+        g = TwoHandGestures(HandTrackingConfig(open_recenter_hold_s=0.5))
+        both = {"left": reading(open_hand=True), "right": reading(open_hand=True)}
+        one = {"left": reading(open_hand=True), "right": reading()}
+        assert not g.update(one, 0.0).recenter and not g.update(one, 5.0).recenter
+        assert not g.update(both, 6.0).recenter
+        assert not g.update(both, 6.4).recenter
+        ev = g.update(both, 6.5)
+        assert ev.recenter and not ev.resume
+        assert not g.update(both, 9.0).recenter  # once per opening
+        g.update(one, 9.1)
+        g.update(both, 9.2)
+        assert g.update(both, 9.7).recenter
+        # The middle pinch still re-centres, and it resumes.
+        pinched = {"left": reading(middle_pinch=True), "right": reading(middle_pinch=True)}
+        ev = g.update(pinched, 10.0)
+        assert ev.recenter and ev.resume
+        # Off, or with the always-on clutch (an open hand is how one drives then).
+        for cfg in (
+            HandTrackingConfig(open_recenter_hold_s=None),
+            HandTrackingConfig(clutch_gesture="always", gripper_gesture="pinch"),
+        ):
+            g = TwoHandGestures(cfg)
+            g.update(both, 0.0)
+            assert not g.update(both, 5.0).recenter
+            assert cfg.describe()["open_recenter_hold_s"] is None
+        with pytest.raises(ValueError, match="open_recenter_hold_s"):
+            HandTrackingConfig(open_recenter_hold_s=0.0)
 
     def test_one_hand_held_toggles_the_recording_once(self) -> None:
         g = TwoHandGestures(HandTrackingConfig(record_hold_s=1.0))
@@ -587,6 +645,30 @@ class TestHandSession:
         session._pause_arms()
         hello = session.handle({"type": "set", "arms_enabled": True}, 4.1)
         assert hello is not None and session.arms_enabled and not session.paused_by_gesture
+
+    def test_open_hands_recentre_on_the_headset_but_do_not_resume(
+        self, bundle: ModelBundle
+    ) -> None:
+        session, _ = make_session(bundle, mapping="relative")
+        session.handle(pose(), 0.0)
+        opened = {
+            "left": {"hand": {"joints": facing_hand("left", towards_head=False)}},
+            "right": {"hand": {"joints": facing_hand("right", towards_head=False)}},
+        }
+        # Turn the head 0.3 rad left and hold both hands open (palms away).
+        turned = {"p": [0.0, 1.6, 0.0], "q": [0.0, math.sin(0.15), 0.0, math.cos(0.15)]}
+        state = session.handle({"type": "pose", "t": 0.1, "head": turned, **opened}, 0.1)
+        assert state is not None and "recentred" not in state
+        state = session.handle({"type": "pose", "t": 0.7, "head": turned, **opened}, 0.7)
+        assert state is not None and state.get("recentred") is True
+        assert state["operator"]["yaw_offset_rad"] == pytest.approx(0.3, abs=1e-6)
+        # After the stop sign the hands come down open: re-centred, still paused.
+        session._pause_arms()
+        session.handle({"type": "pose", "t": 1.0, "head": turned}, 1.0)
+        session.handle({"type": "pose", "t": 1.1, "head": turned, **opened}, 1.1)
+        state = session.handle({"type": "pose", "t": 1.7, "head": turned, **opened}, 1.7)
+        assert state is not None and state.get("recentred") is True
+        assert not state["arms_enabled"] and state["gestures"]["paused"]
 
     def test_hands_can_be_ignored(self, bundle: ModelBundle) -> None:
         cfg = VRServerConfig(state_hz=1000.0, hands=None)

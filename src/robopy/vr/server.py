@@ -553,8 +553,8 @@ class TeleopSession:
             events = self._hand_gestures.update(readings, now_s)
         recentred_now = False
         if events.recenter and self._last_head_robot is not None:
-            # Both hands pinched thumb and middle fingertips: the same as both
-            # thumbstick clicks.  This frame's samples were read in the old
+            # Both hands pinched thumb and middle fingertips, or held open: the
+            # same as both thumbstick clicks.  This frame's samples were read in the old
             # operator frame, so they are dropped and the clutches released.
             self._recentre_operator(self._last_head_robot)
             head_op = self.operator.to_operator(self._last_head_robot)
@@ -576,7 +576,7 @@ class TeleopSession:
             self._pause_arms()
             if events.end:
                 self._pending_events.append("end_session")
-        if recentred_now and self.paused_by_gesture:
+        if recentred_now and events.resume and self.paused_by_gesture:
             self.paused_by_gesture = False
             self.arms_enabled = True
         force_state = recentred_now or bool(self._pending_events)

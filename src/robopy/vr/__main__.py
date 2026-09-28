@@ -246,6 +246,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="seconds both open palms are shown to the headset before the arms pause, and "
         "before the session ends (default 0.5,2.5)",
     )
+    hands.add_argument(
+        "--hand-open-recenter",
+        default="0.5",
+        metavar="SECONDS|off",
+        help="hold both hands open (fingers spread, palms not towards the headset) this long "
+        "to re-centre: the robot's head goes where the headset is now (default 0.5; off "
+        "turns it off; only with --hand-clutch pinch)",
+    )
 
     hw = parser.add_argument_group("hardware")
     hw.add_argument(
@@ -967,6 +975,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 pause_hold, end_hold = (float(v) for v in args.stop_hold.split(","))
             except ValueError:
                 parser.error("--stop-hold takes two numbers: PAUSE,END seconds")
+            open_recenter: float | None = None
+            if args.hand_open_recenter != "off":
+                try:
+                    open_recenter = float(args.hand_open_recenter)
+                except ValueError:
+                    parser.error("--hand-open-recenter takes seconds or 'off'")
             try:
                 hands_config = HandTrackingConfig(
                     clutch_gesture=args.hand_clutch,
@@ -979,6 +993,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     else args.hand_engage_radius,
                     pause_hold_s=pause_hold,
                     end_hold_s=end_hold,
+                    open_recenter_hold_s=open_recenter,
                 )
             except ValueError as exc:
                 parser.error(str(exc))
@@ -997,6 +1012,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "Pinch thumb and middle finger on both hands to re-centre (and resume), hold it "
                 f"on one hand for {hands_config.record_hold_s:g} s to record."
             )
+            if hands_config.open_recenter:
+                print(
+                    f"  hold both hands open (palms away from the headset) for "
+                    f"{hands_config.open_recenter_hold_s:g} s to re-centre on where you are now "
+                    "(it does not resume paused arms)"
+                )
             if hands_config.engage_radius_m is not None and args.mapping == "absolute":
                 print(
                     f"  a pinch engages only within {hands_config.engage_radius_m:g} m of the "

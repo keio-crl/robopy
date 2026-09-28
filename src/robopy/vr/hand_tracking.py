@@ -18,7 +18,12 @@ What stands in for the controller's buttons:
   the rest of the hand to close the gripper), or the index pinch itself
   (``"pinch"``, for the always-on clutch), or nothing;
 * **re-centre (both thumbstick clicks)** -- a pinch of the thumb and *middle*
-  fingertips on both hands at once;
+  fingertips on both hands at once (which also resumes paused arms), or both
+  hands held open -- all fingers straight, no pinch, palms *not* turned to the
+  headset -- for ``open_recenter_hold_s`` (re-centres only: the hands open
+  naturally after the stop sign, so this does not resume).  The open hands
+  re-centre only with the pinch clutch; with ``clutch_gesture="always"`` an
+  open hand is the normal driving state;
 * **record (B / Y)** -- the same middle pinch on one hand, held for
   ``record_hold_s``;
 * **stop** -- both palms turned towards the headset with the fingers straight
@@ -169,7 +174,10 @@ class HandTrackingConfig:
         facing_cos: Cosine of the largest angle between a palm's normal and the
             direction to the headset that still counts as "facing" it.
         straight_ratio: Curl ratio above which a finger counts as straight
-            for the stop sign.
+            for the stop sign and the open hand.
+        open_recenter_hold_s: How long both hands are held open before the
+            operator frame is re-centred on the headset; ``None`` turns the
+            gesture off.  Only with the pinch clutch.
     """
 
     clutch_gesture: Literal["pinch", "always"] = "pinch"
@@ -186,6 +194,7 @@ class HandTrackingConfig:
     end_hold_s: float = 2.5
     facing_cos: float = 0.7
     straight_ratio: float = 0.75
+    open_recenter_hold_s: float | None = 0.5
 
     def __post_init__(self) -> None:
         if self.clutch_gesture not in ("pinch", "always"):
@@ -213,6 +222,13 @@ class HandTrackingConfig:
             raise ValueError("Need 0 < pause_hold_s < end_hold_s.")
         if not -1.0 < self.facing_cos < 1.0 or not 0.0 < self.straight_ratio < 1.0:
             raise ValueError("facing_cos must be in (-1, 1) and straight_ratio in (0, 1).")
+        if self.open_recenter_hold_s is not None and self.open_recenter_hold_s <= 0.0:
+            raise ValueError("open_recenter_hold_s must be positive (or None to turn it off).")
+
+    @property
+    def open_recenter(self) -> bool:
+        """Whether holding both hands open re-centres."""
+        return self.open_recenter_hold_s is not None and self.clutch_gesture == "pinch"
 
     @property
     def required_joints(self) -> Tuple[str, ...]:
@@ -240,6 +256,7 @@ class HandTrackingConfig:
             "engage_radius_m": self.engage_radius_m,
             "pause_hold_s": self.pause_hold_s,
             "end_hold_s": self.end_hold_s,
+            "open_recenter_hold_s": self.open_recenter_hold_s if self.open_recenter else None,
         }
 
 
@@ -386,6 +403,9 @@ class HandReading:
         gripper: The trigger-equivalent in ``[0, 1]`` (1 = closed).
         stop_sign: The open palm is turned towards the headset (fingers
             straight, no pinch): this hand's half of the stop gesture.
+        open_hand: The hand is open (fingers straight, no pinch) and its palm
+            is not turned to the headset: this hand's half of the open-hands
+            re-centre.
         problem: Why the hand could not be read, if it could not.
     """
 
@@ -398,6 +418,7 @@ class HandReading:
     curl: float | None = None
     gripper: float = 0.0
     stop_sign: bool = False
+    open_hand: bool = False
     problem: str | None = None
 
     def describe(self) -> Dict[str, Any]:
@@ -411,6 +432,7 @@ class HandReading:
             "curl": self.curl,
             "gripper": self.gripper,
             "stop_sign": self.stop_sign,
+            "open_hand": self.open_hand,
             "problem": self.problem,
         }
 
@@ -503,12 +525,12 @@ class HandInput:
             gripper = min(1.0, max(0.0, (c.pinch_open_m - pinch_m) / span))
         clutch = pinch if c.clutch_gesture == "pinch" else True
         stop_sign = False
-        if head_position_m is not None and not (pinch or middle):
+        straight = not (pinch or middle) and all(
+            frame.has(*FINGERS[f]) and frame.curl_ratio(f) >= c.straight_ratio for f in FINGERS
+        )
+        if head_position_m is not None and straight:
             normal = frame.palm_normal(self.side)
-            straight = all(
-                frame.has(*FINGERS[f]) and frame.curl_ratio(f) >= c.straight_ratio for f in FINGERS
-            )
-            if normal is not None and straight:
+            if normal is not None:
                 towards = np.asarray(head_position_m, dtype=np.float64) - frame.palm_center()
                 length = float(np.linalg.norm(towards))
                 if length > 1e-6:
@@ -517,7 +539,12 @@ class HandInput:
             pose=frame.reference_pose(c.reference),
             clutch=clutch,
             trigger=gripper,
-            buttons={"pinch": pinch, "middle_pinch": middle, "stop_sign": stop_sign},
+            buttons={
+                "pinch": pinch,
+                "middle_pinch": middle,
+                "stop_sign": stop_sign,
+                "open_hand": straight and not stop_sign,
+            },
             stamp_s=now_s,
             engage_radius_m=c.engage_radius_m,
         )
@@ -531,6 +558,7 @@ class HandInput:
             curl=curl,
             gripper=gripper,
             stop_sign=stop_sign,
+            open_hand=straight and not stop_sign,
         )
         return self.last
 
@@ -540,7 +568,10 @@ class HandEvents:
     """Session-level gestures raised this step.
 
     Attributes:
-        recenter: Both hands pinched thumb and middle fingertips just now.
+        recenter: Re-centre now: both hands pinched thumb and middle fingertips
+            just now, or have been held open for ``open_recenter_hold_s``.
+        resume: The re-centre was the middle pinch, which also resumes arms
+            paused by the stop sign (the open hands do not).
         record_toggle: One hand held that pinch for ``record_hold_s``.
         pause: Both palms have been shown to the headset for ``pause_hold_s``.
         end: They have been kept up for ``end_hold_s``.
@@ -549,6 +580,7 @@ class HandEvents:
     """
 
     recenter: bool = False
+    resume: bool = False
     record_toggle: bool = False
     pause: bool = False
     end: bool = False
@@ -569,7 +601,9 @@ class TwoHandGestures:
     for ``record_hold_s``; a hold that turns into the two-handed gesture, or
     outlives it, does not also toggle the recording.  The stop sign (both open
     palms towards the headset) raises ``pause`` once at ``pause_hold_s`` and
-    ``end`` once at ``end_hold_s``; letting go re-arms both.
+    ``end`` once at ``end_hold_s``; letting go re-arms both.  Both hands held
+    open (and not towards the headset) re-centre once at
+    ``open_recenter_hold_s``; closing either hand re-arms it.
     """
 
     def __init__(self, config: HandTrackingConfig | None = None) -> None:
@@ -579,6 +613,7 @@ class TwoHandGestures:
         self._stop_started_s: float | None = None
         self._paused_fired = False
         self._ended_fired = False
+        self._open = _Hold()
 
     def reset(self) -> None:
         """Forget every gesture in progress."""
@@ -586,6 +621,7 @@ class TwoHandGestures:
         self._holds = {"left": _Hold(), "right": _Hold()}
         self._stop_started_s = None
         self._paused_fired = self._ended_fired = False
+        self._open = _Hold()
 
     def update(self, readings: Mapping[str, HandReading | None], now_s: float) -> HandEvents:
         """Advance one step with this frame's readings (a missing side is untracked)."""
@@ -632,8 +668,27 @@ class TwoHandGestures:
                 self._paused_fired = pause = True
             if held >= self.config.end_hold_s and not self._ended_fired:
                 self._ended_fired = end = True
+        resume = recenter
+        opened = self.config.open_recenter and all(
+            r is not None and r.tracked and r.open_hand
+            for r in (readings.get("left"), readings.get("right"))
+        )
+        if not opened:
+            self._open = _Hold()
+        elif not self._open.fired:
+            if self._open.started_s is None:
+                self._open.started_s = now_s
+            hold_s = self.config.open_recenter_hold_s
+            if hold_s is not None and now_s - self._open.started_s >= hold_s:
+                self._open.fired = True
+                recenter = True
         return HandEvents(
-            recenter=recenter, record_toggle=record, pause=pause, end=end, stop_hold_s=held
+            recenter=recenter,
+            resume=resume,
+            record_toggle=record,
+            pause=pause,
+            end=end,
+            stop_hold_s=held,
         )
 
 

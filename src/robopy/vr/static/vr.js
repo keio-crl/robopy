@@ -705,7 +705,8 @@ function renderStatus() {
       const gripper = { curl: 'curl the other fingers', pinch: 'pinch strength', none: 'off' }[g.gripper_gesture] || g.gripper_gesture;
       const gate = g.engage_radius_m ? `  engage within ${(g.engage_radius_m * 100).toFixed(0)}cm of the marker` : '';
       lines.push(`hands     clutch ${clutch}  gripper ${gripper}  at ${g.reference}${gate}`);
-      lines.push(`          re-centre/resume: both middle pinches   record: hold one ${g.record_hold_s}s   pause: both palms to the headset ${g.pause_hold_s}s, end: ${g.end_hold_s}s`);
+      const opened = g.open_recenter_hold_s ? `   re-centre: both hands open (palms away) ${g.open_recenter_hold_s}s` : '';
+      lines.push(`          re-centre/resume: both middle pinches${opened}   record: hold one ${g.record_hold_s}s   pause: both palms to the headset ${g.pause_hold_s}s, end: ${g.end_hold_s}s`);
     } else lines.push('hands     ignored (controllers only)');
   }
   lines.push(recordingLine());
