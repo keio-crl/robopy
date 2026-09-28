@@ -306,6 +306,11 @@ class TeleopSession:
         self.hands: Dict[str, HandInput] | None = None
         self._hand_gestures: TwoHandGestures | None = None
         self.paused_by_gesture = False
+        #: With the twin fixed in the room, the operator frame -- and so the
+        #: engage markers, which sit on the twin's hands -- is fixed with it: a
+        #: gesture re-centre only resumes paused arms; the page's explicit
+        #: re-centre (button, thumbsticks, "place twin") moves both together.
+        self.twin_fixed = True
         self._stop_hold_s = 0.0
         self._fist_hold_s = 0.0
         self._pending_events: List[str] = []
@@ -355,6 +360,7 @@ class TeleopSession:
             else [float(v) for v in self.robot_anchor_m],
             "state_hz": self.config.state_hz,
             "backend_info": self.backend.describe(),
+            "twin_fixed": self.twin_fixed,
             "camera_available": self.camera_available,
             "recording": None if self.recorder is None else self.recorder.describe(),
         }
@@ -486,6 +492,8 @@ class TeleopSession:
         )
 
     def _apply_settings(self, message: Mapping[str, Any]) -> Dict[str, Any]:
+        if "twin_fixed" in message:
+            self.twin_fixed = bool(message["twin_fixed"])
         if "head_enabled" in message:
             self.head_enabled = bool(message["head_enabled"])
         if "arms_enabled" in message:
@@ -585,18 +593,26 @@ class TeleopSession:
         if self._hand_gestures is not None:
             events = self._hand_gestures.update(readings, now_s)
         recentred_now = False
-        if events.recenter and self._last_head_robot is not None:
-            # Both hands pinched thumb and middle fingertips, or held open: the
-            # same as both thumbstick clicks.  This frame's samples were read in the old
-            # operator frame, so they are dropped and the clutches released.
-            self._recentre_operator(self._last_head_robot)
-            head_op = self.operator.to_operator(self._last_head_robot)
-            if self.head_tracker is not None:
-                self.head_tracker.recenter(head_op[:3, :3])
-            if self.arm_teleop is not None:
-                self.arm_teleop.release_all()
-            samples = {side: None for side in samples}
-            recentred_now = True
+        resumed_only = False
+        head_robot = self._last_head_robot
+        if events.recenter and head_robot is not None:
+            if self.twin_fixed and self.operator.recentred:
+                # The twin is fixed in the room and the operator frame with it:
+                # the markers stay on the twin's hands, where the operator
+                # reaches to take hold of them.  The gesture only resumes.
+                resumed_only = True
+            else:
+                # Both hands pinched thumb and middle fingertips, or held open: the
+                # same as both thumbstick clicks.  This frame's samples were read in
+                # the old operator frame, so they are dropped and the clutches released.
+                self._recentre_operator(head_robot)
+                head_op = self.operator.to_operator(head_robot)
+                if self.head_tracker is not None:
+                    self.head_tracker.recenter(head_op[:3, :3])
+                if self.arm_teleop is not None:
+                    self.arm_teleop.release_all()
+                samples = {side: None for side in samples}
+                recentred_now = True
         if events.record_toggle and self.recorder is not None:
             if self.recorder.active:
                 self.recorder.stop(now_s)
@@ -610,10 +626,11 @@ class TeleopSession:
             self._pause_arms()
             if events.end:
                 self._pending_events.append("end_session")
-        if recentred_now and events.resume and self.paused_by_gesture:
+        if (recentred_now or resumed_only) and events.resume and self.paused_by_gesture:
             self.paused_by_gesture = False
             self.arms_enabled = True
-        force_state = recentred_now or bool(self._pending_events)
+            resumed_only = True
+        force_state = recentred_now or resumed_only or bool(self._pending_events)
 
         arm_target = None
         grippers: Dict[str, float] = {}

@@ -210,7 +210,15 @@ function placeTwin(twin) {
   state.twinPlaced = true;
   state.twinPlaceRequested = false;
 }
-$('#twin-place').onclick = () => { state.twinPlaceRequested = true; setStatus('the twin will be placed at the next re-centre / state update'); };
+// An explicit re-centre (button, both thumbsticks, "place twin") moves the
+// operator's mapping and the twin together, so the markers stay on the twin's
+// hands; the server ignores gesture re-centres while the twin is fixed.
+function explicitRecenter() {
+  state.twinPlaceRequested = true;
+  send({ type: 'recenter' });
+}
+$('#twin-place').onclick = explicitRecenter;
+$('#twin-fixed').addEventListener('change', () => send({ type: 'set', twin_fixed: $('#twin-fixed').checked }));
 
 // Server-computed placement: the robot base at `p` (robot axes from the WebXR
 // floor origin) turned by `yaw` about +Z, so the twin's head sits where the
@@ -292,6 +300,7 @@ function connectTeleop() {
   ws.onopen = () => {
     state.connected = true;
     ws.send(JSON.stringify({ type: 'hello', want_poses: true }));
+    ws.send(JSON.stringify({ type: 'set', twin_fixed: $('#twin-fixed').checked }));
     setStatus('connected; waiting for hello…');
     if (keepalive) clearInterval(keepalive);
     keepalive = setInterval(() => {
@@ -669,7 +678,7 @@ function collectAndSend(frame, timeMs) {
   // Re-centre: both thumbsticks clicked (hands do it with both middle pinches, server-side).
   const l = msg.left && msg.left.buttons && msg.left.buttons.stick;
   const r = msg.right && msg.right.buttons && msg.right.buttons.stick;
-  if (l && r && !state.recenterHeld) { state.recenterHeld = true; send({ type: 'recenter' }); }
+  if (l && r && !state.recenterHeld) { state.recenterHeld = true; explicitRecenter(); }
   if (!(l && r)) state.recenterHeld = false;
   send(msg);
 }
@@ -858,7 +867,7 @@ $('#preview').addEventListener('click', () => {
   $('#preview').textContent = state.preview ? 'Stop preview' : 'Desktop preview';
   setStatus(state.preview ? 'desktop preview: orbit the view to move the head' : 'preview stopped', 'warn');
 });
-$('#recenter').addEventListener('click', () => send({ type: 'recenter' }));
+$('#recenter').addEventListener('click', explicitRecenter);
 $('#head-on').addEventListener('change', (e) => send({ type: 'set', head_enabled: e.target.checked }));
 $('#arms-on').addEventListener('change', (e) => send({ type: 'set', arms_enabled: e.target.checked }));
 $('#twin-on').addEventListener('change', (e) => { robotGroup.visible = e.target.checked; });

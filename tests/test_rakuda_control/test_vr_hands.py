@@ -580,6 +580,8 @@ class TestHandSession:
 
     def test_both_middle_pinches_recentre_and_release(self, bundle: ModelBundle) -> None:
         session, _ = make_session(bundle, mapping="relative")
+        # With the twin following re-centres, the gesture moves the operator frame.
+        session.handle({"type": "set", "twin_fixed": False}, 0.0)
         session.handle(pose(), 0.0)
         session.handle(pose(0.1, left=hand_entry(pinch=True)), 0.1)
         assert session.arm_teleop is not None and session.arm_teleop.arms["left"].clutched
@@ -678,10 +680,11 @@ class TestHandSession:
         # The event is delivered once.
         state = session.handle(pose(3.8, **both), 3.8)
         assert state is not None and "events" not in state
-        # Resume: the re-centre gesture turns the arms back on.
+        # Resume: the re-centre gesture turns the arms back on (and, with the twin
+        # fixed as by default, leaves the operator frame where it was).
         middle = {"left": hand_entry(middle_pinch=True), "right": hand_entry(middle_pinch=True)}
         state = session.handle(pose(4.0, **middle), 4.0)
-        assert state is not None and state.get("recentred") and state["arms_enabled"]
+        assert state is not None and "recentred" not in state and state["arms_enabled"]
         assert not state["gestures"]["paused"]
         # The page's checkbox also clears the pause.
         session._pause_arms()
@@ -690,6 +693,7 @@ class TestHandSession:
 
     def test_open_hands_recentre_on_the_headset_and_resume(self, bundle: ModelBundle) -> None:
         session, _ = make_session(bundle, mapping="relative")
+        session.handle({"type": "set", "twin_fixed": False}, 0.0)
         session.handle(pose(), 0.0)
         opened = {
             "left": {"hand": {"joints": facing_hand("left", towards_head=False)}},
@@ -709,6 +713,38 @@ class TestHandSession:
         state = session.handle({"type": "pose", "t": 3.7, "head": turned, **opened}, 3.7)
         assert state is not None and state.get("recentred") is True
         assert state["arms_enabled"] and not state["gestures"]["paused"]
+
+    def test_with_the_twin_fixed_gestures_only_resume(self, bundle: ModelBundle) -> None:
+        # The default: the twin, the operator frame and so the engage markers
+        # on the twin's hands stay put.  A gesture re-centre does not move them,
+        # it only resumes paused arms; the page's explicit re-centre still does.
+        session, _ = make_session(bundle, mapping="relative")
+        hello = session.handle({"type": "hello"}, 0.0)
+        assert hello is not None and hello["twin_fixed"] is True
+        first = session.handle(pose(), 0.0)
+        assert first is not None and first["operator"]["recentred"]
+        origin = session.operator.head_position_m.copy()
+        opened = {
+            "left": {"hand": {"joints": facing_hand("left", towards_head=False)}},
+            "right": {"hand": {"joints": facing_hand("right", towards_head=False)}},
+        }
+        turned = {"p": [0.2, 1.6, 0.1], "q": [0.0, math.sin(0.15), 0.0, math.cos(0.15)]}
+        session._pause_arms()
+        session.handle({"type": "pose", "t": 0.1, "head": turned, **opened}, 0.1)
+        state = session.handle({"type": "pose", "t": 1.7, "head": turned, **opened}, 1.7)
+        assert state is not None and "recentred" not in state
+        assert state["operator"]["yaw_offset_rad"] == pytest.approx(0.0, abs=1e-6)
+        assert session.operator.head_position_m == pytest.approx(origin, abs=1e-9)
+        assert state["arms_enabled"] and not state["gestures"]["paused"]
+        # Both middle pinches likewise leave the frame alone.
+        both = {"left": hand_entry(middle_pinch=True), "right": hand_entry(middle_pinch=True)}
+        state = session.handle({"type": "pose", "t": 2.0, "head": turned, **both}, 2.0)
+        assert state is not None and "recentred" not in state
+        assert state["operator"]["yaw_offset_rad"] == pytest.approx(0.0, abs=1e-6)
+        # The page's re-centre (button, thumbsticks, "place twin") moves the frame.
+        explicit = session.handle({"type": "recenter"}, 2.1)
+        assert explicit is not None and explicit.get("recentred") is True
+        assert explicit["operator"]["yaw_offset_rad"] == pytest.approx(0.3, abs=1e-6)
 
     def test_hands_can_be_ignored(self, bundle: ModelBundle) -> None:
         cfg = VRServerConfig(state_hz=1000.0, hands=None)
