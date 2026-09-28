@@ -23,6 +23,10 @@ Endpoints
                            (``--mirror-follower``; ``{"available": false}`` otherwise)
 ``POST /api/machine/zero``  ``{"joints": {name: rad}}``: the machine is in this model pose
                            now -> new zero_count per motor, written to the config file
+``POST /api/machine/travel`` ``{"action": "start"|"stop"|"reset"}`` records the least and
+                           greatest angle of every mirrored joint while the machine is moved
+                           by hand; ``{"action": "write", "motors": [...], "margin_deg": 2}``
+                           writes them as the motors' limits and the joints' soft limits
 
 Two modes of ``/api/ik`` are kept deliberately apart.  ``trajectory`` is the
 continuous-operation mode: the server keeps the solver's velocity history and
@@ -38,6 +42,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import mimetypes
 import threading
 import time
@@ -664,6 +669,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_json(self.server.ik_reset(body))
             elif path == "/api/machine/zero":
                 self._send_json(self.server.machine_zero(body))
+            elif path == "/api/machine/travel":
+                self._send_json(self.server.machine_travel(body))
             else:
                 self._send_error(HTTPStatus.NOT_FOUND, f"No route for {path}")
         except (KeyError, ValueError, TypeError) as exc:
@@ -806,6 +813,28 @@ class ViewerServer(ThreadingHTTPServer):
 
         with self._lock:
             return set_zero_from_pose(self.machine, joints, bundle=self.bundle)
+
+    def machine_travel(self, body: Mapping[str, Any]) -> Dict[str, Any]:
+        """Record, or write, the travel of the mirrored follower's joints."""
+        if self.machine is None:
+            raise RuntimeError("no machine is mirrored (start with --mirror-follower)")
+        action = str(body.get("action", ""))
+        if action != "write":
+            self.machine.travel(action)
+            return self.machine.snapshot()
+        from .machine_mirror import write_travel
+
+        motors = body.get("motors")
+        if motors is not None and not isinstance(motors, list):
+            raise ValueError("'motors' must be a list of motor names")
+        margin_deg = float(body.get("margin_deg", 2.0))
+        with self._lock:
+            return write_travel(
+                self.machine,
+                motors=None if motors is None else [str(m) for m in motors],
+                margin_rad=math.radians(margin_deg),
+                bundle=self.bundle,
+            )
 
     def ik_solve(self, body: Mapping[str, Any]) -> Dict[str, Any]:
         """Solve for ``body["targets"]`` from ``body["joints"]`` and return poses."""

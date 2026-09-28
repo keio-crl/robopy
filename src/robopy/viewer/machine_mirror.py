@@ -26,13 +26,14 @@ import logging
 import math
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Sequence
+from typing import Any, Callable, Dict, List, Mapping, Sequence, Tuple
 
 from robopy.control.joint_mapping import JointMap
 from robopy.motor.dynamixel_control_table import XControlTable
 
-__all__ = ["MachineMirror", "open_follower_mirror", "set_zero_from_pose"]
+__all__ = ["MachineMirror", "open_follower_mirror", "set_zero_from_pose", "write_travel"]
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,10 @@ class MachineMirror:
         self._reads = 0
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        # Travel recording: the least and greatest angle each motor's joint
+        # showed while the operator moved the machine by hand.
+        self.recording_travel = False
+        self._travel: Dict[str, Tuple[float, float]] = {}
 
     def read_once(self) -> None:
         """Read every mirrored motor once and keep the result."""
@@ -108,6 +113,12 @@ class MachineMirror:
                 assert entry.urdf_joint is not None
                 joints[entry.urdf_joint] = entry.count_to_rad(float(counts[name]))
         with self._lock:
+            if self.recording_travel:
+                for name in self.motors:
+                    joint = self.joint_map[name].urdf_joint
+                    if joint in joints:
+                        lo, hi = self._travel.get(name, (math.inf, -math.inf))
+                        self._travel[name] = (min(lo, joints[joint]), max(hi, joints[joint]))
             self._joints = joints
             self._counts = {m: int(counts[m]) for m in self.motors if m in counts}
             self._missing = [m for m in self.motors if m not in counts]
@@ -131,7 +142,26 @@ class MachineMirror:
                 "age_s": age,
                 "reads": self._reads,
                 "error": self._error,
+                "travel": {
+                    "recording": self.recording_travel,
+                    "motors": {
+                        m: {"joint": self.joint_map[m].urdf_joint, "min": lo, "max": hi}
+                        for m, (lo, hi) in self._travel.items()
+                    },
+                },
             }
+
+    def travel(self, action: str) -> None:
+        """``start`` / ``stop`` / ``reset`` the travel recording."""
+        with self._lock:
+            if action == "start":
+                self.recording_travel = True
+            elif action == "stop":
+                self.recording_travel = False
+            elif action == "reset":
+                self._travel = {}
+            else:
+                raise ValueError("action must be start, stop, reset or write")
 
     def start(self) -> None:
         """Poll in a background thread until :meth:`stop`."""
@@ -250,6 +280,132 @@ def set_zero_from_pose(
         "written": str(path),
         "zero_counts": dict(new_zeros),
         "lines": lines,
+        "ignored_soft_limits": ignored,
+    }
+
+
+def write_travel(
+    mirror: MachineMirror,
+    *,
+    motors: Sequence[str] | None = None,
+    margin_rad: float = math.radians(2.0),
+    bundle: Any = None,
+) -> Dict[str, Any]:
+    """Write the recorded travel as the motors' limits and the joints' soft limits.
+
+    For each selected motor the recorded least and greatest angle become its
+    ``lower_limit_rad`` / ``upper_limit_rad`` (the ends themselves, as the
+    calibration records them), and, through
+    :func:`~robopy.robots.rakuda.calibrate.model_soft_limits`, a validated
+    ``control.model.soft_limits_rad`` entry on its URDF joint, ``margin_rad``
+    inside each end (the ends were found against the stops).  A travel that
+    would not overlap the URDF range is not written as a soft limit.
+
+    Args:
+        mirror: The follower mirror, with a ``config_path``.
+        motors: Motors to write; every recorded one by default.
+        margin_rad: Inward margin per end of the soft limits.
+        bundle: The viewer's model, to update its ranges live.
+    """
+    from robopy.config.dotrobopy import load_yaml
+    from robopy.robots.rakuda.calibrate import (
+        JointResult,
+        model_soft_limits,
+        urdf_joint_ranges,
+        write_config,
+    )
+
+    if mirror.config_path is None:
+        raise RuntimeError("the mirror was opened without a configuration file to write")
+    if margin_rad < 0.0:
+        raise ValueError("margin must not be negative")
+    snap = mirror.snapshot()
+    recorded = snap["travel"]["motors"]
+    chosen = list(motors) if motors is not None else list(recorded)
+    unknown = [m for m in chosen if m not in recorded]
+    if unknown:
+        raise ValueError(f"no travel recorded for {unknown}")
+    if not chosen:
+        raise ValueError("no motor selected")
+    today = f"{datetime.now():%Y-%m-%d}"
+    path = mirror.config_path
+    data = load_yaml(path) or {}
+    control = dict(data.get("control") or {})
+    key = f"{mirror.side}_joint_calibration"
+    table = {m: dict(e) for m, e in (control.get(key) or {}).items()}
+    results: Dict[str, JointResult] = {}
+    lines: List[str] = []
+    for m in chosen:
+        entry = table.get(m)
+        if entry is None:
+            raise ValueError(f"{m} has no calibration entry")
+        lo, hi = float(recorded[m]["min"]), float(recorded[m]["max"])
+        entry["lower_limit_rad"], entry["upper_limit_rad"] = round(lo, 4), round(hi, 4)
+        entry["notes"] = (
+            f"{entry.get('notes', '')}; {today}: travel recorded in the viewer while the "
+            f"machine was moved by hand [{lo:+.3f}, {hi:+.3f}]"
+        )
+        results[m] = JointResult(
+            motor=m,
+            urdf_joint=entry.get("urdf_joint"),
+            direction=int(entry.get("direction", 1)),
+            zero_count=entry.get("zero_count"),
+            lower_limit_rad=round(lo, 4),
+            upper_limit_rad=round(hi, 4),
+            measured=[
+                "urdf_joint",
+                "zero_count",
+                "direction",
+                "lower_limit_rad",
+                "upper_limit_rad",
+            ],
+        )
+        lines.append(
+            f"{m}: [{math.degrees(lo):+.0f}, {math.degrees(hi):+.0f}] deg "
+            f"({math.degrees(hi - lo):.0f} deg of travel)"
+        )
+    control[key] = table
+    notes: List[str] = []
+    if mirror.side == "follower":
+        ranges = None
+        if bundle is not None:
+            ranges = urdf_joint_ranges(Path(bundle.urdf_path))
+        model, notes = model_soft_limits(
+            results,
+            existing_model=control.get("model"),
+            margin_rad=margin_rad,
+            urdf_ranges=ranges,
+        )
+        control["model"] = model
+    coupled = list(((control.get("bilateral") or {}).get("coupled_motors")) or [])
+    write_config(path, control, coupled=coupled)
+
+    mirror.joint_map = mirror.joint_map.with_updates(
+        {
+            m: {
+                "lower_limit_rad": table[m]["lower_limit_rad"],
+                "upper_limit_rad": table[m]["upper_limit_rad"],
+            }
+            for m in chosen
+        }
+    )
+    ignored: List[str] = []
+    if bundle is not None and mirror.side == "follower":
+        from .model_bundle import _without_disjoint_soft_limits
+
+        soft_all = (control.get("model") or {}).get("soft_limits_rad") or {}
+        touched = {table[m].get("urdf_joint") for m in chosen}
+        soft = {j: e for j, e in soft_all.items() if j in touched and isinstance(e, Mapping)}
+        usable, ignored = _without_disjoint_soft_limits(bundle.model, soft)
+        if usable:
+            bundle.model.set_soft_limits(usable)
+            for j, e in usable.items():
+                bundle.soft_limits[j] = (float(e["lower"]), float(e["upper"]))
+    return {
+        "written": str(path),
+        "motors": chosen,
+        "lines": lines,
+        "notes": notes,
         "ignored_soft_limits": ignored,
     }
 

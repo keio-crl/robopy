@@ -1249,6 +1249,7 @@ async function pollMachine() {
     if (out.length) parts.push(`OUTSIDE the range: ${out.join(', ')}`);
     status.textContent = `machine (read-only): ${parts.join('  |  ')}`;
     status.classList.toggle('warn', Boolean(m.error || out.length));
+    if (m.travel && !$('#machine-travel').hidden) renderTravel(m.travel);
     if (!follow || m.error || state.zeroMode) return;
     applyMachinePose(m);
   } catch (err) {
@@ -1308,6 +1309,61 @@ $('#machine-zero-apply').onclick = async () => {
   }
 };
 
+// Travel recording: the server keeps the least and greatest angle each
+// mirrored joint showed while the operator moves the machine by hand; the
+// table below shows them live, and the ticked ones are written as the motors'
+// limits and the joints' soft limits (the calibration's travel step, redone
+// from the page).
+const travel = { ticked: {} };
+
+function renderTravel(t) {
+  const body = $('#travel-table tbody');
+  const rows = Object.entries(t.motors).sort(([a], [b]) => a.localeCompare(b));
+  if (!rows.length) { body.innerHTML = `<tr><td class="dim">${t.recording ? 'recording: move every joint to both ends of its travel' : 'nothing recorded yet'}</td></tr>`; return; }
+  body.innerHTML = `<tr><th></th><th>motor</th><th>URDF joint</th><th>min</th><th>max</th><th>travel</th></tr>` + rows.map(([m, r]) => {
+    const width = r.max - r.min;
+    if (!(m in travel.ticked)) travel.ticked[m] = width >= 20 / DEG;  // a joint barely moved was not measured
+    const j = state.model.joints.find((x) => x.name === r.joint);
+    const narrow = j && j.urdf_lower != null && (r.min > j.urdf_upper || r.max < j.urdf_lower) ? ' <span class="warn">outside URDF</span>' : '';
+    return `<tr><td><input type="checkbox" data-motor="${m}" ${travel.ticked[m] ? 'checked' : ''}></td><td>${m}</td><td>${r.joint}${narrow}</td><td>${fmtAngle(r.min)}</td><td>${fmtAngle(r.max)}</td><td>${(width * DEG).toFixed(0)}°</td></tr>`;
+  }).join('');
+  body.querySelectorAll('input[type=checkbox]').forEach((c) => c.addEventListener('change', () => { travel.ticked[c.dataset.motor] = c.checked; }));
+  $('#travel-record').textContent = t.recording ? 'stop recording' : 'record travel';
+  $('#travel-record').classList.toggle('active', t.recording);
+}
+
+async function travelAction(action, extra) {
+  return api('/api/machine/travel', { action, ...(extra || {}) });
+}
+$('#travel-record').onclick = async () => {
+  try {
+    const recording = $('#travel-record').classList.contains('active');
+    const m = await travelAction(recording ? 'stop' : 'start');
+    renderTravel(m.travel);
+    setStats(recording ? 'travel recording stopped' : 'recording travel: with the torque off, move each joint to both ends of its travel');
+  } catch (err) { setStats(`travel: ${err.message}`); }
+};
+$('#travel-reset').onclick = async () => {
+  try { travel.ticked = {}; renderTravel((await travelAction('reset')).travel); } catch (err) { setStats(`travel: ${err.message}`); }
+};
+$('#travel-write').onclick = async () => {
+  const motors = Object.entries(travel.ticked).filter(([, on]) => on).map(([m]) => m);
+  if (!motors.length) return setStats('travel: no joint ticked');
+  const margin = parseFloat($('#travel-margin').value) || 0;
+  if (!window.confirm(`Write the recorded travel of ${motors.length} motor(s) to .robopy/rakuda/config.yaml?\nLimits = the ends; soft limits = ${margin}° inside each end. A backup of the file is kept.`)) return;
+  try {
+    const r = await travelAction('write', { motors, margin_deg: margin });
+    const model = await api('/api/model');
+    state.model = model;
+    buildJointsPanel(model);
+    buildInfo(model);
+    const extra = [...r.notes, ...r.ignored_soft_limits.map((w) => `IGNORED live: ${w}`)];
+    $('#machine-status').textContent = `travel written to ${r.written}: ${r.lines.join('  |  ')}${extra.length ? '  |  ' + extra.join('  |  ') : ''}`;
+    $('#machine-status').classList.toggle('warn', extra.length > 0);
+    setStats(`travel written for ${motors.length} motor(s); the sliders now span it`);
+  } catch (err) { setStats(`travel NOT written: ${err.message}`); }
+};
+
 // The button: the machine's pose at this moment, once, whatever the checkbox says.
 $('#machine-take').onclick = async () => {
   try {
@@ -1346,7 +1402,7 @@ $('#machine-take').onclick = async () => {
       $('#machine-follow-wrap').hidden = false;
       $('#machine-take').hidden = false;
       const first = await api('/api/machine');
-      if (first.can_set_zero) $('#machine-zero').hidden = false;
+      if (first.can_set_zero) { $('#machine-zero').hidden = false; $('#machine-travel').hidden = false; }
       $('#machine-status').hidden = false;
       setInterval(pollMachine, 50);  // the server reads the bus at 20 Hz
     }

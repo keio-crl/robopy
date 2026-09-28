@@ -501,6 +501,12 @@ uv run robopy-viewer --config --mirror-follower /dev/ttyUSB0
   `direction` はそのまま）。書いた直後から新しいゼロで追従を再開するので、モデルが実機と一致していれば成功です。
   平行移動の結果 URDF の範囲と重ならなくなった soft limit は、ページ上では無視して警告します。
   同じことをコマンドで行うのが `robopy-rakuda-calibrate --zero-only`（実機の方をモデルのゼロ姿勢に合わせる）です。
+- **可動域をページで測る（record travel）**: `record travel` を押すと、サーバが 20 Hz で読んでいる全関節の角度の最小・最大を
+  蓄積します。トルクを切った実機を手で自由に動かし、各関節を両端まで動かしてから `stop recording` を押すと、モータごとの
+  min / max / 幅の表が出ます（幅 20° 未満の関節は「動かしていない」と見てチェックが外れています。URDF の範囲外なら注記）。
+  チェックした関節について `write travel → config` を押すと、両端を `lower/upper_limit_rad` に、`margin`（既定 2°）だけ内側に
+  寄せた範囲を `control.model.soft_limits_rad` に `validated: true` で書きます（校正コマンドの可動域ステップと同じ規則。
+  URDF と重ならない範囲は soft limit として書かず注記します）。書いた直後にスライダの範囲も更新されます。
 
 ## :material-virtual-reality: VR テレオペ（Meta Quest） {: #vr }
 

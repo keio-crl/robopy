@@ -61,6 +61,15 @@
         <label id="machine-follow-wrap" hidden title="Draw the model in the real follower's pose (read-only: nothing is sent to a motor)"><input type="checkbox" id="machine-follow" checked> follow machine</label>
       </div>
       <div id="machine-status" class="notice" hidden></div>
+      <div id="machine-travel" class="notice" hidden>
+        <div class="toolbar">
+          <button id="travel-record" title="While recording, the least and greatest angle of every mirrored joint is kept as you move the machine by hand (torque off)">record travel</button>
+          <button id="travel-reset" title="Forget what was recorded">reset</button>
+          <label>margin <input id="travel-margin" type="number" value="2" step="0.5" min="0" class="num short"> deg</label>
+          <button id="travel-write" title="Write the ticked joints' travel as the motors' limits and as validated soft limits (margin inside each end) into .robopy/rakuda/config.yaml">write travel → config</button>
+        </div>
+        <table id="travel-table" class="travel"><tbody></tbody></table>
+      </div>
       <div id="joint-groups"></div>
     </section>
 

@@ -76,3 +76,8 @@ label { color: var(--dim); display: inline-flex; align-items: center; gap: 4px; 
 .warnings li, .help li { margin-bottom: 6px; color: var(--dim); }
 .warnings li { color: var(--warn); }
 @media (max-width: 900px) { main { flex-direction: column; } #panel { width: auto; max-height: 55vh; border-left: 0; border-top: 1px solid var(--line); } }
+.travel { font-size: 12px; border-collapse: collapse; margin-top: 6px; }
+.travel th, .travel td { padding: 2px 8px; text-align: right; }
+.travel th:nth-child(-n+3), .travel td:nth-child(-n+3) { text-align: left; }
+.travel .warn { color: var(--warn); }
+#travel-record.active { border-color: var(--warn); color: var(--warn); }
