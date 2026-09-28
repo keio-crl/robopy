@@ -534,6 +534,44 @@ def _home_head_before_loop(backend: Any, bus: Any) -> Dict[str, Any]:
     return {"moved": True, "arrived": arrived, "start": home}
 
 
+def _grippers_from_calibration(control: Any, grippers: Dict[str, Dict[str, Any]]) -> Dict[str, str]:
+    """Fill a side's gripper travel from ``follower_joint_calibration`` when --gripper did not.
+
+    The calibration's zero pose for a gripper is *fully open* and closing is
+    positive (robopy-rakuda-calibrate --side follower --motors l_arm_grip,...),
+    so open is 0 rad and closed is the far end of the measured travel.
+    ``grippers`` is updated in place; the returned notes say what was taken.
+    """
+    notes: Dict[str, str] = {}
+    for side in ("left", "right"):
+        if side in grippers:
+            continue
+        motor = f"{side[0]}_arm_grip"
+        spec = control.follower_joint_calibration.get(motor)
+        if (
+            spec is None
+            or spec.zero_count is None
+            or spec.lower_limit_rad is None
+            or spec.upper_limit_rad is None
+        ):
+            continue
+        closed = (
+            spec.lower_limit_rad
+            if abs(spec.lower_limit_rad) > abs(spec.upper_limit_rad)
+            else spec.upper_limit_rad
+        )
+        grippers[side] = {
+            "gripper_motor": motor,
+            "gripper_open_rad": 0.0,
+            "gripper_closed_rad": float(closed),
+        }
+        notes[side] = (
+            f"travel from the calibration of {motor}: open 0.00 rad (its zero pose), closed "
+            f"{closed:+.2f} rad (--gripper overrides)"
+        )
+    return notes
+
+
 def _leader_grippers(leader: Any, *, hold: bool) -> str:
     """Torque OFF the leader's grippers, or (``hold``) give them the spring-back goal.
 
@@ -877,6 +915,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                     f"  {side} hand now at x={p[0]:+.3f} y={p[1]:+.3f} z={p[2]:+.3f} m (robot base)"
                 )
             if args.hardware_check:
+                import statistics
+
+                spans = []
+                for _ in range(10):
+                    st = system.follower.read_state()
+                    spans.append(st.acquisition_span_s)
+                span_limit = cfg.control.max_acquisition_span_s
+                limit_text = "the servo default 0.010" if span_limit is None else f"{span_limit}"
+                print(
+                    f"  one state read of the follower's {len(system.follower.motor_names)} "
+                    f"motors spans {statistics.median(spans) * 1e3:.1f} ms (max "
+                    f"{max(spans) * 1e3:.1f} ms); control.max_acquisition_span_s is "
+                    f"{limit_text} s, control_period_s {cfg.control.control_period_s} s"
+                )
                 report = system.report()
                 gaps = report["calibration_gaps"].get("follower", {})
                 print(f"  follower calibration gaps: {gaps or 'none'}")
@@ -1087,6 +1139,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print("Arms disabled: no solver (see above).", file=sys.stderr)
             else:
                 grippers = _parse_grippers(args.gripper, parser)
+                if backend.name != "simulation" and loaded.config is not None:
+                    for side, note in _grippers_from_calibration(loaded.config, grippers).items():
+                        print(f"  {side} gripper: {note}")
                 if backend.name == "simulation" and grippers:
                     print(
                         "  note: the model has no gripper joints; gripper commands are recorded, "

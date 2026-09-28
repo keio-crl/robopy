@@ -533,6 +533,10 @@ uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem
 #   「どのモータを駆動するか」「手先が今どこにあるか」を表示して終わる（実機に入る前の確認）
 uv run --extra kinematics robopy-vr --hardware --hardware-check --follower-port /dev/ttyUSB0
 uv run --extra kinematics robopy-vr --hardware --follower-port /dev/ttyUSB0 --host 0.0.0.0 --self-signed
+#   --hardware-check は 1 回の一括読み取りにかかる時間も表示する。研究室の Rakuda では 13 モータで約 16 ms なので、
+#   control.max_acquisition_span_s（サーボの既定 0.010）・control_period_s（既定 0.005）はこの機体では成立しない。
+#   config.yaml の control に max_acquisition_span_s: 0.05, control_period_s: 0.02, read_timeout_s: 0.05,
+#   write_timeout_s: 0.05, max_state_age_s: 0.1, max_command_age_s: 0.1 のように実測に合わせて書く
 #   駆動するのは URDF 関節・ゼロ・可動域が校正済みのモータだけ（頭・グリッパは未校正なら触らない。未測定の
 #   関節は IK が 0 rad とみなす）。終了時はフォロワがトルク ON のまま姿勢を保持する（--release-on-exit で脱力）
 
@@ -920,7 +924,17 @@ uv run robopy-rakuda-calibrate --side follower --follower-port /dev/ttyUSB0 --no
 - 最後に `JointMap.require("geometry")`（位置制御と運動学に必要な水準）を通ることを確認します。
   `control.mode` が未設定なら `position_teleop` にします（結合関節のない `bilateral_joint` は読み込めないため）。
 
-対象は既定で胴体＋両腕の 13 モータ（`--motors` で絞れます。頭とグリッパは結合対象外なので指定できません）。
+対象は既定で胴体＋両腕の 13 モータ（`--motors` で絞れます）。頭とグリッパはバイラテラルの結合対象外ですが、
+`--side follower` なら校正できます（位置制御と VR のため）。
+
+```bash
+# 頭: 基準姿勢は「正面を見る」（yaw 中央・カメラ水平＝モデルのゼロ）。校正後は実機モードで頭がヘッドセットに追従する
+uv run robopy-rakuda-calibrate --side follower --follower-port /dev/ttyUSB0 --no-torque-constant --motors head_yaw,head_pitch
+# グリッパ: 基準姿勢は「全開」、向きは「閉じる方向が正」、可動域は全開と全閉の 2 点。
+#   校正後は robopy-vr --hardware がその値から開閉角を決める（--gripper の手入力は不要）
+uv run robopy-rakuda-calibrate --side follower --follower-port /dev/ttyUSB0 --no-torque-constant --motors l_arm_grip,r_arm_grip
+```
+
 リーダ、フォロワの順に、各腕で次を行います。**対象モータのトルクは切れる**ので腕を支えてください。
 
 1. **レジスタ読み取り**（自動）: モデル、`DRIVE_MODE`、`HOMING_OFFSET`、`VELOCITY_LIMIT`（→ `max_velocity_rad_s`）、

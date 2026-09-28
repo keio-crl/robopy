@@ -557,13 +557,21 @@ class ArmServo:
         if unknown:
             raise ValueError(f"{self._name}: cannot torque-enable unknown motor(s) {unknown}.")
 
+        modes: Dict[str, int] = {name: target_mode for name in self._motor_names}
+        if target_mode == OperatingMode.POSITION:
+            # A motor already in current-based position control (a gripper,
+            # whose current limit is its grip force) keeps that mode: GOAL_POSITION
+            # works the same there, and plain position control would let it
+            # stall at full torque on whatever it holds.
+            present = self._bus.sync_read(XControlTable.OPERATING_MODE, list(self._motor_names))
+            for name, value in present.items():
+                if int(value) == OperatingMode.CURRENT_BASED_POSITION:
+                    modes[name] = OperatingMode.CURRENT_BASED_POSITION
         configured = False
         try:
             self._bus.torque_disabled(list(self._motor_names))
-            self._bus.write_with_readback(
-                XControlTable.OPERATING_MODE,
-                {name: target_mode for name in self._motor_names},
-            )
+            self._bus.write_with_readback(XControlTable.OPERATING_MODE, dict(modes))
+            self._operating_modes = modes
             self._operating_modes = {name: target_mode for name in self._motor_names}
 
             if current_limits_a is not None:
@@ -765,11 +773,25 @@ class ArmServo:
             return f"{self._name}: owns no motor in this mode; nothing to stop."
         policy = self._config.stop_policy
         if policy == StopPolicy.ZERO_CURRENT:
-            self._bus.write_goal_current_a(
-                {name: 0.0 for name in self._motor_names},
-                timeout_s=self._config.write_timeout_s,
+            # Zero current is a rest only in current control.  A motor in a
+            # position mode keeps its goal and holds (in current-based position
+            # control GOAL_CURRENT is the grip force: zeroing it would let go).
+            in_current = [
+                name
+                for name in self._motor_names
+                if self._operating_modes.get(name, OperatingMode.CURRENT) == OperatingMode.CURRENT
+            ]
+            if in_current:
+                self._bus.write_goal_current_a(
+                    {name: 0.0 for name in in_current},
+                    timeout_s=self._config.write_timeout_s,
+                )
+            held = len(self._motor_names) - len(in_current)
+            return (
+                f"{self._name}: commanded zero current on {len(in_current)} motor(s), torque left "
+                f"enabled"
+                + (f"; {held} in position control keep holding their goal." if held else ".")
             )
-            return f"{self._name}: commanded zero current, torque left enabled."
         if policy == StopPolicy.TORQUE_OFF:
             self._bus.torque_disabled(list(self._motor_names))
             return f"{self._name}: torque disabled."

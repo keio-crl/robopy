@@ -670,6 +670,9 @@ def parse_rakuda_control_yaml(value: Any) -> Any:
         max_command_age_s=float(data.get("max_command_age_s", 0.05)),
         max_target_age_s=float(data.get("max_target_age_s", 0.2)),
         max_cross_bus_skew_s=float(data.get("max_cross_bus_skew_s", 0.01)),
+        max_acquisition_span_s=_as_float_or_none(
+            data.get("max_acquisition_span_s"), field_name="control.max_acquisition_span_s"
+        ),
         diagnostics_period_s=float(data.get("diagnostics_period_s", 1.0)),
         stop_policy=stop_policy,
         bus_watchdog_counts=_as_int_or_none(

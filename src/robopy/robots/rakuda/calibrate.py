@@ -101,7 +101,12 @@ _DEFAULT_MODEL = RakudaModelConfig(
         "wrist_yaw_right_dof",
         "wrist_pitch_right_dof",
     ],
+    head_joints=["head_yaw_dof", "head_pitch_dof"],
 )
+
+#: The head's motors, in the order of ``head_joints`` (yaw, then pitch).  The
+#: grippers have no URDF joint: their frames are fixed in the model.
+_HEAD_MOTORS = ("head_yaw", "head_pitch")
 
 #: The motors of each arm in chain order (shoulder to wrist).  The proposal
 #: ``motor -> URDF joint`` pairs the n-th motor with the n-th model joint of the
@@ -134,6 +139,8 @@ def proposed_urdf_joints(model: RakudaModelConfig | None = None) -> Dict[str, st
     for side, motors in _ARM_MOTORS.items():
         joints = m.left_arm_joints if side == "left" else m.right_arm_joints
         out.update(dict(zip(motors, [str(j) for j in joints])))
+    head = m.head_joints or _DEFAULT_MODEL.head_joints
+    out.update(dict(zip(_HEAD_MOTORS, [str(j) for j in head])))
     return out
 
 
@@ -442,10 +449,16 @@ class ArmCalibrator:
         self._forget(motor, "direction")
         self._note(motor, "direction")
         joint = result.urdf_joint or "?"
-        self.console.say(
-            f"\n  {motor} -> {joint}: move the joint by hand in the direction the model calls "
-            f"POSITIVE (right-hand rule about its axis), then hold."
-        )
+        if motor.endswith("_grip"):
+            self.console.say(
+                f"\n  {motor}: CLOSE the gripper by hand a little (closing is the positive "
+                "direction), then hold."
+            )
+        else:
+            self.console.say(
+                f"\n  {motor} -> {joint}: move the joint by hand in the direction the model calls "
+                f"POSITIVE (right-hand rule about its axis), then hold."
+            )
         start = self._position(motor)
         deadline = time.monotonic() + self.move_timeout_s
         delta = 0
@@ -474,7 +487,10 @@ class ArmCalibrator:
         rad_per_count = self._rad_per_count(motor)
         self._suspect(motor, "limits")
         counts: List[int] = []
-        for which in ("one end", "the other end"):
+        ends = ("one end", "the other end")
+        if motor.endswith("_grip"):
+            ends = ("fully OPEN", "fully CLOSED (no object between the fingers)")
+        for which in ends:
             self.console.ask(
                 f"  {motor}: move the joint to {which} of its travel, then press Enter"
             )
@@ -953,6 +969,8 @@ def compare_with_urdf(
         f"  {'motor':16s} {'URDF joint':26s} {'URDF range':>17s}   {'machine range':>17s}  check"
     ]
     for motor, r in follower.items():
+        if r.urdf_joint is None and motor.endswith("_grip"):
+            continue  # a gripper has no URDF joint to compare with
         lo_m, hi_m = r.lower_limit_rad, r.upper_limit_rad
         urdf_text, flags = _urdf_check(r, ranges, tolerance_rad=tolerance_rad)
         machine_text = (
@@ -972,6 +990,8 @@ def _urdf_check(
     tolerance_rad: float = 0.05,
 ) -> Tuple[str, List[str]]:
     """The URDF range of ``r``'s joint as text, and what disagrees with the travel."""
+    if r.urdf_joint is None and r.motor.endswith("_grip"):
+        return "no URDF joint", []  # a gripper: nothing in the model to compare with
     kind, lo_u, hi_u = ranges.get(r.urdf_joint or "?", ("missing", None, None))
     lo_m, hi_m = r.lower_limit_rad, r.upper_limit_rad
     urdf_text = (
@@ -1228,8 +1248,9 @@ class AutoConsole:
             return "0.5"
         if "lever arm" in prompt:
             return "0.2"
-        if "one end" in prompt or "other end" in prompt:
-            self._nudge(prompt, +0.8 if "one end" in prompt else -0.8)
+        if any(k in prompt for k in ("one end", "other end", "fully OPEN", "fully CLOSED")):
+            positive = "one end" in prompt or "fully OPEN" in prompt
+            self._nudge(prompt, +0.8 if positive else -0.8)
         return default
 
     def sleep(self, seconds: float) -> None:
@@ -1349,8 +1370,23 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     motors = [m.strip() for m in args.motors.split(",") if m.strip()]
     bad = [m for m in motors if m in RAKUDA_HEAD_MOTOR_NAMES or m.endswith("_grip")]
-    if bad:
-        parser.error(f"head and gripper motors are never coupled: {bad}")
+    if bad and args.side != "follower":
+        parser.error(
+            f"head and gripper motors are never coupled: {bad} (calibrate them with "
+            "--side follower, for position control)"
+        )
+    if args.zero_pose == parser.get_default("zero_pose"):
+        # A head or gripper run has its own reference pose.
+        if all(m.endswith("_grip") for m in motors):
+            args.zero_pose = (
+                "the grippers fully OPEN (the zero of a gripper is its open position; "
+                "closing is positive)"
+            )
+        elif all(m in RAKUDA_HEAD_MOTOR_NAMES for m in motors):
+            args.zero_pose = (
+                "the head looking straight ahead: yaw centred on the torso, camera level "
+                "(the model's zero)"
+            )
     if args.limit_margin_deg < 0.0:
         parser.error("--limit-margin-deg must not be negative")
     sides = ("leader", "follower") if args.side == "both" else (args.side,)

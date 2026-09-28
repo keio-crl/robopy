@@ -498,6 +498,11 @@ class RakudaControlConfig:
             cycle, only fresh data from both machines.
         max_cross_bus_skew_s: Limit on the time difference between the two
             buses' snapshots.
+        max_acquisition_span_s: Limit on how far apart the samples within one
+            bus's snapshot may be.  One SyncRead of the follower's thirteen arm
+            motors takes about 16 ms at 1 Mbps on the lab's Rakuda, so the
+            servo's own 10 ms default faults there; set it from a measurement
+            (``robopy-vr --hardware-check`` prints one).
         diagnostics_period_s: Temperature / voltage / error polling period.
         stop_policy: How to bring the machine to rest.  There is no universally
             safe default; choose it against the mechanism and its supports.
@@ -524,6 +529,7 @@ class RakudaControlConfig:
     max_command_age_s: float = 0.05
     max_target_age_s: float = 0.2
     max_cross_bus_skew_s: float = 0.01
+    max_acquisition_span_s: float | None = None
     diagnostics_period_s: float = 1.0
     stop_policy: str = "zero_current"
     bus_watchdog_counts: int | None = None

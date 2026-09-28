@@ -295,12 +295,16 @@ def build_arm_servo(
     motor_names: Sequence[str] | None = None,
 ) -> ArmServo:
     """Create the servo that owns ``bus``, using the periods from ``config``."""
+    extra: Dict[str, Any] = {}
+    if config.max_acquisition_span_s is not None:
+        extra["max_acquisition_span_s"] = config.max_acquisition_span_s
     return ArmServo(
         name=name,
         bus=bus,
         joint_map=joint_map,
         manager=manager,
         config=ServoLoopConfig(
+            **extra,
             control_period_s=config.control_period_s,
             read_timeout_s=config.read_timeout_s,
             write_timeout_s=config.write_timeout_s,
