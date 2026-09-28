@@ -629,6 +629,8 @@ class DualArmIK:
         # Model joints the measured state left out and that were taken as 0
         # (warned about once; see _configuration_from_state).
         self._assumed_zero_joints: List[str] = []
+        # Solved-for joints seen resting a little past a limit (warned once each).
+        self._on_stop_warned: set[str] = set()
         self._stage2_note = ""
 
     # -- properties ---------------------------------------------------------
@@ -1450,15 +1452,30 @@ class DualArmIK:
         # name and amount, not clamped back silently.
         lb_position = np.minimum(lower + cfg.position_limit_margin_rad - current, 0.0)
         ub_position = np.maximum(upper - cfg.position_limit_margin_rad - current, 0.0)
-        # Rounding puts a joint that sits on its stop a few 1e-16 rad past it;
-        # that is "on the limit", not a violation.
-        tolerance = 1e-9
+        # A joint resting on its mechanical stop reads a little past the limit
+        # its travel was measured to (the limits *are* those stops, a margin
+        # inside).  Up to HELD_JOINT_LIMIT_TOLERANCE_RAD past, that is "on the
+        # limit": the position bound above already allows only the inward
+        # step, so the solve goes on and the joint comes back inside.  Only a
+        # joint genuinely beyond that is reported by name and amount.
         beyond = []
         for i, name in enumerate(names):
-            if current[i] > upper[i] + tolerance:
-                beyond.append((name, float(current[i] - upper[i])))
-            elif current[i] < lower[i] - tolerance:
-                beyond.append((name, float(lower[i] - current[i])))
+            amount = 0.0
+            if current[i] > upper[i]:
+                amount = float(current[i] - upper[i])
+            elif current[i] < lower[i]:
+                amount = float(lower[i] - current[i])
+            if amount > HELD_JOINT_LIMIT_TOLERANCE_RAD:
+                beyond.append((name, amount))
+            elif amount > 1e-9 and name not in self._on_stop_warned:
+                self._on_stop_warned.add(name)
+                logger.warning(
+                    "%s reads %.4f rad past its limit (on its stop; within the %.3f rad "
+                    "tolerance): only inward motion is allowed until it is back inside.",
+                    name,
+                    amount,
+                    HELD_JOINT_LIMIT_TOLERANCE_RAD,
+                )
         if beyond:
             listed = ", ".join(f"{name} by {amount:.4f} rad" for name, amount in beyond)
             raise ValueError(
