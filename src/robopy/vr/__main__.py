@@ -1024,6 +1024,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
             ssl_context.load_cert_chain(str(tls[0]), str(tls[1]))
 
+        import importlib.util
+
+        # Without MuJoCo the videos cannot be drawn: record anyway and leave
+        # the drawing to robopy-vr-render, instead of failing after each take.
+        render_videos = not args.no_render and importlib.util.find_spec("mujoco") is not None
         server = VRServer(
             bundle,
             ik=loaded.ik,
@@ -1044,20 +1049,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                 clutch_button=args.clutch,
                 hands=hands_config,
                 record_dir=None if args.no_record else args.record_dir,
-                render_videos=not args.no_render,
+                render_videos=render_videos,
             ),
         )
         if not args.no_record:
             renderer = "off (--no-render)"
             if not args.no_render:
-                import importlib.util
-
                 from .render import select_gl_backend
 
                 # Not imported here: MuJoCo picks its GL backend on first
                 # import, so that is left to the renderer, which sets it up.
-                if importlib.util.find_spec("mujoco") is None:
-                    renderer = "UNAVAILABLE: pip install mujoco"
+                if not render_videos:
+                    renderer = (
+                        "UNAVAILABLE (MuJoCo not installed): recordings are kept and can be drawn "
+                        "later with `uv run --extra sim robopy-vr-render <file>.json`; to draw "
+                        "them right away, start with `uv run --extra kinematics --extra sim`"
+                    )
                 else:
                     renderer = f"MuJoCo (MUJOCO_GL={select_gl_backend() or 'default'})"
             print(
