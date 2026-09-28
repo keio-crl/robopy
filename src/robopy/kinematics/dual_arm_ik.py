@@ -99,6 +99,11 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
+#: How far a *held* (not solved-for) joint may read past its limit and still be
+#: treated as sitting on it.  The machine's limits are the stops its travel was
+#: measured against, and a joint resting on a stop reads slightly past them.
+HELD_JOINT_LIMIT_TOLERANCE_RAD = 0.05
+
 ORIENTATION_MODES: Tuple[str, ...] = ("position_only", "pose", "axis_aligned")
 PRIORITY_MODES: Tuple[str, ...] = ("weighted", "hierarchical")
 
@@ -1420,13 +1425,18 @@ class DualArmIK:
         fixed_lower, fixed_upper = self._model.position_limits(fixed_names)
         for name, lo, hi in zip(fixed_names, fixed_lower, fixed_upper):
             # A stationary joint may sit on a valid limit (Rakuda's elbows
-            # do at zero). The motion margin must not force it to move.
+            # do at zero). The motion margin must not force it to move.  A
+            # machine resting on its stop reads a few thousandths of a radian
+            # past the limit its travel was measured to; that is the limit,
+            # not a violation, and the solve goes on from the limit itself.
             if not (lo - 1e-9 <= positions[name] <= hi + 1e-9):
                 amount = positions[name] - hi if positions[name] > hi else lo - positions[name]
-                raise ValueError(
-                    f"Held joint '{name}' is outside its limits by {amount:.4f} rad "
-                    f"(at {positions[name]:.4f}, allowed [{lo:.4f}, {hi:.4f}])."
-                )
+                if amount > HELD_JOINT_LIMIT_TOLERANCE_RAD:
+                    raise ValueError(
+                        f"Held joint '{name}' is outside its limits by {amount:.4f} rad "
+                        f"(at {positions[name]:.4f}, allowed [{lo:.4f}, {hi:.4f}])."
+                    )
+                positions[name] = min(hi, max(lo, positions[name]))
         lower, upper = self._model.position_limits(names)
         current = np.asarray([positions[name] for name in names])
         # The position bound never *forces* motion. Outside the margin band

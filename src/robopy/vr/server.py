@@ -1091,6 +1091,11 @@ class VRServer(ViewerServer):
             ws.close(1011, "no camera")
             return
         self._camera_clients += 1
+        logger.info(
+            "camera client connected (%d watching); frames so far: %s",
+            self._camera_clients,
+            self.camera.describe().get("frames"),
+        )
         reason = "client closed"
 
         def readable() -> bool:
