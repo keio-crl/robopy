@@ -225,6 +225,11 @@ class RealsenseFrameSource:
         fps: Colour stream rate.
         timeout_ms: How long :meth:`read` waits for a new frame.
         reconnect_after_s: Restart the pipeline after this long without a frame.
+        start_attempts: With more than one, a start is verified: the pipeline
+            must deliver a frame within ``FIRST_FRAME_TIMEOUT_S`` or it is
+            stopped and started again, up to this many times.  A D435 on a
+            marginal USB link opens its pipeline and then sends nothing; a
+            restart usually gets a stream.  One (the default) trusts the start.
     """
 
     def __init__(
@@ -236,23 +241,14 @@ class RealsenseFrameSource:
         fps: int = 30,
         timeout_ms: float = 100.0,
         reconnect_after_s: float = 5.0,
+        start_attempts: int = 1,
     ) -> None:
-        from robopy.config.sensor_config.visual_config.camera_config import (
-            RealsenseCameraConfig,
-        )
-        from robopy.sensors.visual.realsense_camera import RealsenseCamera
-
-        config = RealsenseCameraConfig(
-            name=f"realsense{index}",
-            index=index,
-            width=width,
-            height=height,
-            fps=fps,
-            color_mode="rgb",
-            is_depth_camera=False,
-        )
-        self._camera: Any = RealsenseCamera(config=config)
-        self._camera.connect()
+        if start_attempts < 1:
+            raise ValueError("start_attempts must be at least 1.")
+        self._index, self._width, self._height, self._fps = index, width, height, fps
+        self.start_attempts = start_attempts
+        self.reconnect_after_s = reconnect_after_s
+        self._camera: Any = self._connect(fps)
         self._timeout_ms = timeout_ms
         self.reconnect_after_s = reconnect_after_s
         self.failures = 0
@@ -278,6 +274,77 @@ class RealsenseFrameSource:
         self._last_frame_s = time.monotonic()
         return to_bgr_uint8(frame, color="rgb")
 
+    #: How long a verified start (``start_attempts > 1``) waits for the first frame.
+    FIRST_FRAME_TIMEOUT_S = 2.5
+
+    def _connect(self, fps: int) -> Any:
+        from robopy.config.sensor_config.visual_config.camera_config import (
+            RealsenseCameraConfig,
+        )
+        from robopy.sensors.visual.realsense_camera import RealsenseCamera
+
+        config = RealsenseCameraConfig(
+            name=f"realsense{self._index}",
+            index=self._index,
+            width=self._width,
+            height=self._height,
+            fps=fps,
+            color_mode="rgb",
+            is_depth_camera=False,
+        )
+        attempts = self.start_attempts
+        last_error: Exception | None = None
+        camera: Any = None
+        for attempt in range(1, attempts + 1):
+            camera = RealsenseCamera(config=config)
+            try:
+                try:
+                    camera.connect(warmup=False)  # the frame check below is the warm-up
+                except TypeError:
+                    camera.connect()
+            except Exception as exc:  # noqa: BLE001 - the device may be re-enumerating
+                last_error = exc
+                camera = None
+                logger.warning("RealSense start %d/%d failed: %s", attempt, attempts, exc)
+                if attempt < attempts:
+                    time.sleep(1.0)
+                continue
+            if attempts == 1:
+                return camera  # no verification asked for
+            deadline = time.monotonic() + self.FIRST_FRAME_TIMEOUT_S
+            while time.monotonic() < deadline:
+                try:
+                    camera.async_read(timeout_ms=200)
+                except Exception:  # noqa: BLE001 - no frame yet
+                    continue
+                if attempt > 1:
+                    logger.info("RealSense streams after %d starts", attempt)
+                return camera
+            if attempt == attempts:
+                logger.error(
+                    "RealSense: pipeline open but no frame in %d starts; keeping it and retrying "
+                    "every %.0f s. Check the USB link: a D435 that shows as USB 2 has a marginal "
+                    "cable or port.",
+                    attempts,
+                    self.reconnect_after_s,
+                )
+                return camera
+            logger.warning(
+                "RealSense start %d/%d: pipeline open but no frame within %.1f s; restarting it",
+                attempt,
+                attempts,
+                self.FIRST_FRAME_TIMEOUT_S,
+            )
+            try:
+                camera.disconnect()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("RealSense disconnect after a silent start: %s", exc)
+            time.sleep(0.5)
+        raise RuntimeError(
+            f"RealSense could not be started in {attempts} attempt(s)"
+            + (f": {last_error}" if last_error else "")
+        )
+
     def _maybe_reconnect(self) -> None:
         if time.monotonic() - self._last_frame_s < self.reconnect_after_s:
             return
@@ -293,7 +360,7 @@ class RealsenseFrameSource:
         except Exception as exc:  # noqa: BLE001
             logger.debug("RealSense disconnect during restart: %s", exc)
         try:
-            self._camera.connect()
+            self._camera = self._connect(self._fps)
         except Exception as exc:  # noqa: BLE001
             logger.error("RealSense restart failed: %s", exc)
 

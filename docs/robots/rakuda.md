@@ -534,7 +534,11 @@ uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem
 uv run --extra kinematics robopy-vr --hardware --hardware-check --follower-port /dev/ttyUSB0
 uv run --extra kinematics --extra realsense robopy-vr --hardware --follower-port /dev/ttyUSB0 --host 0.0.0.0 --self-signed
 #   --camera の既定は auto: --hardware / --hardware-head では頭の RealSense を映す（pyrealsense2 は
-#   --extra realsense で入る。無い・カメラが無いときはテストパターンに戻して起動時に注記）
+#   --extra realsense で入る。無い・カメラが無いときはテストパターンに戻して起動時に注記）。
+#   RealSense はパイプラインが開いてもフレームが来ないことがある（研究室の D435 は USB 3 リンクが不安定で
+#   時々 USB 2 として再認識される）。起動時に 2.5 秒以内の最初のフレームを確認し、来なければ止めて起動し直す
+#   （最大 4 回）。それでも映らないときはケーブル・ポートを疑い、抜き差しするか pyrealsense2 の
+#   hardware_reset() をかける。fps は 30 のまま（fps を下げても改善しないことを確認済み）
 #   --hardware-check は 1 回の一括読み取りにかかる時間も表示する。研究室の Rakuda では 13 モータで約 16 ms なので、
 #   control.max_acquisition_span_s（サーボの既定 0.010）・control_period_s（既定 0.005）はこの機体では成立しない。
 #   config.yaml の control に max_acquisition_span_s: 0.05, control_period_s: 0.02, read_timeout_s: 0.05,

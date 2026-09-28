@@ -87,7 +87,12 @@ def build_parser() -> argparse.ArgumentParser:
     cam.add_argument(
         "--camera-size", default="640x480", metavar="WxH", help="RealSense colour stream size"
     )
-    cam.add_argument("--camera-fps", type=float, default=30.0)
+    cam.add_argument(
+        "--camera-fps",
+        type=float,
+        default=30.0,
+        help="camera and stream rate (default 30)",
+    )
     cam.add_argument(
         "--camera-mirror",
         choices=["on", "off"],
@@ -801,7 +806,7 @@ def _make_camera(args: argparse.Namespace, caption: Any) -> Any:
             raise SystemExit(f"--camera-size expects WxH, got {args.camera_size!r}") from None
         try:
             source = RealsenseFrameSource(
-                index, width=width, height=height, fps=int(args.camera_fps)
+                index, width=width, height=height, fps=int(args.camera_fps), start_attempts=4
             )
         except ImportError as exc:
             if not auto:
