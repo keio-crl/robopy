@@ -699,14 +699,14 @@ class TestHandSession:
         turned = {"p": [0.0, 1.6, 0.0], "q": [0.0, math.sin(0.15), 0.0, math.cos(0.15)]}
         state = session.handle({"type": "pose", "t": 0.1, "head": turned, **opened}, 0.1)
         assert state is not None and "recentred" not in state
-        state = session.handle({"type": "pose", "t": 0.7, "head": turned, **opened}, 0.7)
+        state = session.handle({"type": "pose", "t": 1.7, "head": turned, **opened}, 1.7)
         assert state is not None and state.get("recentred") is True
         assert state["operator"]["yaw_offset_rad"] == pytest.approx(0.3, abs=1e-6)
         # After the stop sign, the palms turned away and held open: re-centred and resumed.
         session._pause_arms()
-        session.handle({"type": "pose", "t": 1.0, "head": turned}, 1.0)
-        session.handle({"type": "pose", "t": 1.1, "head": turned, **opened}, 1.1)
-        state = session.handle({"type": "pose", "t": 1.7, "head": turned, **opened}, 1.7)
+        session.handle({"type": "pose", "t": 2.0, "head": turned}, 2.0)
+        session.handle({"type": "pose", "t": 2.1, "head": turned, **opened}, 2.1)
+        state = session.handle({"type": "pose", "t": 3.7, "head": turned, **opened}, 3.7)
         assert state is not None and state.get("recentred") is True
         assert state["arms_enabled"] and not state["gestures"]["paused"]
 
