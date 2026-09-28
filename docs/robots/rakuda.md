@@ -555,7 +555,11 @@ uv run --extra kinematics robopy-vr --hardware-head --follower-port /dev/ttyUSB1
     --host 0.0.0.0 --self-signed
 ```
 
-Quest のブラウザで `https://<PCのIP>:8766/vr` を開き、**Enter VR** を押します。
+Quest のブラウザで `https://<PCのIP>:8766/vr` を開き、**Enter VR**（既定では **Enter AR (passthrough)**）を押します。
+`passthrough (AR)` にチェックが入っていると WebXR の `immersive-ar` セッションで入り、ツイン・カメラ画像・HUD の背景が
+ヘッドセットのカメラ越しの周囲（パススルー）になります。実機と自分の手元を見ながら操作できます。操作・ハンドトラッキング・
+録画は VR と同じです。チェックを外すと従来の `immersive-vr`（暗い背景と床グリッド）です。パススルーに対応しない
+ヘッドセットではチェックボックスが無効になり VR で入ります。
 
 ### 実機の頭だけを動かし、頭部 RealSense を投影する（`--hardware-head`） {: #vr-head-only }
 

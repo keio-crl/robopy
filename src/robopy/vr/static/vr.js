@@ -58,20 +58,24 @@ const state = {
   mirrorOn: true, mirrorDistance: 1.5,
   recording: null,       // server's recorder state (from hello / state)
   frames: 0, lastFrameBytes: 0, lastFrameMs: null, camConnected: false,
+  vrSupported: false, arSupported: false, xrMode: null,
   connected: false,
 };
 window.__robopy_vr = state;
 
 // --------------------------------------------------------------- scene
 const viewport = $('#viewport');
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// alpha: with an immersive-ar session the headset composites the page over its
+// passthrough cameras, so the scene's background must be transparent.
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local-floor');
 viewport.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x14171c);
+const VR_BACKGROUND = new THREE.Color(0x14171c);
+scene.background = VR_BACKGROUND;
 const camera = new THREE.PerspectiveCamera(70, 1, 0.01, 60);
 camera.position.set(0.0, 1.5, 1.2);
 scene.add(camera);                            // so head-locked children render
@@ -419,10 +423,24 @@ function connectCamera() {
 // --------------------------------------------------------------- WebXR
 const xrSupportEl = $('#xr-support');
 const enterButton = $('#enter-vr');
+const passthroughBox = $('#passthrough');
+// Passthrough: an immersive-ar session shows the room through the headset's
+// cameras behind the twin, the camera image and the HUD, so the operator sees
+// the real robot and their own surroundings while driving.  Quest Browser
+// supports it; a headset that does not gets plain immersive-vr.
 if (navigator.xr) {
-  navigator.xr.isSessionSupported('immersive-vr').then((ok) => {
-    enterButton.disabled = !ok;
-    xrSupportEl.textContent = ok ? 'WebXR available' : 'no immersive-vr support on this device';
+  Promise.all([
+    navigator.xr.isSessionSupported('immersive-vr').catch(() => false),
+    navigator.xr.isSessionSupported('immersive-ar').catch(() => false),
+  ]).then(([vr, ar]) => {
+    state.vrSupported = vr; state.arSupported = ar;
+    enterButton.disabled = !(vr || ar);
+    passthroughBox.disabled = !ar;
+    if (!ar) passthroughBox.checked = false;
+    xrSupportEl.textContent = (vr || ar)
+      ? `WebXR available${ar ? ' (passthrough AR supported)' : ' (no passthrough: VR only)'}`
+      : 'no immersive-vr/ar support on this device';
+    updateEnterLabel();
   }).catch(() => { xrSupportEl.textContent = 'WebXR check failed'; });
 } else {
   xrSupportEl.textContent = window.isSecureContext
@@ -430,15 +448,41 @@ if (navigator.xr) {
     : 'not a secure context: WebXR needs https:// or localhost';
 }
 
+function wantPassthrough() { return Boolean(state.arSupported && passthroughBox.checked); }
+function updateEnterLabel() {
+  enterButton.textContent = wantPassthrough() ? 'Enter AR (passthrough)' : 'Enter VR';
+}
+passthroughBox.addEventListener('change', updateEnterLabel);
+
+function setPassthroughScene(on) {
+  // Nothing may paint over the passthrough: no background, no floor grid.
+  scene.background = on ? null : VR_BACKGROUND;
+  floor.visible = !on;
+  renderer.setClearAlpha(on ? 0 : 1);
+}
+
 enterButton.addEventListener('click', async () => {
+  const ar = wantPassthrough();
+  const mode = ar ? 'immersive-ar' : 'immersive-vr';
   try {
-    const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'] });
+    const session = await navigator.xr.requestSession(mode, { optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'] });
     state.xrSession = session;
+    state.xrMode = mode;
     state.preview = false;
-    session.addEventListener('end', () => { state.xrSession = null; setStatus('XR session ended; the arms hold.', 'warn'); });
+    setPassthroughScene(ar);
+    session.addEventListener('end', () => {
+      state.xrSession = null; state.xrMode = null;
+      setPassthroughScene(false);
+      setStatus('XR session ended; the arms hold.', 'warn');
+    });
     await renderer.xr.setSession(session);
   } catch (err) {
-    setStatus(`could not start XR: ${err.message}`, 'bad');
+    setPassthroughScene(false);
+    if (ar) {
+      setStatus(`could not start passthrough AR (${err.message}); untick "passthrough" for plain VR`, 'bad');
+    } else {
+      setStatus(`could not start XR: ${err.message}`, 'bad');
+    }
   }
 });
 
