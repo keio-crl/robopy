@@ -320,8 +320,15 @@ async function onHello(msg) {
   if (msg.twin_offset_m) setTwinOffset(msg.twin_offset_m);
   else if (msg.twin) setTwinPose(msg.twin);
   else setTwinOffset([0, 0, 1]);   // until the first re-centre places it
-  if (first && msg.model) await loadMeshes(msg.model);
+  // The camera does not wait for the twin: on a headset the meshes take a
+  // while to fetch and parse (and parsing blocks this thread), and the first
+  // hello is the only one that opens the camera socket.  Nor may a mesh
+  // failure leave the page half set up.
   if (first) { connectCamera(); }
+  if (first && msg.model) {
+    try { await loadMeshes(msg.model); }
+    catch (e) { console.warn('mesh loading failed; the twin stays empty', e); setStatus('meshes failed to load (see console); camera and control still work', 'warn'); }
+  }
   renderStatus();
 }
 

@@ -533,6 +533,8 @@ uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem
 #   「どのモータを駆動するか」「手先が今どこにあるか」を表示して終わる（実機に入る前の確認）
 uv run --extra kinematics robopy-vr --hardware --hardware-check --follower-port /dev/ttyUSB0
 uv run --extra kinematics --extra realsense robopy-vr --hardware --follower-port /dev/ttyUSB0 --host 0.0.0.0 --self-signed
+#   ページのツインは既定で凸包（collision、2.9 MB）を描く。視覚メッシュ（53 MB）はヘッドセットでの読み込み・解析が
+#   長く、その間に操作用ソケットがタイムアウトしていた。元に戻すには --geometry visual
 #   --camera の既定は auto: --hardware / --hardware-head では頭の RealSense を映す（pyrealsense2 は
 #   --extra realsense で入る。無い・カメラが無いときはテストパターンに戻して起動時に注記）。
 #   RealSense はパイプラインが開いてもフレームが来ないことがある（研究室の D435 は USB 3 リンクが不安定で

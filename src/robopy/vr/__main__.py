@@ -52,6 +52,10 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     add_model_arguments(parser)
+    # The twin is drawn on a headset: the convex hulls (2.9 MB) instead of the
+    # visual meshes (53 MB), which took the page's thread long enough to parse
+    # that the teleop socket timed out meanwhile.  --geometry visual restores them.
+    parser.set_defaults(geometry="collision")
     net = parser.add_argument_group("network")
     net.add_argument(
         "--host", default="127.0.0.1", help="bind address; 0.0.0.0 for a headset on the LAN"
