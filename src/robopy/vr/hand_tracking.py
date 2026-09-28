@@ -200,7 +200,7 @@ class HandTrackingConfig:
     end_hold_s: float = 2.5
     facing_cos: float = 0.7
     straight_ratio: float = 0.75
-    open_recenter_hold_s: float | None = 0.5
+    open_recenter_hold_s: float | None = 1.5
     end_fist_hold_s: float | None = 1.5
 
     def __post_init__(self) -> None:

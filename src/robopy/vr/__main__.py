@@ -282,10 +282,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hands.add_argument(
         "--hand-open-recenter",
-        default="0.5",
+        default="1.5",
         metavar="SECONDS|off",
         help="hold both hands open (fingers spread, palms not towards the headset) this long "
-        "to re-centre: the robot's head goes where the headset is now (default 0.5; off "
+        "to re-centre: the robot's head goes where the headset is now (default 1.5, long "
+        "enough not to fire while looking around with the hands open; off "
         "turns it off; only with --hand-clutch pinch)",
     )
 

@@ -59,6 +59,7 @@ const state = {
   recording: null,       // server's recorder state (from hello / state)
   frames: 0, lastFrameBytes: 0, lastFrameMs: null, camConnected: false,
   vrSupported: false, arSupported: false, xrMode: null,
+  twinPlaced: false, twinPlaceRequested: false,
   connected: false,
 };
 window.__robopy_vr = state;
@@ -198,6 +199,19 @@ function setTwinOffset(offset) {
   updateMirror();
 }
 
+// The twin stays where it was first placed ("twin fixed", the default): every
+// re-centre moves the operator's mapping, but a robot that jumps to the head
+// each time the hands happen to open is unusable to look at.  "place twin"
+// accepts the next placement; unticking the box follows every re-centre.
+function placeTwin(twin) {
+  const fixed = $('#twin-fixed').checked;
+  if (fixed && state.twinPlaced && !state.twinPlaceRequested) return;
+  setTwinPose(twin);
+  state.twinPlaced = true;
+  state.twinPlaceRequested = false;
+}
+$('#twin-place').onclick = () => { state.twinPlaceRequested = true; setStatus('the twin will be placed at the next re-centre / state update'); };
+
 // Server-computed placement: the robot base at `p` (robot axes from the WebXR
 // floor origin) turned by `yaw` about +Z, so the twin's head sits where the
 // operator's head was at re-centring and faces their forward.
@@ -322,7 +336,7 @@ async function onHello(msg) {
   imagePlane.visible = msg.camera_available !== false;
   $('#record').disabled = !msg.recording;
   if (msg.twin_offset_m) setTwinOffset(msg.twin_offset_m);
-  else if (msg.twin) setTwinPose(msg.twin);
+  else if (msg.twin) placeTwin(msg.twin);
   else setTwinOffset([0, 0, 1]);   // until the first re-centre places it
   // The camera does not wait for the twin: on a headset the meshes take a
   // while to fetch and parse (and parsing blocks this thread), and the first
@@ -339,7 +353,7 @@ async function onHello(msg) {
 function onState(msg) {
   state.lastState = msg;
   if (msg.t != null) state.lastRttMs = performance.now() - msg.t;
-  if (msg.twin) setTwinPose(msg.twin);
+  if (msg.twin) placeTwin(msg.twin);
   if (msg.recording !== undefined) state.recording = msg.recording;
   if (msg.geometries) applyPoses(msg.geometries);
   if (msg.tcp) for (const [side, pose] of Object.entries(msg.tcp)) { const f = tcpFrames[side]; if (f) placeObject(f, pose); }
