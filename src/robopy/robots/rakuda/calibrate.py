@@ -23,6 +23,13 @@ complete on both arms.  The finished file is read back through the normal
 loader and checked with ``JointMap.require("hardware")`` before the command
 reports success.
 
+``--side follower`` measures the follower alone (only ``--follower-port``):
+enough to match the machine to the URDF.  Its entries replace the follower's
+in the file, the leader's are kept, and the measured travel is also written
+as validated ``control.model.soft_limits_rad`` on the URDF joints -- the range
+the solver, the viewer's sliders and the machine adapter all resolve -- after
+a table comparing it with the URDF's range.
+
 ``--simulate`` runs the whole procedure on simulated buses with an automatic
 operator, to see the flow (and for the tests).
 """
@@ -52,7 +59,10 @@ __all__ = [
     "MotorReadings",
     "StdConsole",
     "build_control_section",
+    "compare_with_urdf",
     "main",
+    "model_soft_limits",
+    "urdf_joint_ranges",
     "write_config",
 ]
 
@@ -512,19 +522,21 @@ class ArmCalibrator:
 
 
 def build_control_section(
-    leader: Mapping[str, JointResult],
-    follower: Mapping[str, JointResult],
+    leader: Mapping[str, JointResult] | None,
+    follower: Mapping[str, JointResult] | None,
     *,
     existing: Mapping[str, Any] | None = None,
     allow_current: bool = False,
 ) -> Tuple[Dict[str, Any], List[str]]:
-    """The ``control:`` section from both arms' results.
+    """The ``control:`` section from the arms' results.
 
     Args:
-        leader: Leader results.
-        follower: Follower results.
+        leader: Leader results, or ``None`` when the leader was not measured
+            this time (its entries in ``existing`` are kept as they are).
+        follower: Follower results, or ``None`` likewise.
         existing: The current ``control:`` section, whose other settings
-            (gains, periods, model) are kept.
+            (gains, periods, model) are kept.  Motors measured now replace
+            their entries; the others are kept.
         allow_current: Write ``allow_hardware_current_output: true``; honoured
             only when every coupled joint is complete on both sides.
 
@@ -533,17 +545,25 @@ def build_control_section(
     """
     notes: List[str] = []
     control: Dict[str, Any] = dict(existing or {})
-    control.setdefault("mode", "bilateral_joint")
-    control["leader_joint_calibration"] = {m: r.to_yaml() for m, r in leader.items()}
-    control["follower_joint_calibration"] = {m: r.to_yaml() for m, r in follower.items()}
-    coupled = [
-        m
-        for m in RAKUDA_IK_MOTOR_NAMES
-        if m in leader and m in follower and leader[m].validated and follower[m].validated
-    ]
-    left_out = [
-        m for m in RAKUDA_IK_MOTOR_NAMES if m in leader and m in follower and m not in coupled
-    ]
+    tables: Dict[str, Dict[str, Any]] = {}
+    for side, results in (("leader", leader), ("follower", follower)):
+        key = f"{side}_joint_calibration"
+        table = dict(control.get(key) or {})
+        if results is not None:
+            table.update({m: r.to_yaml() for m, r in results.items()})
+        control[key] = table
+        tables[side] = table
+
+    def validated(side: str, motor: str) -> bool:
+        entry = tables[side].get(motor)
+        return isinstance(entry, Mapping) and bool(entry.get("validated"))
+
+    both = [m for m in RAKUDA_IK_MOTOR_NAMES if m in tables["leader"] and m in tables["follower"]]
+    coupled = [m for m in both if validated("leader", m) and validated("follower", m)]
+    left_out = [m for m in both if m not in coupled]
+    # bilateral_joint without a coupled joint does not load; a follower-only
+    # calibration is for position control and the kinematic model.
+    control.setdefault("mode", "bilateral_joint" if coupled else "position_teleop")
     if left_out:
         notes.append(
             "not coupled (incomplete on at least one side, usually the torque constant): "
@@ -551,8 +571,10 @@ def build_control_section(
         )
     bilateral: Dict[str, Any] = dict(control.get("bilateral") or {})
     bilateral["coupled_motors"] = coupled
-    bilateral["leader_current_limit_a"] = {m: leader[m].current_limit_a for m in coupled}
-    bilateral["follower_current_limit_a"] = {m: follower[m].current_limit_a for m in coupled}
+    for side in ("leader", "follower"):
+        bilateral[f"{side}_current_limit_a"] = {
+            m: tables[side][m].get("current_limit_a") for m in coupled
+        }
     for key, value in (
         ("stiffness_nm_per_rad", 1.0),
         ("damping_nm_s_per_rad", 0.05),
@@ -567,6 +589,8 @@ def build_control_section(
     control["bilateral"] = bilateral
     complete = bool(coupled)
     control["allow_hardware_current_output"] = bool(allow_current and complete)
+    if leader is None or follower is None:
+        return control, notes  # one arm only: the coupling notes are not about this run
     if allow_current and not complete:
         notes.append("allow_hardware_current_output left false: no joint is complete on both arms")
     if not allow_current:
@@ -580,6 +604,123 @@ def build_control_section(
             "gravity model per arm, or set it true knowingly for joints gravity does not load"
         )
     return control, notes
+
+
+def model_soft_limits(
+    follower: Mapping[str, JointResult],
+    *,
+    existing_model: Mapping[str, Any] | None = None,
+    margin_rad: float = 0.0,
+) -> Tuple[Dict[str, Any], List[str]]:
+    """``control.model`` with the follower's measured travel as soft limits.
+
+    The joint map's limits guard only the machine adapter; the solver, the
+    viewer's sliders and the home-pose check read the URDF range narrowed by
+    ``control.model.soft_limits_rad``.  Each joint whose zero, direction and
+    both ends were measured gets its travel, shrunk by ``margin_rad`` on each
+    side (the ends were found against the hard stops), as a *validated* soft
+    limit on its URDF joint.  A soft limit only narrows: where the machine
+    travels further than the URDF allows, the URDF range still stands.
+
+    Args:
+        follower: The follower's results.
+        existing_model: The current ``control.model`` section; its other
+            entries, and soft limits of joints not measured now, are kept.
+        margin_rad: Inward margin on each end.
+
+    Returns:
+        The model section and notes for the operator.
+    """
+    notes: List[str] = []
+    model: Dict[str, Any] = dict(existing_model or {})
+    soft: Dict[str, Any] = dict(model.get("soft_limits_rad") or {})
+    for motor, r in follower.items():
+        needed = ("zero_count", "direction", "lower_limit_rad", "upper_limit_rad", "urdf_joint")
+        missing = [k for k in needed if k not in r.measured]
+        if missing or r.urdf_joint is None:
+            notes.append(f"{motor}: no soft limit written ({', '.join(missing)} not measured)")
+            continue
+        assert r.lower_limit_rad is not None and r.upper_limit_rad is not None
+        lower, upper = r.lower_limit_rad + margin_rad, r.upper_limit_rad - margin_rad
+        if lower >= upper:
+            notes.append(f"{motor}: travel narrower than twice the margin; no soft limit written")
+            continue
+        soft[r.urdf_joint] = {
+            "lower": round(lower, 4),
+            "upper": round(upper, 4),
+            "validated": True,
+            "note": f"follower {motor} travel measured by robopy-rakuda-calibrate on "
+            f"{datetime.now():%Y-%m-%d}, {math.degrees(margin_rad):.1f} deg margin per end",
+        }
+    model["soft_limits_rad"] = soft
+    return model, notes
+
+
+def urdf_joint_ranges(urdf_path: Path) -> Dict[str, Tuple[str, float | None, float | None]]:
+    """``{joint: (type, lower, upper)}`` of the movable joints in a URDF."""
+    import xml.etree.ElementTree as ET
+
+    out: Dict[str, Tuple[str, float | None, float | None]] = {}
+    for joint in ET.parse(urdf_path).getroot().iter("joint"):
+        kind = joint.get("type", "")
+        if kind in ("fixed", "floating", "planar"):
+            continue
+        limit = joint.find("limit")
+        lower = upper = None
+        if kind != "continuous" and limit is not None:
+            lower = float(limit.get("lower", "0"))
+            upper = float(limit.get("upper", "0"))
+        out[str(joint.get("name"))] = (kind, lower, upper)
+    return out
+
+
+def compare_with_urdf(
+    follower: Mapping[str, JointResult],
+    ranges: Mapping[str, Tuple[str, float | None, float | None]],
+    *,
+    tolerance_rad: float = 0.05,
+) -> List[str]:
+    """A table of the machine's travel against the URDF's range, joint by joint.
+
+    Flags a zero pose outside the measured travel (the reference pose or the
+    direction is probably wrong), a URDF range wider than the machine (the
+    soft limit narrows it) and a machine travelling further than the URDF
+    allows (the URDF stays binding; an override with its reason is the only
+    way to widen it).
+    """
+    lines = [
+        f"  {'motor':16s} {'URDF joint':26s} {'URDF range':>17s}   {'machine range':>17s}  check"
+    ]
+    for motor, r in follower.items():
+        joint = r.urdf_joint or "?"
+        kind, lo_u, hi_u = ranges.get(joint, ("missing", None, None))
+        lo_m, hi_m = r.lower_limit_rad, r.upper_limit_rad
+        urdf_text = (
+            "continuous"
+            if kind == "continuous"
+            else ("NOT IN URDF" if kind == "missing" else f"[{lo_u:+.3f}, {hi_u:+.3f}]")
+        )
+        machine_text = (
+            "not measured" if lo_m is None or hi_m is None else f"[{lo_m:+.3f}, {hi_m:+.3f}]"
+        )
+        flags: List[str] = []
+        if kind == "missing":
+            flags.append("unknown joint name")
+        if lo_m is not None and hi_m is not None:
+            if lo_m > tolerance_rad or hi_m < -tolerance_rad:
+                flags.append("zero pose outside the travel: check the pose and the direction")
+            if lo_u is not None and hi_u is not None:
+                if lo_m < lo_u - tolerance_rad or hi_m > hi_u + tolerance_rad:
+                    flags.append("machine goes beyond URDF (URDF stays binding)")
+                if lo_m > lo_u + tolerance_rad or hi_m < hi_u - tolerance_rad:
+                    flags.append("URDF wider than machine (soft limit narrows)")
+            elif kind == "continuous":
+                flags.append("URDF has no range (soft limit supplies it)")
+        lines.append(
+            f"  {motor:16s} {joint:26s} {urdf_text:>17s}   {machine_text:>17s}  "
+            + ("; ".join(flags) or "ok")
+        )
+    return lines
 
 
 def write_config(
@@ -628,12 +769,23 @@ def write_config(
     return path
 
 
-def self_check(path: Path, models: Mapping[str, Mapping[str, str]]) -> List[str]:
-    """Load the written file the normal way and list what still blocks current control.
+def self_check(
+    path: Path,
+    models: Mapping[str, Mapping[str, str]],
+    *,
+    sides: Sequence[str] = ("leader", "follower"),
+) -> List[str]:
+    """Load the written file the normal way and list what still blocks its use.
+
+    With both sides, what blocks current control (``JointMap.require("hardware")``
+    on the coupled joints).  With one side, what blocks position control and
+    the kinematic model: ``require("geometry")`` on that side's motors in
+    ``models``.
 
     Args:
         path: The config file.
         models: ``{"leader"|"follower": {motor: model_name}}`` as probed.
+        sides: The sides measured this time.
     """
     from robopy.config.dotrobopy import load_yaml, parse_rakuda_control_yaml
     from robopy.control.joint_mapping import JointCalibration, JointMap, ValidationLevel
@@ -644,7 +796,8 @@ def self_check(path: Path, models: Mapping[str, Mapping[str, str]]) -> List[str]
     if control is None:
         return ["no control section was written"]
     coupled = list(control.bilateral.coupled_motors)
-    for side in ("leader", "follower"):
+    single = len(sides) == 1
+    for side in sides:
         specs = getattr(control, f"{side}_joint_calibration")
         entries = [
             JointCalibration(
@@ -667,12 +820,15 @@ def self_check(path: Path, models: Mapping[str, Mapping[str, str]]) -> List[str]
             problems.append(f"{side}: no calibration written")
             continue
         joint_map = JointMap(entries)
+        level, wanted = ValidationLevel.HARDWARE, [m for m in coupled if m in joint_map]
+        if single:
+            level, wanted = ValidationLevel.GEOMETRY, [m for m in models.get(side, {})]
         try:
-            joint_map.require(
-                ValidationLevel.HARDWARE, motor_names=[m for m in coupled if m in joint_map]
-            )
+            joint_map.require(level, motor_names=wanted)
         except Exception as exc:  # noqa: BLE001 - reported verbatim
             problems.append(f"{side}: {exc}")
+    if single:
+        return problems
     if not coupled:
         problems.append("bilateral.coupled_motors is empty: no joint is complete on both arms")
     if not control.allow_hardware_current_output:
@@ -759,8 +915,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     """``robopy-rakuda-calibrate``."""
     parser = argparse.ArgumentParser(
         prog="robopy-rakuda-calibrate",
-        description="Measure, on the machine, the per-joint calibration bilateral control needs, "
-        "and write it into .robopy/rakuda/config.yaml.",
+        description="Measure, on the machine, the per-joint calibration (motor <-> URDF joint, "
+        "zero, direction, travel; and for bilateral control the torque constant) and write it "
+        "into .robopy/rakuda/config.yaml.",
+    )
+    parser.add_argument(
+        "--side",
+        choices=("both", "leader", "follower"),
+        default="both",
+        help="which arm(s) to measure; 'follower' needs only --follower-port and is enough to "
+        "match the machine to the URDF (default: both, for bilateral control)",
     )
     parser.add_argument("--leader-port", default=None)
     parser.add_argument("--follower-port", default=None)
@@ -771,6 +935,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "--output", type=Path, default=None, help="config file (default .robopy/rakuda/config.yaml)"
+    )
+    parser.add_argument(
+        "--urdf",
+        type=Path,
+        default=None,
+        help="URDF to compare the follower's travel with (default: control.model.urdf_path, "
+        "else the bundled model)",
+    )
+    parser.add_argument(
+        "--no-soft-limits",
+        action="store_true",
+        help="do not write the follower's measured travel into control.model.soft_limits_rad",
+    )
+    parser.add_argument(
+        "--limit-margin-deg",
+        type=float,
+        default=2.0,
+        help="inward margin per end of the soft limits, since the ends are the hard stops",
     )
     parser.add_argument(
         "--current-fraction",
@@ -804,10 +986,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     bad = [m for m in motors if m in RAKUDA_HEAD_MOTOR_NAMES or m.endswith("_grip")]
     if bad:
         parser.error(f"head and gripper motors are never coupled: {bad}")
+    if args.limit_margin_deg < 0.0:
+        parser.error("--limit-margin-deg must not be negative")
+    sides = ("leader", "follower") if args.side == "both" else (args.side,)
 
-    from robopy.config.dotrobopy import get_rakuda_yaml_path
+    from robopy.config.dotrobopy import get_rakuda_yaml_path, load_yaml
 
     output = args.output or get_rakuda_yaml_path()
+    existing = (load_yaml(output) or {}).get("control") if output.is_file() else None
     console: Any
     buses: Dict[str, Any]
     arms: Dict[str, Any] = {}
@@ -815,30 +1001,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         buses = simulated_buses(motors)
         console = AutoConsole(buses)
     else:
-        if not args.leader_port or not args.follower_port:
-            parser.error("--leader-port and --follower-port are needed (or --simulate)")
+        missing = [f"--{side}-port" for side in sides if not getattr(args, f"{side}_port")]
+        if missing:
+            parser.error(f"{' and '.join(missing)} needed for --side {args.side} (or --simulate)")
         from robopy.config.dotrobopy import apply_rakuda_dotconfig
         from robopy.config.robot_config.rakuda_config import RakudaConfig
-        from robopy.robots.rakuda.rakuda_follower import RakudaFollower
-        from robopy.robots.rakuda.rakuda_leader import RakudaLeader
 
+        leader_port, follower_port = args.leader_port or "", args.follower_port or ""
         cfg = apply_rakuda_dotconfig(
-            RakudaConfig(leader_port=args.leader_port, follower_port=args.follower_port)
+            RakudaConfig(leader_port=leader_port, follower_port=follower_port)
         )
-        cfg.leader_port, cfg.follower_port = args.leader_port, args.follower_port
+        cfg.leader_port, cfg.follower_port = leader_port, follower_port
         console = StdConsole()
         console.say(
-            "CALIBRATION: torque will be switched OFF on the selected motors of both arms.\n"
-            "Support the arms before continuing; they will go limp."
+            f"CALIBRATION: torque will be switched OFF on the selected motors of the "
+            f"{' and '.join(sides)}.\nSupport the arms before continuing; they will go limp."
         )
         console.ask("Press Enter to connect")
-        arms = {"leader": RakudaLeader(cfg), "follower": RakudaFollower(cfg)}
+        if "leader" in sides:
+            from robopy.robots.rakuda.rakuda_leader import RakudaLeader
+
+            arms["leader"] = RakudaLeader(cfg)
+        if "follower" in sides:
+            from robopy.robots.rakuda.rakuda_follower import RakudaFollower
+
+            arms["follower"] = RakudaFollower(cfg)
         for arm in arms.values():
             arm.connect()
         buses = {side: arm.motors for side, arm in arms.items()}
     try:
         results: Dict[str, Dict[str, JointResult]] = {}
-        for side in ("leader", "follower"):
+        for side in sides:
             calibrator = ArmCalibrator(
                 buses[side],
                 side,
@@ -853,28 +1046,56 @@ def main(argv: Sequence[str] | None = None) -> int:
             results[side] = calibrator.run(
                 pose_description=args.zero_pose, torque_constants=not args.no_torque_constant
             )
-        from robopy.config.dotrobopy import load_yaml
-
-        existing = (load_yaml(output) or {}).get("control") if output.is_file() else None
         control, notes = build_control_section(
-            results["leader"],
-            results["follower"],
+            results.get("leader"),
+            results.get("follower"),
             existing=existing,
             allow_current=args.allow_current,
         )
+        follower = results.get("follower")
+        if follower is not None:
+            urdf = args.urdf or _configured_urdf(control)
+            if urdf is not None and urdf.is_file():
+                console.say(f"\nfollower travel against {urdf} (rad):")
+                for line in compare_with_urdf(follower, urdf_joint_ranges(urdf)):
+                    console.say(line)
+            else:
+                console.say("\nno URDF found to compare the follower's travel with")
+            if not args.no_soft_limits:
+                model, soft_notes = model_soft_limits(
+                    follower,
+                    existing_model=control.get("model"),
+                    margin_rad=math.radians(args.limit_margin_deg),
+                )
+                control["model"] = model
+                notes += soft_notes
+                notes.append(
+                    "control.model.soft_limits_rad now holds the follower's measured travel; "
+                    "the viewer (--config), the IK and the machine read it"
+                )
         path = write_config(output, control, coupled=control["bilateral"]["coupled_motors"])
         console.say(f"\nwritten: {path}")
         for note in notes:
             console.say(f"  note: {note}")
         problems = self_check(
-            path, {side: {m: r.model for m, r in res.items()} for side, res in results.items()}
+            path,
+            {side: {m: r.model for m, r in res.items()} for side, res in results.items()},
+            sides=sides,
         )
         if problems:
-            console.say("still blocking bilateral control:")
+            console.say(
+                "still blocking:" if len(sides) == 1 else "still blocking bilateral control:"
+            )
             for problem in problems:
                 console.say(f"  - {problem}")
             return 1
-        console.say("the file passes JointMap.require('hardware') for every coupled joint.")
+        if len(sides) == 1:
+            console.say(
+                f"the {sides[0]}'s calibration passes JointMap.require('geometry') "
+                "(position control and the kinematic model)."
+            )
+        else:
+            console.say("the file passes JointMap.require('hardware') for every coupled joint.")
         return 0
     finally:
         for arm in arms.values():
@@ -882,6 +1103,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arm.disconnect()
             except Exception:  # noqa: BLE001 - best effort
                 logger.exception("disconnect failed")
+
+
+def _configured_urdf(control: Mapping[str, Any]) -> Path | None:
+    """The URDF the rest of robopy would load: the configured one, else the bundled one."""
+    configured = (control.get("model") or {}).get("urdf_path")
+    if configured:
+        return Path(configured)
+    from robopy.models import find_rakuda_model
+
+    found = find_rakuda_model()
+    return Path(found.convex_collision_urdf) if found is not None else None
 
 
 if __name__ == "__main__":

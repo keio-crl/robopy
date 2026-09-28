@@ -843,7 +843,29 @@ multi-turn位置は `[-pi, pi]` へ折り返しません。`zero_count` は
 ```bash
 uv run robopy-rakuda-calibrate --leader-port /dev/ttyUSB1 --follower-port /dev/ttyUSB0
 uv run robopy-rakuda-calibrate --simulate     # 模擬バスと自動操作者で流れを見る
+
+# フォロワだけ（リーダ不要）: 実機と URDF の対応（関節対応・ゼロ点・向き・可動域）を取る
+uv run robopy-rakuda-calibrate --side follower --follower-port /dev/ttyUSB0 --no-torque-constant
 ```
+
+**フォロワだけの校正（`--side follower`）**: URDF との対応に必要な値（関節対応・`zero_count`・`direction`・
+可動域）はすべてフォロワ単体で決まるので、`--follower-port` だけで実行できます。書き込みは次のとおりです。
+
+- `follower_joint_calibration` のうち、今回測ったモータの項目だけを置き換えます。`leader_joint_calibration` と
+  `bilateral` は既存の値を保ちます（結合関節は両側のファイル上の値から決め直します）。
+- 測った可動域を、URDF 関節名をキーとして `control.model.soft_limits_rad` に `validated: true` で書きます。
+  両端は手で押し当てた機械端なので、`--limit-margin-deg`（既定 2°）だけ内側に寄せます。書かない場合は
+  `--no-soft-limits` を付けます。soft limit は範囲を**狭めるだけ**なので、ソルバ・スライダ（`robopy-viewer --config`）・
+  実機アダプタはすべて「URDF ∩ 実測」の範囲を使います。
+- 書く前に、関節ごとに URDF の範囲と実測の範囲を並べた表を出します（URDF は `--urdf`、既定は
+  `control.model.urdf_path`、それもなければ同梱モデル）。次の場合に注記が付きます。
+  - `zero pose outside the travel`: ゼロ姿勢が実測範囲の外にあります。基準姿勢か向きの測り方が誤っている可能性があります。
+  - `URDF wider than machine`: URDF の範囲が実機より広い側があります。soft limit で狭めます。
+  - `machine goes beyond URDF`: 実機が URDF より広く動きます。URDF の範囲はそのまま拘束として残ります。
+    URDF の方が誤りなら、理由を添えて `joint_limit_overrides_rad` で広げます（自動では書きません）。
+  - `URDF has no range`: continuous 関節です。soft limit が範囲になります。
+- 最後に `JointMap.require("geometry")`（位置制御と運動学に必要な水準）を通ることを確認します。
+  `control.mode` が未設定なら `position_teleop` にします（結合関節のない `bilateral_joint` は読み込めないため）。
 
 対象は既定で胴体＋両腕の 13 モータ（`--motors` で絞れます。頭とグリッパは結合対象外なので指定できません）。
 リーダ、フォロワの順に、各腕で次を行います。**対象モータのトルクは切れる**ので腕を支えてください。
