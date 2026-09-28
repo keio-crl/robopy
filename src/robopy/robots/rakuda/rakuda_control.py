@@ -300,6 +300,8 @@ def build_arm_servo(
         extra["max_acquisition_span_s"] = config.max_acquisition_span_s
     if config.range_tolerance_rad is not None:
         extra["range_tolerance_rad"] = config.range_tolerance_rad
+    if config.max_slow_reads is not None:
+        extra["max_slow_reads"] = config.max_slow_reads
     return ArmServo(
         name=name,
         bus=bus,
@@ -392,11 +394,17 @@ class RakudaControlSystem:
                 allow_uncompensated=config.bilateral.allow_uncompensated,
             )
 
+        loop_extra: Dict[str, Any] = {}
+        if config.max_acquisition_span_s is not None:
+            loop_extra["max_acquisition_span_s"] = config.max_acquisition_span_s
+        if config.max_slow_reads is not None:
+            loop_extra["max_slow_reads"] = config.max_slow_reads
         self._loop = ServoLoop(
             (self._leader, self._follower),
             manager,
             self._step,
             ServoLoopConfig(
+                **loop_extra,
                 control_period_s=config.control_period_s,
                 max_cross_bus_skew_s=config.max_cross_bus_skew_s,
                 stop_policy=config.stop_policy,

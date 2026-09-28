@@ -128,6 +128,10 @@ class ServoLoopConfig:
         stop_policy: See :class:`StopPolicy`.
         bus_watchdog_counts: Value written to ``BUS_WATCHDOG`` (20 ms per count),
             or ``None`` to leave the register alone.
+        max_slow_reads: A snapshot whose samples span more than
+            ``max_acquisition_span_s`` (a retried transaction, a USB hiccup) is
+            not acted on: that cycle issues no command and the motors hold.
+            Only this many such reads *in a row* fault the loop.
         range_tolerance_rad: How far outside its calibrated range a measured
             position may be before the cycle faults.  The calibrated ends are
             the hard stops the joint was pushed against, so a joint resting on
@@ -149,6 +153,7 @@ class ServoLoopConfig:
     stop_policy: str = StopPolicy.ZERO_CURRENT
     bus_watchdog_counts: int | None = None
     range_tolerance_rad: float = 0.05
+    max_slow_reads: int = 5
 
     def __post_init__(self) -> None:
         if self.range_tolerance_rad < 0.0:
@@ -472,13 +477,6 @@ class ArmServo:
             problems.append(
                 f"{self._name}: state is {age * 1e3:.1f} ms old, over the "
                 f"{cfg.max_state_age_s * 1e3:.1f} ms limit."
-            )
-        if state.acquisition_span_s > cfg.max_acquisition_span_s:
-            problems.append(
-                f"{self._name}: the samples in this snapshot span "
-                f"{state.acquisition_span_s * 1e3:.1f} ms, over the "
-                f"{cfg.max_acquisition_span_s * 1e3:.1f} ms limit; they cannot be treated as "
-                "simultaneous."
             )
         for array, label in (
             (state.position_rad, "position"),
@@ -882,6 +880,9 @@ class ServoLoop:
         self._stop_event = threading.Event()
         self._log_queue: queue.Queue[Dict[str, Any]] = queue.Queue(maxsize=1024)
         self._dropped_logs = 0
+        self._slow_streak = 0
+        self._slow_reads = 0
+        self._slow_logged_ns = 0
 
     @property
     def servos(self) -> Tuple[ArmServo, ...]:
@@ -936,6 +937,7 @@ class ServoLoop:
                 -- or :meth:`start` -- converts that into a fault.
         """
         states: Dict[str, JointState] = {}
+        slow: List[str] = []
         for servo in self._servos:
             state = servo.read_state()
             problems = servo.check_state(state)
@@ -943,7 +945,36 @@ class ServoLoop:
             problems.extend(servo.check_diagnostics())
             if problems:
                 raise RuntimeError("; ".join(problems))
+            if state.acquisition_span_s > self._config.max_acquisition_span_s:
+                slow.append(
+                    f"{servo.name}: the samples in this snapshot span "
+                    f"{state.acquisition_span_s * 1e3:.1f} ms, over the "
+                    f"{self._config.max_acquisition_span_s * 1e3:.1f} ms limit"
+                )
             states[servo.name] = state
+        if slow:
+            # Not simultaneous enough to act on: hold this cycle.  A run of them
+            # means the bus is not delivering, and that is a fault.
+            self._slow_streak += 1
+            self._slow_reads += 1
+            now = monotonic_ns()
+            if now - self._slow_logged_ns > 1_000_000_000:
+                self._slow_logged_ns = now
+                logger.warning(
+                    "slow read, no command this cycle (%d in a row, %d in total): %s",
+                    self._slow_streak,
+                    self._slow_reads,
+                    "; ".join(slow),
+                )
+            if self._slow_streak >= self._config.max_slow_reads:
+                raise RuntimeError(
+                    f"{self._slow_streak} slow reads in a row "
+                    f"(limit {self._config.max_slow_reads}): "
+                    + "; ".join(slow)
+                    + ". The bus is not delivering snapshots that can be treated as simultaneous."
+                )
+            return states
+        self._slow_streak = 0
 
         # A servo that owns no motor did not read a bus: it has no snapshot to skew.
         times = [s.read_end_ns for s in states.values() if len(s.joint_names)]
