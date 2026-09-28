@@ -673,6 +673,9 @@ def parse_rakuda_control_yaml(value: Any) -> Any:
         max_acquisition_span_s=_as_float_or_none(
             data.get("max_acquisition_span_s"), field_name="control.max_acquisition_span_s"
         ),
+        range_tolerance_rad=_as_float_or_none(
+            data.get("range_tolerance_rad"), field_name="control.range_tolerance_rad"
+        ),
         diagnostics_period_s=float(data.get("diagnostics_period_s", 1.0)),
         stop_policy=stop_policy,
         bus_watchdog_counts=_as_int_or_none(

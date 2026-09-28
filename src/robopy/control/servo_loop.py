@@ -128,6 +128,11 @@ class ServoLoopConfig:
         stop_policy: See :class:`StopPolicy`.
         bus_watchdog_counts: Value written to ``BUS_WATCHDOG`` (20 ms per count),
             or ``None`` to leave the register alone.
+        range_tolerance_rad: How far outside its calibrated range a measured
+            position may be before the cycle faults.  The calibrated ends are
+            the hard stops the joint was pushed against, so a joint resting on
+            a stop reads a few counts past them; that is warned about, not
+            faulted.
     """
 
     control_period_s: float = 0.005
@@ -143,8 +148,11 @@ class ServoLoopConfig:
     max_cross_bus_skew_s: float = 0.01
     stop_policy: str = StopPolicy.ZERO_CURRENT
     bus_watchdog_counts: int | None = None
+    range_tolerance_rad: float = 0.05
 
     def __post_init__(self) -> None:
+        if self.range_tolerance_rad < 0.0:
+            raise ValueError("range_tolerance_rad must not be negative.")
         if self.stop_policy not in StopPolicy.ALL:
             raise ValueError(
                 f"stop_policy must be one of {StopPolicy.ALL}, got '{self.stop_policy}'."
@@ -281,6 +289,7 @@ class ArmServo:
         self._write_stats = TimingStats(f"{name}.write")
         self._lease: CommandLease | None = None
         self._operating_modes: Dict[str, int] = {}
+        self._range_warned: set[str] = set()
 
     # -- properties ---------------------------------------------------------
 
@@ -484,10 +493,26 @@ class ArmServo:
             calibration = self._map[motor]
             lower, upper = calibration.lower_limit_rad, calibration.upper_limit_rad
             if lower is not None and upper is not None:
-                if not lower <= state.position_rad[i] <= upper:
+                position = float(state.position_rad[i])
+                outside = max(lower - position, position - upper, 0.0)
+                if outside > cfg.range_tolerance_rad:
                     problems.append(
-                        f"{self._name}/{motor}: {state.position_rad[i]:.4f} rad is outside its "
-                        f"calibrated range [{lower:.4f}, {upper:.4f}]."
+                        f"{self._name}/{motor}: {position:.4f} rad is outside its calibrated "
+                        f"range [{lower:.4f}, {upper:.4f}] by {outside:.4f} rad (more than the "
+                        f"{cfg.range_tolerance_rad:.3f} rad tolerance)."
+                    )
+                elif outside > 0.0 and motor not in self._range_warned:
+                    self._range_warned.add(motor)
+                    logger.warning(
+                        "%s/%s: %.4f rad is %.4f rad past its calibrated range [%.4f, %.4f] "
+                        "(on the stop; within the %.3f rad tolerance, not a fault).",
+                        self._name,
+                        motor,
+                        position,
+                        outside,
+                        lower,
+                        upper,
+                        cfg.range_tolerance_rad,
                     )
         return problems
 
@@ -968,6 +993,7 @@ class ServoLoop:
             try:
                 self.run_once(max(dt, 1e-6))
             except Exception as exc:  # noqa: BLE001 - any failure is a fault
+                logger.error("SERVO FAULT: %s", exc)
                 logger.exception("Servo cycle failed; faulting.")
                 self._manager.fault("cycle_failed", str(exc), source="servo_loop")
                 self._emergency_stop()

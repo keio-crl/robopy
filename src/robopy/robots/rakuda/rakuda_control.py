@@ -298,6 +298,8 @@ def build_arm_servo(
     extra: Dict[str, Any] = {}
     if config.max_acquisition_span_s is not None:
         extra["max_acquisition_span_s"] = config.max_acquisition_span_s
+    if config.range_tolerance_rad is not None:
+        extra["range_tolerance_rad"] = config.range_tolerance_rad
     return ArmServo(
         name=name,
         bus=bus,

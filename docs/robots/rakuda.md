@@ -536,7 +536,9 @@ uv run --extra kinematics robopy-vr --hardware --follower-port /dev/ttyUSB0 --ho
 #   --hardware-check は 1 回の一括読み取りにかかる時間も表示する。研究室の Rakuda では 13 モータで約 16 ms なので、
 #   control.max_acquisition_span_s（サーボの既定 0.010）・control_period_s（既定 0.005）はこの機体では成立しない。
 #   config.yaml の control に max_acquisition_span_s: 0.05, control_period_s: 0.02, read_timeout_s: 0.05,
-#   write_timeout_s: 0.05, max_state_age_s: 0.1, max_command_age_s: 0.1 のように実測に合わせて書く
+#   write_timeout_s: 0.05, max_state_age_s: 0.1, max_command_age_s: 0.1 のように実測に合わせて書く。
+#   関節が校正した可動域（機械端）を range_tolerance_rad（既定 0.05 rad）より外に出るとフォルト（端に乗る程度は警告のみ）。
+#   フォルトするとループが止まりフォロワは姿勢を保持したまま動かなくなる。端末の SERVO FAULT: 行と VR の HUD に理由が出る
 #   駆動するのは URDF 関節・ゼロ・可動域が校正済みのモータだけ（頭・グリッパは未校正なら触らない。未測定の
 #   関節は IK が 0 rad とみなす）。終了時はフォロワがトルク ON のまま姿勢を保持する（--release-on-exit で脱力）
 

@@ -503,6 +503,10 @@ class RakudaControlConfig:
             motors takes about 16 ms at 1 Mbps on the lab's Rakuda, so the
             servo's own 10 ms default faults there; set it from a measurement
             (``robopy-vr --hardware-check`` prints one).
+        range_tolerance_rad: How far a measured position may sit outside its
+            calibrated range before the servo faults (the ends are the hard
+            stops; resting on one is normal).  ``None`` keeps the servo's
+            default (0.05 rad).
         diagnostics_period_s: Temperature / voltage / error polling period.
         stop_policy: How to bring the machine to rest.  There is no universally
             safe default; choose it against the mechanism and its supports.
@@ -530,6 +534,7 @@ class RakudaControlConfig:
     max_target_age_s: float = 0.2
     max_cross_bus_skew_s: float = 0.01
     max_acquisition_span_s: float | None = None
+    range_tolerance_rad: float | None = None
     diagnostics_period_s: float = 1.0
     stop_policy: str = "zero_current"
     bus_watchdog_counts: int | None = None
