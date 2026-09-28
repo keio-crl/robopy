@@ -1202,6 +1202,54 @@ function showTab(name) {
 }
 document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => showTab(t.dataset.tab)));
 
+// ------------------------------------------------------------------ machine mirror
+// With --mirror-follower the server reads the real follower (read-only) and
+// /api/machine returns its joint angles.  While "follow machine" is ticked the
+// model is drawn in that pose.  The values are not clamped to the sliders'
+// range: a joint outside it is exactly what a calibration check wants to see.
+const machine = { inFlight: false };
+
+function machineOutOfRange(joints) {
+  const out = [];
+  for (const [name, v] of Object.entries(joints)) {
+    const j = state.model.joints.find((x) => x.name === name);
+    if (j && (v < j.lower - 1e-6 || v > j.upper + 1e-6)) out.push(`${name} ${fmtAngle(v)}`);
+  }
+  return out;
+}
+
+function fmtAngle(rad) { return state.unitDeg ? `${(rad * DEG).toFixed(1)}°` : `${rad.toFixed(3)} rad`; }
+
+async function pollMachine() {
+  if (machine.inFlight) return;
+  machine.inFlight = true;
+  const status = $('#machine-status');
+  try {
+    const m = await api('/api/machine');
+    if (!m.available) return;
+    const follow = $('#machine-follow').checked;
+    const parts = [];
+    if (m.error) parts.push(`read error: ${m.error}`);
+    else parts.push(`${Object.keys(m.joints).length} joints read ${m.age_s == null ? '' : `${(m.age_s * 1000).toFixed(0)} ms ago`}`);
+    if (m.missing.length) parts.push(`no answer: ${m.missing.join(', ')}`);
+    const unmapped = Object.keys(m.unmapped || {});
+    if (unmapped.length) parts.push(`not mirrored: ${unmapped.join(', ')}`);
+    const out = machineOutOfRange(m.joints);
+    if (out.length) parts.push(`OUTSIDE the range: ${out.join(', ')}`);
+    status.textContent = `machine (read-only): ${parts.join('  |  ')}`;
+    status.classList.toggle('warn', Boolean(m.error || out.length));
+    if (!follow || m.error) return;
+    manualPoseEdit();
+    for (const [name, v] of Object.entries(m.joints)) if (name in state.joints) state.joints[name] = v;
+    refreshJointInputs();
+    requestFK();
+  } catch (err) {
+    status.textContent = `machine: ${err.message}`;
+  } finally {
+    machine.inFlight = false;
+  }
+}
+
 // ------------------------------------------------------------------ boot
 (async function boot() {
   try {
@@ -1222,6 +1270,11 @@ document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () 
     buildModeControls(model);
     buildEEPanel(model);
     buildInfo(model);
+    if (model.machine_mirror) {
+      $('#machine-follow-wrap').hidden = false;
+      $('#machine-status').hidden = false;
+      setInterval(pollMachine, 100);
+    }
     const home = model.home_positions_rad || {};
     if (Object.keys(home).length) {
       $('#joints-home').disabled = false;

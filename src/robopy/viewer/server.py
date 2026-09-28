@@ -19,6 +19,8 @@ Endpoints
 ``POST /api/ik/reset``      forget the session's velocity history and posture
                             reference (a manual pose change, a mode switch)
 ``GET  /api/health``        liveness
+``GET  /api/machine``       the real follower's joint angles, read-only
+                           (``--mirror-follower``; ``{"available": false}`` otherwise)
 
 Two modes of ``/api/ik`` are kept deliberately apart.  ``trajectory`` is the
 continuous-operation mode: the server keeps the solver's velocity history and
@@ -639,6 +641,9 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(self.server.describe())
         elif path == "/api/health":
             self._send_json({"ok": True, "ik": self.server.ik is not None})
+        elif path == "/api/machine":
+            machine = self.server.machine
+            self._send_json({"available": False} if machine is None else machine.snapshot())
         else:
             self._send_error(HTTPStatus.NOT_FOUND, f"No route for {path}")
 
@@ -742,10 +747,13 @@ class ViewerServer(ThreadingHTTPServer):
         host: str = "127.0.0.1",
         port: int = 8765,
         ik: IKSetup | None = None,
+        machine: Any = None,
     ) -> None:
         super().__init__((host, port), _Handler)
         self.bundle = bundle
         self.ik = ik
+        #: A read-only :class:`~robopy.viewer.machine_mirror.MachineMirror`, or None.
+        self.machine = machine
         self._lock = threading.Lock()
         self._fk_calls = 0
         self._fk_seconds = 0.0
@@ -764,6 +772,7 @@ class ViewerServer(ThreadingHTTPServer):
             payload = self.bundle.describe()
         payload["ik"] = None if self.ik is None else self.ik.describe()
         payload["simulation_only"] = True
+        payload["machine_mirror"] = self.machine is not None
         return payload
 
     def fk(self, body: Mapping[str, Any]) -> Dict[str, Any]:
@@ -853,9 +862,10 @@ def serve(
     open_browser: bool = True,
     ik: IKSetup | None = None,
     on_ready: Callable[[ViewerServer], None] | None = None,
+    machine: Any = None,
 ) -> None:
     """Run the viewer until interrupted."""
-    server = ViewerServer(bundle, host=host, port=port, ik=ik)
+    server = ViewerServer(bundle, host=host, port=port, ik=ik, machine=machine)
     print(f"robopy viewer: {server.url}")
     print(f"  model : {bundle.urdf_path}")
     print(
@@ -863,7 +873,15 @@ def serve(
         f"<{bundle.geometry_source}>)   joints: {len(bundle.joint_order)}"
     )
     print(f"  IK    : {'available' if ik is not None else 'not available'}")
-    print("  SIMULATION ONLY -- nothing here talks to a motor. Ctrl+C to stop.")
+    if machine is None:
+        print("  SIMULATION ONLY -- nothing here talks to a motor. Ctrl+C to stop.")
+    else:
+        print(
+            f"  machine: mirroring {len(machine.motors)} follower motor(s), READ-ONLY -- "
+            "nothing is written to a motor (Joints tab: follow machine). Ctrl+C to stop."
+        )
+        if machine.unmapped:
+            print(f"  not mirrored (keep the page's value): {machine.unmapped}")
     if on_ready is not None:
         on_ready(server)
     if open_browser:
