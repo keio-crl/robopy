@@ -2289,7 +2289,8 @@
         <axis xyz="-0.5 0.813798 -0.296198" />
         <parent link="xm430_w350_1__ソリッド5_5" />
         <child link="hn12_n101_1__ソリッド1_5" />
-        <limit effort="1" velocity="1" lower="-2.79253" upper="0" />
+        <!-- upper widened from 0 to the travel measured on the machine (robopy-viewer record travel, 2026-09-28) -->
+    <limit effort="1" velocity="1" lower="-2.79253" upper="0.227" />
     </joint>
     <joint name="elbow_yaw_left_dof" type="revolute">
         <origin xyz="0.012 0.00408714 -0.0112293" rpy="8.43769e-15 4.02456e-15 -1.39255e-14" />
@@ -2396,14 +2397,16 @@
         <axis xyz="1 -9.31406e-15 1.17634e-16" />
         <parent link="hn13_n101_1__ソリッド1" />
         <child link="xm540_w270_1__ソリッド2_2" />
-        <limit effort="1" velocity="1" lower="-0.392932" upper="3.44679" />
+        <!-- lower widened from -0.392932 to the travel measured on the machine (robopy-viewer record travel, 2026-09-28) -->
+    <limit effort="1" velocity="1" lower="-0.5706" upper="3.44679" />
     </joint>
     <joint name="shoulder_roll_right_dof" type="revolute">
         <origin xyz="0.0011 -0.011 -2.77556e-17" rpy="1.02202e-15 6.18494e-15 1.6796e-14" />
         <axis xyz="1 -2.12217e-14 5.81155e-15" />
         <parent link="hn13_n101_1__ソリッド1_1" />
         <child link="xm540_w270_1__ソリッド2_4" />
-        <limit effort="1" velocity="1" lower="-3.36135" upper="0.478376" />
+        <!-- upper widened from 0.478376 to the travel measured on the machine (robopy-viewer record travel, 2026-09-28) -->
+    <limit effort="1" velocity="1" lower="-3.36135" upper="0.7808" />
     </joint>
     <joint name="torso_yaw_dof" type="continuous">
         <origin xyz="-1.73472e-18 0 -0.0267" rpy="7.26329e-25 -2.4434e-25 2.77556e-17" />
