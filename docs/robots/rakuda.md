@@ -519,6 +519,10 @@ uv run robopy-viewer --config --mirror-follower /dev/ttyUSB0
 # 実機なし（モデルとソルバのみ、カメラはテストパターン）
 uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem
 
+# シミュレーションの初期姿勢: 既定は両肘を 0.8 rad 曲げた姿勢（CAD のゼロ姿勢は腕が伸び切った特異姿勢のため）。
+#   --start-pose zero でモデルのゼロ姿勢、--start-pose machine で実機フォロワの今の姿勢（読み取り専用で 1 回読む）
+uv run --extra kinematics robopy-vr --config --start-pose machine --follower-port /dev/ttyUSB0 --host 0.0.0.0 --self-signed
+
 # 頭部カメラを OpenCV デバイスから配信
 uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem --camera opencv:0
 

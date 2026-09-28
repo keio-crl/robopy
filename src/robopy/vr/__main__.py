@@ -315,9 +315,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="JOINT=RAD",
-        help="simulation start configuration (repeatable). Default: elbows bent 0.8 rad, because "
-        "the Rakuda export's zero pose is fully extended with the right elbow on its limit, "
-        "where no solver step is feasible. Ignored with --hardware (the machine is where it is).",
+        help="simulation start configuration (repeatable), or one of: 'zero' (the model's zero "
+        "pose, every joint at 0) or 'machine' (read the real follower once, read-only, on "
+        "--follower-port / the configured port, and start where it stands; needs --config). "
+        "Default: elbows bent 0.8 rad, because the Rakuda export's zero pose is fully extended "
+        "with the right elbow near its limit, where the solver has little room. Ignored with "
+        "--hardware (the machine is where it is).",
     )
     parser.add_argument(
         "--twin-offset",
@@ -610,8 +613,16 @@ DEFAULT_START_POSE: Dict[str, float] = {
 
 
 def _start_pose(
-    args: argparse.Namespace, parser: argparse.ArgumentParser, joints: Sequence[str]
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+    joints: Sequence[str],
+    *,
+    loaded: Any = None,
 ) -> Dict[str, float]:
+    if args.start_pose == ["zero"]:
+        return {}
+    if args.start_pose == ["machine"]:
+        return _machine_start_pose(args, parser, joints, loaded)
     if args.start_pose:
         out: Dict[str, float] = {}
         for entry in args.start_pose:
@@ -624,6 +635,46 @@ def _start_pose(
                 parser.error(f"--start-pose: '{joint.strip()}' is not a joint of the model")
         return out
     return {k: v for k, v in DEFAULT_START_POSE.items() if k in joints}
+
+
+def _machine_start_pose(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+    joints: Sequence[str],
+    loaded: Any,
+) -> Dict[str, float]:
+    """``--start-pose machine``: the real follower's joint angles, read once, read-only."""
+    from robopy.config.dotrobopy import apply_rakuda_dotconfig
+    from robopy.config.robot_config.rakuda_config import RakudaConfig
+    from robopy.viewer.machine_mirror import open_follower_mirror
+
+    if loaded is None or loaded.config is None:
+        parser.error("--start-pose machine needs --config (the follower's joint calibration)")
+    port = (
+        args.follower_port
+        or apply_rakuda_dotconfig(RakudaConfig(leader_port="", follower_port="")).follower_port
+    )
+    if not port:
+        parser.error("--start-pose machine needs --follower-port (or follower_port in the config)")
+    try:
+        mirror = open_follower_mirror(
+            port, loaded.config.follower_joint_calibration, known_urdf_joints=joints
+        )
+    except Exception as exc:  # noqa: BLE001 - a clear message, then exit
+        parser.error(f"--start-pose machine: cannot read the follower on {port}: {exc}")
+    try:
+        snap = mirror.snapshot()
+    finally:
+        mirror.stop()
+    if snap["error"]:
+        parser.error(f"--start-pose machine: the follower did not answer: {snap['error']}")
+    pose = {j: float(v) for j, v in snap["joints"].items() if j in joints}
+    left_out = sorted(set(joints) - set(pose))
+    print(
+        f"Start pose read from the follower on {port} (read-only, port closed again): "
+        f"{len(pose)} joints" + (f"; at 0 (not calibrated): {left_out}" if left_out else "")
+    )
+    return pose
 
 
 def _make_camera(args: argparse.Namespace, caption: Any) -> Any:
@@ -839,7 +890,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         else:
             model = bundle.model
-            start = _start_pose(args, parser, model.movable_joint_names)
+            start = _start_pose(args, parser, model.movable_joint_names, loaded=loaded)
             backend = SimulationBackend(bundle, loaded.ik, initial_positions=start)
             if start:
                 print(
