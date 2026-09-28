@@ -20,6 +20,7 @@ from robopy.robots.rakuda.calibrate import (
     main,
     model_soft_limits,
     proposed_urdf_joints,
+    rezero,
     self_check,
     simulated_buses,
     urdf_joint_ranges,
@@ -435,6 +436,69 @@ class TestFollowerOnly:
         with pytest.raises(SystemExit):
             main(["--side", "follower", "--leader-port", "/dev/x"])
         assert "--follower-port needed" in capsys.readouterr().err
+
+
+class TestZeroOnly:
+    def test_rezero_shifts_travel_and_soft_limits_and_keeps_the_direction(self) -> None:
+        follower = {m: _result(m, False) for m in MOTORS}
+        follower["torso_yaw"].direction = -1
+        control, _ = build_control_section(None, follower)
+        for r in follower.values():
+            r.measured = ["urdf_joint", "zero_count", "direction", "lower_limit_rad"]
+            r.measured.append("upper_limit_rad")
+        control["model"], _ = model_soft_limits(follower, margin_rad=0.1)
+        k = 2 * 3.141592653589793 / 4096
+        # torso (direction -1): the machine's zero pose reads 2048 + 512 counts,
+        # i.e. the old model angle there was -512 k; every angle shifts by +512 k.
+        # r_arm (direction +1) reads 2048 - 256: old angle -256 k, shift +256 k.
+        new_control, lines, results = rezero(
+            control,
+            "follower",
+            {"torso_yaw": 2048 + 512, "r_arm_sh_pitch1": 2048 - 256, "l_arm_sh_pitch1": 2048},
+            {m: k for m in MOTORS},
+        )
+        table = new_control["follower_joint_calibration"]
+        torso = table["torso_yaw"]
+        assert torso["zero_count"] == 2560 and torso["direction"] == -1
+        assert torso["lower_limit_rad"] == pytest.approx(-1.0 + 512 * k, abs=1e-4)
+        assert torso["upper_limit_rad"] == pytest.approx(1.0 + 512 * k, abs=1e-4)
+        soft = new_control["model"]["soft_limits_rad"]["torso_yaw_dof"]
+        assert soft["lower"] == pytest.approx(-0.9 + 512 * k, abs=1e-4)
+        assert soft["upper"] == pytest.approx(0.9 + 512 * k, abs=1e-4)
+        right = table["r_arm_sh_pitch1"]
+        assert right["zero_count"] == 1792
+        assert right["lower_limit_rad"] == pytest.approx(-1.0 + 256 * k, abs=1e-4)
+        left = table["l_arm_sh_pitch1"]
+        assert left["zero_count"] == 2048 and left["lower_limit_rad"] == -1.0  # unchanged
+        assert "zero re-taken" in torso["notes"] and "shifted with the new zero" in soft["note"]
+        assert results["torso_yaw"].lower_limit_rad == torso["lower_limit_rad"]
+        assert any("torso_yaw" in line and "2048 ->  2560" in line for line in lines)
+        # the original is not modified
+        assert control["follower_joint_calibration"]["torso_yaw"]["zero_count"] == 2048
+        # a motor without a calibration is reported, not invented
+        _, lines, results = rezero(control, "follower", {"ghost": 5}, {"ghost": k})
+        assert "no calibration" in lines[0] and results == {}
+
+    def test_simulated_zero_only_rewrites_the_file(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        out = tmp_path / ".robopy" / "rakuda" / "config.yaml"
+        base = ["--simulate", "--side", "follower", "--output", str(out), "--motors"]
+        assert main([*base, ",".join(MOTORS), "--no-torque-constant"]) == 0
+        assert main([*base, ",".join(MOTORS), "--zero-only"]) == 0
+        printed = capsys.readouterr().out
+        assert "zero pose again" in printed and "written:" in printed
+        cfg = apply_rakuda_dotconfig(
+            RakudaConfig(leader_port="a", follower_port="b"), base_dir=tmp_path
+        )
+        assert cfg.control is not None
+        assert set(cfg.control.follower_joint_calibration) == set(MOTORS)
+        assert "zero re-taken" in cfg.control.follower_joint_calibration["torso_yaw"].notes
+        # Without an existing calibration there is nothing to re-zero.
+        assert (
+            main([*base, ",".join(MOTORS), "--zero-only", "--output", str(tmp_path / "none.yaml")])
+            == 1
+        )
 
 
 class TestCommand:

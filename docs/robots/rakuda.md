@@ -901,6 +901,21 @@ uv run robopy-rakuda-calibrate --side follower --follower-port /dev/ttyUSB0 --no
    無負荷時と既知の質量 `m` を腕長 `r` に吊るした時の保持電流の差から
    `torque_constant_nm_per_a = m g r / |I_load − I_free|`。
 
+**ゼロ点だけ取り直す（`--zero-only`）**: 最初の校正で合わせた基準姿勢がモデルのゼロ姿勢と違っていた場合
+（`robopy-viewer --config --mirror-follower PORT` で、実機とモデルの姿勢が全関節でずれて見えるとき）は、向きや
+可動域を測り直さずにゼロ点だけ付け替えられます。
+
+```bash
+uv run robopy-rakuda-calibrate --side follower --follower-port /dev/ttyUSB0 --zero-only
+```
+
+1. 別の端末で `uv run robopy-viewer --config` を開き、Joints タブの `zero all` でモデルのゼロ姿勢（胴体正面、両腕を
+   体に沿ってまっすぐ下ろし、手首は中立）を確認します。
+2. 対象モータのトルクが切れるので腕を支え、実機をその姿勢に合わせて Enter を押します。
+3. 関節ごとに「旧ゼロ → 新ゼロ」と「モデル上の角度が何度ずれるか」の表が出ます。記録済みの可動域（`lower/upper_limit_rad`）
+   と `control.model.soft_limits_rad` は同じ角度だけ平行移動し、`direction` はそのままです。URDF との照合表も出ます。
+4. Enter で書き込み、それ以外を入力すると何も書きません。校正のないモータは対象外です（全体の校正を実行してください）。
+
 **やり直し**: 間違えた項目は書き込む前にやり直せます。
 
 - 関節ごとに 4〜6 が終わると `Enter = next joint, or redo (...)` と聞かれます。Enter で次の関節へ、

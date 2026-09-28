@@ -30,6 +30,14 @@ as validated ``control.model.soft_limits_rad`` on the URDF joints -- the range
 the solver, the viewer's sliders and the machine adapter all resolve -- after
 a table comparing it with the URDF's range.
 
+``--zero-only`` re-takes only the zero pose of already calibrated motors: the
+operator puts the machine in the model's zero pose (the viewer's ``zero all``
+shows it), the present counts become the new ``zero_count`` and the recorded
+travel and soft limits are shifted by the same angle.  Direction and travel
+are not measured again.  For when the first calibration's reference pose was
+not the model's zero -- the model then stands in a different pose from the
+machine at every count.
+
 ``--simulate`` runs the whole procedure on simulated buses with an automatic
 operator, to see the flow (and for the tests).
 """
@@ -62,6 +70,7 @@ __all__ = [
     "compare_with_urdf",
     "main",
     "model_soft_limits",
+    "rezero",
     "urdf_joint_ranges",
     "write_config",
 ]
@@ -994,6 +1003,83 @@ def _urdf_check(
     return urdf_text, flags
 
 
+def rezero(
+    control: Mapping[str, Any],
+    side: str,
+    counts: Mapping[str, int],
+    rad_per_count: Mapping[str, float],
+) -> Tuple[Dict[str, Any], List[str], Dict[str, JointResult]]:
+    """Move the zero of already calibrated motors to ``counts``, keeping the rest.
+
+    A joint's angle is ``direction * (count - zero_count) * rad_per_count``,
+    so a new zero shifts every angle of that joint by the same amount: the
+    recorded travel, and (for the follower) the soft limit written for its
+    URDF joint, are shifted with it instead of being measured again.
+    Direction, velocity and current limits are untouched.
+
+    Args:
+        control: The current ``control:`` section.
+        side: ``"leader"`` or ``"follower"``.
+        counts: ``{motor: PRESENT_POSITION}`` at the model's zero pose.
+        rad_per_count: ``{motor: rad per count}``.
+
+    Returns:
+        The new section, one line per motor for the operator, and the
+        shifted entries as :class:`JointResult` (for the URDF comparison).
+    """
+    control = dict(control)
+    key = f"{side}_joint_calibration"
+    table: Dict[str, Any] = {m: dict(e) for m, e in (control.get(key) or {}).items()}
+    model: Dict[str, Any] = dict(control.get("model") or {})
+    soft: Dict[str, Any] = {j: dict(e) for j, e in (model.get("soft_limits_rad") or {}).items()}
+    lines: List[str] = []
+    results: Dict[str, JointResult] = {}
+    today = f"{datetime.now():%Y-%m-%d}"
+    for motor, new_zero in counts.items():
+        entry = table.get(motor)
+        if entry is None or entry.get("zero_count") is None:
+            lines.append(f"  {motor:16s} no calibration to re-zero (run the full calibration)")
+            continue
+        old_zero = int(entry["zero_count"])
+        direction = int(entry.get("direction", 1))
+        shift = direction * (int(new_zero) - old_zero) * rad_per_count[motor]
+        entry["zero_count"] = int(new_zero)
+        for k in ("lower_limit_rad", "upper_limit_rad"):
+            if entry.get(k) is not None:
+                entry[k] = round(float(entry[k]) - shift, 4)
+        entry["notes"] = (
+            f"{entry.get('notes', '')}; {today}: zero re-taken at the model's zero pose "
+            f"({old_zero} -> {new_zero}, angles shifted {math.degrees(-shift):+.1f} deg)"
+        )
+        joint = entry.get("urdf_joint")
+        limit = soft.get(joint) if side == "follower" and joint else None
+        soft_text = ""
+        if isinstance(limit, Mapping) and "lower" in limit and "upper" in limit:
+            limit = dict(limit)
+            limit["lower"] = round(float(limit["lower"]) - shift, 4)
+            limit["upper"] = round(float(limit["upper"]) - shift, 4)
+            limit["note"] = f"{limit.get('note', '')}; {today}: shifted with the new zero"
+            soft[joint] = limit
+            soft_text = f"  soft limit -> [{limit['lower']:+.3f}, {limit['upper']:+.3f}]"
+        lines.append(
+            f"  {motor:16s} zero {old_zero:5d} -> {int(new_zero):5d}  "
+            f"model angles shift {math.degrees(-shift):+7.1f} deg{soft_text}"
+        )
+        results[motor] = JointResult(
+            motor=motor,
+            urdf_joint=joint,
+            direction=direction,
+            zero_count=int(new_zero),
+            lower_limit_rad=entry.get("lower_limit_rad"),
+            upper_limit_rad=entry.get("upper_limit_rad"),
+        )
+    control[key] = table
+    if side == "follower" and soft:
+        model["soft_limits_rad"] = soft
+        control["model"] = model
+    return control, lines, results
+
+
 def write_config(
     path: Path,
     control: Mapping[str, Any],
@@ -1248,6 +1334,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="how to describe the reference pose to the operator",
     )
     parser.add_argument(
+        "--zero-only",
+        action="store_true",
+        help="re-take only the zero pose of the already calibrated motors: put the machine in "
+        "the model's zero pose (robopy-viewer: 'zero all'), the present counts become the new "
+        "zero_count and the recorded travel and soft limits shift with it; direction and "
+        "travel are not measured again",
+    )
+    parser.add_argument(
         "--simulate", action="store_true", help="simulated buses, automatic operator"
     )
     args = parser.parse_args(argv)
@@ -1303,6 +1397,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     urdf = args.urdf or _configured_urdf(existing or {})
     ranges = urdf_joint_ranges(urdf) if urdf is not None and urdf.is_file() else None
     try:
+        if args.zero_only:
+            return _zero_only(args, sides, buses, console, existing, output, urdf, ranges)
         results: Dict[str, Dict[str, JointResult]] = {}
         for side in sides:
             calibrator = ArmCalibrator(
@@ -1377,6 +1473,60 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arm.disconnect()
             except Exception:  # noqa: BLE001 - best effort
                 logger.exception("disconnect failed")
+
+
+def _zero_only(
+    args: argparse.Namespace,
+    sides: Sequence[str],
+    buses: Mapping[str, Any],
+    console: Console,
+    existing: Mapping[str, Any] | None,
+    output: Path,
+    urdf: Path | None,
+    ranges: Mapping[str, Tuple[str, float | None, float | None]] | None,
+) -> int:
+    """``--zero-only``: the zero pose again, everything else kept."""
+    if not existing:
+        console.say(
+            f"{output} has no control section: nothing to re-zero (run without --zero-only)"
+        )
+        return 1
+    motors = [m.strip() for m in args.motors.split(",") if m.strip()]
+    control: Dict[str, Any] = dict(existing)
+    for side in sides:
+        table = control.get(f"{side}_joint_calibration") or {}
+        known = [m for m in motors if m in table and table[m].get("zero_count") is not None]
+        if not known:
+            console.say(f"[{side}] none of {motors} is calibrated yet; run the full calibration")
+            return 1
+        bus = buses[side]
+        bus.torque_disabled(known)
+        console.say(f"\n[{side}] zero pose again (torque OFF on {len(known)} motors)")
+        console.ask(
+            f"  Put the {side} in the model's zero pose: {args.zero_pose}\n"
+            "  (robopy-viewer --config, Joints tab, 'zero all' shows it)\n  Then press Enter"
+        )
+        counts = {
+            m: int(v) for m, v in bus.sync_read(XControlTable.PRESENT_POSITION, known).items()
+        }
+        rad_per_count = {
+            m: 2.0 * math.pi / bus.capabilities(m).counts_per_revolution for m in known
+        }
+        control, lines, results = rezero(control, side, counts, rad_per_count)
+        for line in lines:
+            console.say(line)
+        if side == "follower" and ranges is not None and results:
+            console.say(f"\n  follower travel (shifted) against {urdf} (rad):")
+            for line in compare_with_urdf(results, ranges):
+                console.say(line)
+        answer = console.ask("  write these zeros? (Enter = yes, anything else = abort)")
+        if answer.strip():
+            console.say("  aborted; nothing written")
+            return 1
+    coupled = list(((control.get("bilateral") or {}).get("coupled_motors")) or [])
+    path = write_config(output, control, coupled=coupled)
+    console.say(f"\nwritten: {path}")
+    return 0
 
 
 def _configured_urdf(control: Mapping[str, Any]) -> Path | None:
