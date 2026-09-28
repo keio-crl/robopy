@@ -41,7 +41,7 @@ Server -> client::
      "geometries": [{"p": [...], "q": [...]}, ...]   (only when want_poses),
      "tcp": {"left": {...}, "right": {...}},
      "head": {...}, "arms": {...}, "ik": {...}, "warnings": [...], "server_ms": float,
-     "gestures": {"paused": bool, "stop_hold_s": float}     (with hands),
+     "gestures": {"paused": bool, "stop_hold_s": float, "fist_hold_s": float}  (with hands),
      "events": ["end_session"]                                (when raised)}
     {"type": "error", "message": "..."}
 
@@ -280,6 +280,7 @@ class TeleopSession:
         self._hand_gestures: TwoHandGestures | None = None
         self.paused_by_gesture = False
         self._stop_hold_s = 0.0
+        self._fist_hold_s = 0.0
         self._pending_events: List[str] = []
         if config.hands is not None:
             self.hands = {side: HandInput(side, config.hands) for side in ("left", "right")}
@@ -570,6 +571,7 @@ class TeleopSession:
             else:
                 self.recorder.start(self.recording_metadata(), now_s)
         self._stop_hold_s = events.stop_hold_s
+        self._fist_hold_s = events.fist_hold_s
         if events.pause or events.end:
             # The stop sign: the arms stop following at once and stay off
             # until the operator resumes (the re-centre gesture, or the page).
@@ -774,6 +776,7 @@ class TeleopSession:
             state["gestures"] = {
                 "paused": self.paused_by_gesture,
                 "stop_hold_s": self._stop_hold_s,
+                "fist_hold_s": self._fist_hold_s,
             }
         if self._pending_events:
             state["events"] = list(self._pending_events)

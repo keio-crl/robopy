@@ -725,6 +725,11 @@ function renderStatus() {
       const phase = g.stop_hold_s >= endAt ? 'ENDING' : g.stop_hold_s >= pauseAt ? 'paused; keep holding to END' : 'hold to pause';
       lines.push(`stop      palms shown ${g.stop_hold_s.toFixed(1)}s  ${phase} (pause ${pauseAt}s, end ${endAt}s)`);
     }
+    if (g.fist_hold_s > 0) {
+      const hh = state.hello && state.hello.hands;
+      const endAt = hh && hh.end_fist_hold_s != null ? hh.end_fist_hold_s : 1.5;
+      lines.push(`end       both fists ${g.fist_hold_s.toFixed(1)}s  ${g.fist_hold_s >= endAt ? 'ENDING' : `hold to end the session (${endAt}s)`}`);
+    }
     if (hd.tracking) {
       const t = hd.targets_rad || {};
       lines.push(`headset   yaw ${(hd.yaw_input_rad * DEG).toFixed(1)}°  pitch ${(hd.pitch_input_rad * DEG).toFixed(1)}°   ->  ${Object.entries(t).map(([k, v]) => `${k}=${(v * DEG).toFixed(1)}°`).join('  ')}${hd.at_limit && hd.at_limit.length ? '  AT LIMIT ' + hd.at_limit.join(',') : ''}`);

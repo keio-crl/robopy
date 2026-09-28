@@ -87,6 +87,7 @@ def reading(
     middle_pinch: bool = False,
     stop_sign: bool = False,
     open_hand: bool = False,
+    fist: bool = False,
 ) -> HandReading:
     return HandReading(
         sample=None,
@@ -94,6 +95,7 @@ def reading(
         middle_pinch=middle_pinch,
         stop_sign=stop_sign,
         open_hand=open_hand,
+        fist=fist,
     )
 
 
@@ -237,6 +239,7 @@ class TestHandInput:
             "middle_pinch": False,
             "stop_sign": False,
             "open_hand": False,
+            "fist": False,
         }
         assert pinched.sample.engage_radius_m == HandTrackingConfig().engage_radius_m
         # Drift out to 3 cm: still inside the release threshold, still held.
@@ -297,6 +300,24 @@ class TestHandInput:
         assert hand.update(frame_of(pinch=True), 0.3).pinch
         with pytest.raises(ValueError):
             HandInput("middle")
+
+    def test_a_fist_is_every_finger_curled_without_a_pinch(self) -> None:
+        hand = HandInput("right")
+        # The fixture's curl bends the three gripper fingers only; fold the
+        # index back on itself too (upwards, away from the thumb: no pinch).
+        joints = hand_joints(curl=1.0)
+        knuckle = np.asarray(joints["index-finger-phalanx-proximal"])
+        joints["index-finger-phalanx-intermediate"] = list(knuckle + [0.04, 0.0, 0.0])
+        joints["index-finger-phalanx-distal"] = list(knuckle + [0.04, 0.0, 0.03])
+        joints["index-finger-tip"] = list(knuckle + [0.0, 0.0, 0.03])
+        fist = HandFrame.from_message({"joints": joints})
+        assert fist is not None
+        out = hand.update(fist, 0.0)
+        assert out.fist and not out.open_hand and out.describe()["fist"] is True
+        # The gripper fingers alone (the index straight) are the gripper, not the sign.
+        assert not hand.update(frame_of(curl=1.0), 0.1).fist
+        assert not hand.update(frame_of(), 0.2).fist  # straight fingers
+        assert not hand.update(frame_of(pinch=True), 0.3).fist  # a pinch is never the sign
 
     def test_open_hand_is_straight_fingers_not_towards_the_headset(self) -> None:
         head = np.array([0.0, 0.0, 1.6])
@@ -402,6 +423,27 @@ class TestTwoHandGestures:
             assert cfg.describe()["open_recenter_hold_s"] is None
         with pytest.raises(ValueError, match="open_recenter_hold_s"):
             HandTrackingConfig(open_recenter_hold_s=0.0)
+
+    def test_both_fists_end_the_session_once(self) -> None:
+        g = TwoHandGestures(HandTrackingConfig(end_fist_hold_s=1.5))
+        both = {"left": reading(fist=True), "right": reading(fist=True)}
+        one = {"left": reading(fist=True), "right": reading()}
+        assert not g.update(one, 0.0).end and g.update(one, 5.0).fist_hold_s == 0.0
+        ev = g.update(both, 6.0)
+        assert not ev.end and ev.fist_hold_s == 0.0
+        ev = g.update(both, 7.4)
+        assert not ev.end and ev.fist_hold_s == pytest.approx(1.4)
+        ev = g.update(both, 7.5)
+        assert ev.end and not ev.pause and not ev.recenter
+        assert not g.update(both, 9.0).end  # once per hold
+        g.update(one, 9.1)
+        g.update(both, 9.2)
+        assert g.update(both, 10.7).end  # re-armed
+        off = TwoHandGestures(HandTrackingConfig(end_fist_hold_s=None))
+        off.update(both, 0.0)
+        assert not off.update(both, 9.0).end
+        with pytest.raises(ValueError, match="end_fist_hold_s"):
+            HandTrackingConfig(end_fist_hold_s=0.0)
 
     def test_one_hand_held_toggles_the_recording_once(self) -> None:
         g = TwoHandGestures(HandTrackingConfig(record_hold_s=1.0))

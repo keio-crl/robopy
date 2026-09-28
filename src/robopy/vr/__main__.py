@@ -262,6 +262,14 @@ def build_parser() -> argparse.ArgumentParser:
         "before the session ends (default 0.5,2.5)",
     )
     hands.add_argument(
+        "--hand-end-hold",
+        default="1.5",
+        metavar="SECONDS|off",
+        help="hold both fists (all four fingers curled, no pinch) this long to end the VR "
+        "session (default 1.5; off disables the sign -- the stop sign held for its end time "
+        "still ends it)",
+    )
+    hands.add_argument(
         "--hand-open-recenter",
         default="0.5",
         metavar="SECONDS|off",
@@ -1057,6 +1065,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 pause_hold, end_hold = (float(v) for v in args.stop_hold.split(","))
             except ValueError:
                 parser.error("--stop-hold takes two numbers: PAUSE,END seconds")
+            end_fist: float | None = None
+            if args.hand_end_hold != "off":
+                try:
+                    end_fist = float(args.hand_end_hold)
+                except ValueError:
+                    parser.error("--hand-end-hold takes seconds or 'off'")
             open_recenter: float | None = None
             if args.hand_open_recenter != "off":
                 try:
@@ -1076,6 +1090,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     pause_hold_s=pause_hold,
                     end_hold_s=end_hold,
                     open_recenter_hold_s=open_recenter,
+                    end_fist_hold_s=end_fist,
                 )
             except ValueError as exc:
                 parser.error(str(exc))
@@ -1109,6 +1124,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"  show both open palms to the headset for {hands_config.pause_hold_s:g} s to "
                 f"pause the arms, {hands_config.end_hold_s:g} s to end the session"
             )
+            if hands_config.end_fist_hold_s is not None:
+                print(
+                    f"  make both hands into fists for {hands_config.end_fist_hold_s:g} s to end "
+                    "the session (leave VR)"
+                )
 
         # -- camera, TLS, server -------------------------------------------
         def caption() -> str:

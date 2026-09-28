@@ -30,7 +30,11 @@ What stands in for the controller's buttons:
   (the "stop" sign): held for ``pause_hold_s`` it pauses the arms (clutches
   released, arms hold, nothing follows until the operator resumes with the
   re-centre gesture); kept up to ``end_hold_s`` it ends the session (the page
-  leaves VR).  Nothing the hands do while paused moves an arm.
+  leaves VR).  Nothing the hands do while paused moves an arm;
+* **end (a sign of its own)** -- both hands made into fists (all four fingers
+  curled, no pinch) for ``end_fist_hold_s``: the arms stop and the session
+  ends, the same as the long stop sign, but with a shape used for nothing
+  else, so it can be made deliberately.
 
 Before a pinch may drive an arm the operator's hand must be *where the robot's
 hand is*: in the absolute mapping the clutch stays pending until the mapped
@@ -178,6 +182,8 @@ class HandTrackingConfig:
         open_recenter_hold_s: How long both hands are held open before the
             operator frame is re-centred on the headset; ``None`` turns the
             gesture off.  Only with the pinch clutch.
+        end_fist_hold_s: How long both fists are held before the session
+            ends; ``None`` turns that sign off (the long stop sign still ends).
     """
 
     clutch_gesture: Literal["pinch", "always"] = "pinch"
@@ -195,6 +201,7 @@ class HandTrackingConfig:
     facing_cos: float = 0.7
     straight_ratio: float = 0.75
     open_recenter_hold_s: float | None = 0.5
+    end_fist_hold_s: float | None = 1.5
 
     def __post_init__(self) -> None:
         if self.clutch_gesture not in ("pinch", "always"):
@@ -224,6 +231,8 @@ class HandTrackingConfig:
             raise ValueError("facing_cos must be in (-1, 1) and straight_ratio in (0, 1).")
         if self.open_recenter_hold_s is not None and self.open_recenter_hold_s <= 0.0:
             raise ValueError("open_recenter_hold_s must be positive (or None to turn it off).")
+        if self.end_fist_hold_s is not None and self.end_fist_hold_s <= 0.0:
+            raise ValueError("end_fist_hold_s must be positive (or None to turn it off).")
 
     @property
     def open_recenter(self) -> bool:
@@ -257,6 +266,7 @@ class HandTrackingConfig:
             "pause_hold_s": self.pause_hold_s,
             "end_hold_s": self.end_hold_s,
             "open_recenter_hold_s": self.open_recenter_hold_s if self.open_recenter else None,
+            "end_fist_hold_s": self.end_fist_hold_s,
         }
 
 
@@ -406,6 +416,8 @@ class HandReading:
         open_hand: The hand is open (fingers straight, no pinch) and its palm
             is not turned to the headset: this hand's half of the open-hands
             re-centre.
+        fist: All four fingers curled into the palm, no pinch: this hand's
+            half of the end sign.
         problem: Why the hand could not be read, if it could not.
     """
 
@@ -419,6 +431,7 @@ class HandReading:
     gripper: float = 0.0
     stop_sign: bool = False
     open_hand: bool = False
+    fist: bool = False
     problem: str | None = None
 
     def describe(self) -> Dict[str, Any]:
@@ -433,6 +446,7 @@ class HandReading:
             "gripper": self.gripper,
             "stop_sign": self.stop_sign,
             "open_hand": self.open_hand,
+            "fist": self.fist,
             "problem": self.problem,
         }
 
@@ -528,6 +542,9 @@ class HandInput:
         straight = not (pinch or middle) and all(
             frame.has(*FINGERS[f]) and frame.curl_ratio(f) >= c.straight_ratio for f in FINGERS
         )
+        fist = not (pinch or middle) and all(
+            frame.has(*FINGERS[f]) and frame.curl_ratio(f) <= c.curl_closed_ratio for f in FINGERS
+        )
         if head_position_m is not None and straight:
             normal = frame.palm_normal(self.side)
             if normal is not None:
@@ -544,6 +561,7 @@ class HandInput:
                 "middle_pinch": middle,
                 "stop_sign": stop_sign,
                 "open_hand": straight and not stop_sign,
+                "fist": fist,
             },
             stamp_s=now_s,
             engage_radius_m=c.engage_radius_m,
@@ -559,6 +577,7 @@ class HandInput:
             gripper=gripper,
             stop_sign=stop_sign,
             open_hand=straight and not stop_sign,
+            fist=fist,
         )
         return self.last
 
@@ -574,9 +593,11 @@ class HandEvents:
             gesture resumes.
         record_toggle: One hand held that pinch for ``record_hold_s``.
         pause: Both palms have been shown to the headset for ``pause_hold_s``.
-        end: They have been kept up for ``end_hold_s``.
+        end: They have been kept up for ``end_hold_s``, or both fists have
+            been held for ``end_fist_hold_s``.
         stop_hold_s: How long the stop sign has been held so far (0 when it
             is not being made), for the page to show the progress.
+        fist_hold_s: Likewise for the two fists.
     """
 
     recenter: bool = False
@@ -585,6 +606,7 @@ class HandEvents:
     pause: bool = False
     end: bool = False
     stop_hold_s: float = 0.0
+    fist_hold_s: float = 0.0
 
 
 @dataclass
@@ -603,7 +625,8 @@ class TwoHandGestures:
     palms towards the headset) raises ``pause`` once at ``pause_hold_s`` and
     ``end`` once at ``end_hold_s``; letting go re-arms both.  Both hands held
     open (and not towards the headset) re-centre once at
-    ``open_recenter_hold_s``; closing either hand re-arms it.
+    ``open_recenter_hold_s``; closing either hand re-arms it.  Both fists
+    held for ``end_fist_hold_s`` raise ``end`` once; opening a hand re-arms.
     """
 
     def __init__(self, config: HandTrackingConfig | None = None) -> None:
@@ -614,6 +637,7 @@ class TwoHandGestures:
         self._paused_fired = False
         self._ended_fired = False
         self._open = _Hold()
+        self._fist = _Hold()
 
     def reset(self) -> None:
         """Forget every gesture in progress."""
@@ -622,6 +646,7 @@ class TwoHandGestures:
         self._stop_started_s = None
         self._paused_fired = self._ended_fired = False
         self._open = _Hold()
+        self._fist = _Hold()
 
     def update(self, readings: Mapping[str, HandReading | None], now_s: float) -> HandEvents:
         """Advance one step with this frame's readings (a missing side is untracked)."""
@@ -682,6 +707,21 @@ class TwoHandGestures:
             if hold_s is not None and now_s - self._open.started_s >= hold_s:
                 self._open.fired = True
                 recenter = resume = True
+        fists = self.config.end_fist_hold_s is not None and all(
+            r is not None and r.tracked and r.fist
+            for r in (readings.get("left"), readings.get("right"))
+        )
+        fist_held = 0.0
+        if not fists:
+            self._fist = _Hold()
+        else:
+            if self._fist.started_s is None:
+                self._fist.started_s = now_s
+            fist_held = now_s - self._fist.started_s
+            hold_s = self.config.end_fist_hold_s
+            if hold_s is not None and fist_held >= hold_s and not self._fist.fired:
+                self._fist.fired = True
+                end = True
         return HandEvents(
             recenter=recenter,
             resume=resume,
@@ -689,6 +729,7 @@ class TwoHandGestures:
             pause=pause,
             end=end,
             stop_hold_s=held,
+            fist_hold_s=fist_held,
         )
 
 
