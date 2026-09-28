@@ -31,14 +31,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
-    if args.mirror_follower and not args.config:
-        parser.error("--mirror-follower needs --config (the follower's joint calibration)")
+    if args.mirror_follower and args.no_config:
+        parser.error("--mirror-follower needs the config (the follower's joint calibration)")
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
 
     from .server import serve
 
     loaded = load_model(args, parser)
     machine = None
+    if args.mirror_follower and loaded.config is None:
+        parser.error(
+            "--mirror-follower needs .robopy/rakuda/config.yaml with a control section (the "
+            "follower's joint calibration)"
+        )
     try:
         if args.mirror_follower:
             from robopy.config.dotrobopy import get_rakuda_yaml_path

@@ -49,7 +49,14 @@ def add_model_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--config",
         action="store_true",
-        help="take the model, soft limits and TCPs from .robopy/rakuda/config.yaml",
+        help="take the model, soft limits and TCPs from .robopy/rakuda/config.yaml. This is "
+        "the default whenever that file has a control section (in the current directory); "
+        "the flag only makes a missing one an error",
+    )
+    parser.add_argument(
+        "--no-config",
+        action="store_true",
+        help="ignore .robopy/rakuda/config.yaml: the bare model, no measured limits",
     )
     parser.add_argument(
         "--soft-limit",
@@ -304,14 +311,24 @@ def load_model(
     trajectory_kwargs: Dict[str, Any] = {}
     trajectory_note: str | None = None
 
-    if args.config:
-        from robopy.config.dotrobopy import apply_rakuda_dotconfig
+    if args.config and getattr(args, "no_config", False):
+        parser.error("--config and --no-config exclude each other")
+    # The measured calibration applies by default: whoever has a config with a
+    # control section gets its limits, TCPs and model settings without asking.
+    use_config = args.config or not getattr(args, "no_config", False)
+    if use_config:
+        from robopy.config.dotrobopy import apply_rakuda_dotconfig, get_rakuda_yaml_path
         from robopy.config.robot_config.rakuda_config import RakudaConfig
         from robopy.control.types import se3_from_quat_xyzw
 
         cfg = apply_rakuda_dotconfig(RakudaConfig(leader_port="", follower_port=""))
         if cfg.control is None:
-            parser.error("--config given but .robopy/rakuda/config.yaml has no control section")
+            if args.config:
+                parser.error("--config given but .robopy/rakuda/config.yaml has no control section")
+            use_config = False
+        elif not args.config:
+            say(f"using {get_rakuda_yaml_path()} (control section found; --no-config to ignore)")
+    if use_config:
         assert cfg.control is not None
         control_config = cfg.control
         spec = cfg.control.model

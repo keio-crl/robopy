@@ -649,7 +649,10 @@ def _machine_start_pose(
     from robopy.viewer.machine_mirror import open_follower_mirror
 
     if loaded is None or loaded.config is None:
-        parser.error("--start-pose machine needs --config (the follower's joint calibration)")
+        parser.error(
+            "--start-pose machine needs .robopy/rakuda/config.yaml with a control section (the "
+            "follower's joint calibration)"
+        )
     port = (
         args.follower_port
         or apply_rakuda_dotconfig(RakudaConfig(leader_port="", follower_port="")).follower_port
@@ -729,8 +732,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
     tls = _resolve_tls(args, parser)
-    if args.hardware and not args.config:
-        parser.error("--hardware needs --config so the page shows the model the controller uses")
+    if args.hardware and args.no_config:
+        parser.error("--hardware needs the config so the page shows the model the controller uses")
     if args.hardware and args.hardware_head:
         parser.error("--hardware and --hardware-head are different things; pick one")
     if args.hardware_head:
@@ -1067,7 +1070,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(
                     f"  hold both hands open (palms away from the headset) for "
                     f"{hands_config.open_recenter_hold_s:g} s to re-centre on where you are now "
-                    "(it does not resume paused arms)"
+                    "(it also resumes arms paused by the stop sign)"
                 )
             if hands_config.engage_radius_m is not None and args.mapping == "absolute":
                 print(

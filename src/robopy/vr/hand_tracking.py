@@ -18,12 +18,12 @@ What stands in for the controller's buttons:
   the rest of the hand to close the gripper), or the index pinch itself
   (``"pinch"``, for the always-on clutch), or nothing;
 * **re-centre (both thumbstick clicks)** -- a pinch of the thumb and *middle*
-  fingertips on both hands at once (which also resumes paused arms), or both
-  hands held open -- all fingers straight, no pinch, palms *not* turned to the
-  headset -- for ``open_recenter_hold_s`` (re-centres only: the hands open
-  naturally after the stop sign, so this does not resume).  The open hands
-  re-centre only with the pinch clutch; with ``clutch_gesture="always"`` an
-  open hand is the normal driving state;
+  fingertips on both hands at once, or both hands held open -- all fingers
+  straight, no pinch, palms turned *away* from the headset (the stop sign
+  turned round) -- for ``open_recenter_hold_s``.  Either also resumes arms
+  paused by the stop sign.  The open hands re-centre only with the pinch
+  clutch; with ``clutch_gesture="always"`` an open hand is the normal driving
+  state;
 * **record (B / Y)** -- the same middle pinch on one hand, held for
   ``record_hold_s``;
 * **stop** -- both palms turned towards the headset with the fingers straight
@@ -570,8 +570,8 @@ class HandEvents:
     Attributes:
         recenter: Re-centre now: both hands pinched thumb and middle fingertips
             just now, or have been held open for ``open_recenter_hold_s``.
-        resume: The re-centre was the middle pinch, which also resumes arms
-            paused by the stop sign (the open hands do not).
+        resume: Arms paused by the stop sign follow again: every re-centre
+            gesture resumes.
         record_toggle: One hand held that pinch for ``record_hold_s``.
         pause: Both palms have been shown to the headset for ``pause_hold_s``.
         end: They have been kept up for ``end_hold_s``.
@@ -681,7 +681,7 @@ class TwoHandGestures:
             hold_s = self.config.open_recenter_hold_s
             if hold_s is not None and now_s - self._open.started_s >= hold_s:
                 self._open.fired = True
-                recenter = True
+                recenter = resume = True
         return HandEvents(
             recenter=recenter,
             resume=resume,

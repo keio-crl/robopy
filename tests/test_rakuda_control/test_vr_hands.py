@@ -374,7 +374,7 @@ class TestTwoHandGestures:
             0.6,
         ).recenter
 
-    def test_both_hands_held_open_recentre_once_without_resuming(self) -> None:
+    def test_both_hands_held_open_recentre_once_and_resume(self) -> None:
         g = TwoHandGestures(HandTrackingConfig(open_recenter_hold_s=0.5))
         both = {"left": reading(open_hand=True), "right": reading(open_hand=True)}
         one = {"left": reading(open_hand=True), "right": reading()}
@@ -382,7 +382,7 @@ class TestTwoHandGestures:
         assert not g.update(both, 6.0).recenter
         assert not g.update(both, 6.4).recenter
         ev = g.update(both, 6.5)
-        assert ev.recenter and not ev.resume
+        assert ev.recenter and ev.resume
         assert not g.update(both, 9.0).recenter  # once per opening
         g.update(one, 9.1)
         g.update(both, 9.2)
@@ -646,9 +646,7 @@ class TestHandSession:
         hello = session.handle({"type": "set", "arms_enabled": True}, 4.1)
         assert hello is not None and session.arms_enabled and not session.paused_by_gesture
 
-    def test_open_hands_recentre_on_the_headset_but_do_not_resume(
-        self, bundle: ModelBundle
-    ) -> None:
+    def test_open_hands_recentre_on_the_headset_and_resume(self, bundle: ModelBundle) -> None:
         session, _ = make_session(bundle, mapping="relative")
         session.handle(pose(), 0.0)
         opened = {
@@ -662,13 +660,13 @@ class TestHandSession:
         state = session.handle({"type": "pose", "t": 0.7, "head": turned, **opened}, 0.7)
         assert state is not None and state.get("recentred") is True
         assert state["operator"]["yaw_offset_rad"] == pytest.approx(0.3, abs=1e-6)
-        # After the stop sign the hands come down open: re-centred, still paused.
+        # After the stop sign, the palms turned away and held open: re-centred and resumed.
         session._pause_arms()
         session.handle({"type": "pose", "t": 1.0, "head": turned}, 1.0)
         session.handle({"type": "pose", "t": 1.1, "head": turned, **opened}, 1.1)
         state = session.handle({"type": "pose", "t": 1.7, "head": turned, **opened}, 1.7)
         assert state is not None and state.get("recentred") is True
-        assert not state["arms_enabled"] and state["gestures"]["paused"]
+        assert state["arms_enabled"] and not state["gestures"]["paused"]
 
     def test_hands_can_be_ignored(self, bundle: ModelBundle) -> None:
         cfg = VRServerConfig(state_hz=1000.0, hands=None)
