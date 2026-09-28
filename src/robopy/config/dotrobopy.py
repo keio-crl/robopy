@@ -734,6 +734,8 @@ def _parse_ik(data: dict[str, Any]) -> Any:
         if value is not None:
             out[name] = _as_scalar_or_map(value, field_name=f"control.ik.{name}", default=None)
     for name in (
+        "position_cost",
+        "orientation_cost",
         "limit_avoidance_band_rad",
         "limit_avoidance_cost",
         "gain_time_constant_s",

@@ -226,6 +226,12 @@ class RakudaIKConfig:
             posture, limit-avoidance and smoothness objectives without
             degrading them).
         orientation_mode: ``position_only``, ``pose`` or ``axis_aligned``.
+        position_cost: Weight of a hand's position error (solver default 1.0).
+        orientation_cost: Weight of a hand's orientation (or approach-axis)
+            error, against ``position_cost`` (solver default 0.15).  With a
+            two-axis wrist the two cannot both be met in general; this says
+            which gives way.  The roll about the gripper's axis is the first
+            orientation component to be given up when it is low.
         approach_axis_tcp: The gripper's approach axis in TCP coordinates,
             needed by ``axis_aligned``.  Not assumed: state it.
         preferred_posture_rad: ``{joint: rad}`` the posture objective pulls
@@ -257,6 +263,8 @@ class RakudaIKConfig:
 
     task_priority_mode: str | None = None
     orientation_mode: str | None = None
+    position_cost: float | None = None
+    orientation_cost: float | None = None
     approach_axis_tcp: Tuple[float, float, float] | None = None
     preferred_posture_rad: Dict[str, float] | None = None
     posture_cost: Dict[str, float] | float | None = None
@@ -288,6 +296,8 @@ class RakudaIKConfig:
         for name in (
             "task_priority_mode",
             "orientation_mode",
+            "position_cost",
+            "orientation_cost",
             "approach_axis_tcp",
             "posture_cost",
             "joint_motion_cost",

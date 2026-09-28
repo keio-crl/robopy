@@ -25,6 +25,11 @@ from typing import Any, Dict, Sequence, Tuple
 #: convergence as the viewer does).  A bounded step per sample, a short
 #: compute budget and no acceleration window -- the operator's hand is the
 #: trajectory generator here.
+#: The VR's orientation weight when neither the config nor --orientation-weight
+#: says: higher than the solver's 0.15, so the hand's roll (the wrist yaw's
+#: job) is followed rather than given up for a few millimetres of position.
+DEFAULT_ORIENTATION_WEIGHT = 0.5
+
 STREAMING_IK_OVERRIDES: Dict[str, Any] = {
     "max_joint_step_rad": 0.05,
     "compute_budget_s": 0.05,
@@ -160,6 +165,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--position-scale", type=float, default=1.0, help="robot metres per operator metre"
     )
     arms.add_argument("--no-orientation", action="store_true", help="translation-only hand targets")
+    arms.add_argument(
+        "--orientation-weight",
+        type=float,
+        default=None,
+        metavar="W",
+        help="weight of the hand's orientation error against its position (1.0) in the solver. "
+        "With the two-axis wrist both cannot be met at once; a low weight gives up the roll "
+        "about the gripper's axis first. Default: control.ik.orientation_cost from the "
+        f"config, else {DEFAULT_ORIENTATION_WEIGHT} (the viewer's own default is 0.15)",
+    )
     arms.add_argument(
         "--max-hand-speed", type=float, default=0.6, help="m/s slew limit of the targets"
     )
@@ -753,8 +768,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .head_tracking import HeadJointMapping, HeadTracker, HeadTrackingConfig
     from .server import VRServer, VRServerConfig, serve_vr
 
-    loaded = load_model(args, parser, ik_overrides=STREAMING_IK_OVERRIDES)
+    ik_overrides = dict(STREAMING_IK_OVERRIDES)
+    if args.orientation_weight is not None:
+        if not 0.0 <= args.orientation_weight <= 10.0:
+            parser.error("--orientation-weight must be within [0, 10]")
+        ik_overrides["orientation_cost"] = float(args.orientation_weight)
+    loaded = load_model(args, parser, ik_overrides=ik_overrides)
     bundle = loaded.bundle
+    if loaded.ik is not None and not args.no_orientation:
+        if "orientation_cost" not in loaded.ik_overrides:
+            loaded.ik.solver.set_task_costs(orientation_cost=DEFAULT_ORIENTATION_WEIGHT)
+        print(
+            f"Hand orientation: weight {loaded.ik.solver.orientation_cost:.2f} against position "
+            "1.0 (--orientation-weight, or control.ik.orientation_cost, to change; the roll about "
+            "the gripper's axis is what a low weight gives up first)"
+        )
     pair = None
     follower = None
     leader = None
