@@ -345,14 +345,16 @@ class ModelBundle:
 
         if joint_limit_overrides:
             model.set_joint_limit_overrides(joint_limit_overrides)
+        ignored: List[str] = []
         if soft_limits:
-            model.set_soft_limits(soft_limits)
+            usable, ignored = _without_disjoint_soft_limits(model, soft_limits)
+            model.set_soft_limits(usable)
         applied: Dict[str, Tuple[float, float]] = {
             name: (soft.lower, soft.upper) for name, soft in model.soft_limits.items()
         }
 
         tcp_frames: Dict[str, str] = {}
-        warnings = list(audit.warnings)
+        warnings = list(audit.warnings) + ignored
         offsets = dict(tcp_offsets or {})
         if not offsets:
             for side in ("left", "right"):
@@ -579,3 +581,42 @@ def _group_of(joint: str) -> str:
     if "head" in joint:
         return "head"
     return "torso"
+
+
+def _without_disjoint_soft_limits(
+    model: Any, soft_limits: Mapping[str, Any]
+) -> Tuple[Dict[str, Any], List[str]]:
+    """The soft limits that leave the joint some range, and a warning for each other one.
+
+    A soft limit only narrows the URDF range (or its override); one that
+    does not overlap it at all leaves the joint no angle to take, and the
+    model could not be built.  On the machine that is refused.  This page
+    only simulates, so it drops the entry, keeps the base range and says so:
+    the entry is a calibration to redo, not a reason not to look at the model.
+    """
+    from robopy.kinematics.joint_limits import (  # noqa: PLC0415
+        _coerce_override,
+        _coerce_soft,
+        limits_from_model,
+    )
+
+    base_ranges = limits_from_model(model)
+    for name, value in model.joint_limit_overrides.items():
+        override = _coerce_override(value)
+        base_ranges[name] = (override.lower, override.upper)
+    usable: Dict[str, Any] = {}
+    warnings: List[str] = []
+    for name, value in soft_limits.items():
+        base = base_ranges.get(name)
+        if base is not None:
+            soft = _coerce_soft(value)
+            if max(base[0], soft.lower) >= min(base[1], soft.upper):
+                warnings.append(
+                    f"{name}: the soft limit [{soft.lower:.3f}, {soft.upper:.3f}] does not overlap "
+                    f"the model's range [{base[0]:.3f}, {base[1]:.3f}], so it would leave the "
+                    "joint no angle at all; IGNORED here (the model's range is used). The "
+                    "machine refuses it: measure this joint again (robopy-rakuda-calibrate)."
+                )
+                continue
+        usable[name] = value
+    return usable, warnings

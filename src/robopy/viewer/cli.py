@@ -418,6 +418,9 @@ def load_model(
             tmpdir.cleanup()
         print(f"Could not load {urdf}: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
+    for warning in bundle.warnings:
+        if "IGNORED here" in warning:
+            say(f"  WARNING {warning}")
 
     ik = None
     # The configuration's control.ik section is the shared behaviour; a

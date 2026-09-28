@@ -97,6 +97,29 @@ class TestModelBundle:
         # the solver's range; nothing applies an actuator travel to every axis.
         from robopy.kinematics.synthetic_dual_arm import write_synthetic_dual_arm_urdf
 
+        # A soft limit that does not overlap the range at all (a calibration
+        # gone wrong) would leave the joint no angle: the viewer drops it,
+        # keeps the model's range and says so, instead of refusing to start.
+        stray = ModelBundle.load(
+            write_synthetic_dual_arm_urdf(tmp_path / "stray.urdf"),
+            soft_limits={
+                **SOFT_LIMITS,
+                "elbow_pitch_left_dof": {"lower": 2.5, "upper": 2.6},  # URDF +/-2.4
+                "elbow_yaw_left_dof": {
+                    "lower": 1.5,
+                    "upper": 1.6,
+                },  # inside the URDF, not the override
+            },
+            joint_limit_overrides={
+                "elbow_yaw_left_dof": {"lower": -1.0, "upper": 1.0, "reason": "measured stop"}
+            },
+        )
+        joints = {j["name"]: j for j in stray.describe()["joints"]}
+        assert joints["elbow_pitch_left_dof"]["limit_source"] == "urdf"
+        assert joints["elbow_yaw_left_dof"]["limit_source"] == "override"
+        ignored = [w for w in stray.warnings if "IGNORED" in w]
+        assert len(ignored) == 2 and "elbow_pitch_left_dof" in ignored[0]
+
         resolved = ModelBundle.load(
             write_synthetic_dual_arm_urdf(tmp_path / "resolved.urdf"),
             soft_limits={
