@@ -532,7 +532,9 @@ uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem
 #   リーダーのポートが無ければフォロワだけを駆動する。--hardware-check はトルクを入れずに接続・検証・
 #   「どのモータを駆動するか」「手先が今どこにあるか」を表示して終わる（実機に入る前の確認）
 uv run --extra kinematics robopy-vr --hardware --hardware-check --follower-port /dev/ttyUSB0
-uv run --extra kinematics robopy-vr --hardware --follower-port /dev/ttyUSB0 --host 0.0.0.0 --self-signed
+uv run --extra kinematics --extra realsense robopy-vr --hardware --follower-port /dev/ttyUSB0 --host 0.0.0.0 --self-signed
+#   --camera の既定は auto: --hardware / --hardware-head では頭の RealSense を映す（pyrealsense2 は
+#   --extra realsense で入る。無い・カメラが無いときはテストパターンに戻して起動時に注記）
 #   --hardware-check は 1 回の一括読み取りにかかる時間も表示する。研究室の Rakuda では 13 モータで約 16 ms なので、
 #   control.max_acquisition_span_s（サーボの既定 0.010）・control_period_s（既定 0.005）はこの機体では成立しない。
 #   config.yaml の control に max_acquisition_span_s: 0.05, control_period_s: 0.02, read_timeout_s: 0.05,

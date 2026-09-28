@@ -78,9 +78,11 @@ def build_parser() -> argparse.ArgumentParser:
     cam = parser.add_argument_group("camera")
     cam.add_argument(
         "--camera",
-        default="synthetic",
-        help="synthetic (default), none, opencv:<index|/dev/videoN|url>, or "
-        "realsense[:index] (the colour stream of an Intel RealSense; needs pyrealsense2)",
+        default="auto",
+        help="auto (default: with --hardware or --hardware-head the head's RealSense when "
+        "pyrealsense2 and a device are present, else the test pattern), synthetic, none, "
+        "opencv:<index|/dev/videoN|url>, or realsense[:index] (the colour stream of an Intel "
+        "RealSense; needs pyrealsense2: uv run --extra realsense ...)",
     )
     cam.add_argument(
         "--camera-size", default="640x480", metavar="WxH", help="RealSense colour stream size"
@@ -777,6 +779,11 @@ def _make_camera(args: argparse.Namespace, caption: Any) -> Any:
     )
 
     spec = str(args.camera).strip().lower()
+    auto = spec == "auto"
+    if auto:
+        # The machine has a RealSense on its head: show it whenever the machine
+        # is driven, and say so when it cannot be, rather than failing.
+        spec = "realsense" if (args.hardware or args.hardware_head) else "synthetic"
     if spec == "none":
         return None
     if spec == "synthetic":
@@ -797,9 +804,22 @@ def _make_camera(args: argparse.Namespace, caption: Any) -> Any:
                 index, width=width, height=height, fps=int(args.camera_fps)
             )
         except ImportError as exc:
-            raise SystemExit(
-                f"--camera realsense needs pyrealsense2 (uv sync --extra realsense): {exc}"
-            ) from exc
+            if not auto:
+                raise SystemExit(
+                    f"--camera realsense needs pyrealsense2 (uv sync --extra realsense): {exc}"
+                ) from exc
+            print(
+                "  camera: pyrealsense2 is not installed, showing the test pattern instead "
+                "(start with `uv run --extra kinematics --extra realsense ...` for the head camera)"
+            )
+            args.camera = "synthetic"
+            return _make_camera(args, caption)
+        except Exception as exc:  # noqa: BLE001 - no device, busy device: fall back when auto
+            if not auto:
+                raise
+            print(f"  camera: no RealSense could be opened ({exc}); showing the test pattern")
+            args.camera = "synthetic"
+            return _make_camera(args, caption)
     else:
         raise SystemExit(
             "--camera must be synthetic, none, opencv:<source> or realsense[:index], "
