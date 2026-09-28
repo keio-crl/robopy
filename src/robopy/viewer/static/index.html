@@ -55,6 +55,9 @@
         <button id="joints-home" disabled title="No home pose is configured (control.model.home_positions_rad)">home</button>
         <button id="joints-copy" title="Copy the current joint angles as JSON (radians)">copy JSON</button>
         <button id="machine-take" hidden title="Set every mirrored joint to the real follower's angle, once (read-only: nothing is sent to a motor)">take machine pose</button>
+        <button id="machine-zero" hidden title="Set what the machine's zero is: pose the model like the machine, then confirm. Writes zero_count to .robopy/rakuda/config.yaml (still nothing is sent to a motor)">set machine zero</button>
+        <button id="machine-zero-apply" hidden title="The model now stands as the machine does: write the zeros">this is the machine's pose → write zero</button>
+        <button id="machine-zero-cancel" hidden>cancel</button>
         <label id="machine-follow-wrap" hidden title="Draw the model in the real follower's pose (read-only: nothing is sent to a motor)"><input type="checkbox" id="machine-follow" checked> follow machine</label>
       </div>
       <div id="machine-status" class="notice" hidden></div>

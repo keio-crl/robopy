@@ -21,6 +21,8 @@ Endpoints
 ``GET  /api/health``        liveness
 ``GET  /api/machine``       the real follower's joint angles, read-only
                            (``--mirror-follower``; ``{"available": false}`` otherwise)
+``POST /api/machine/zero``  ``{"joints": {name: rad}}``: the machine is in this model pose
+                           now -> new zero_count per motor, written to the config file
 
 Two modes of ``/api/ik`` are kept deliberately apart.  ``trajectory`` is the
 continuous-operation mode: the server keeps the solver's velocity history and
@@ -660,6 +662,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_json(self.server.ik_solve(body))
             elif path == "/api/ik/reset":
                 self._send_json(self.server.ik_reset(body))
+            elif path == "/api/machine/zero":
+                self._send_json(self.server.machine_zero(body))
             else:
                 self._send_error(HTTPStatus.NOT_FOUND, f"No route for {path}")
         except (KeyError, ValueError, TypeError) as exc:
@@ -790,6 +794,18 @@ class ViewerServer(ThreadingHTTPServer):
             self._fk_seconds += time.perf_counter() - started
         poses["timing_ms"] = (time.perf_counter() - started) * 1e3
         return poses
+
+    def machine_zero(self, body: Mapping[str, Any]) -> Dict[str, Any]:
+        """Re-zero the mirrored follower: the machine is in ``body["joints"]`` now."""
+        if self.machine is None:
+            raise RuntimeError("no machine is mirrored (start with --mirror-follower)")
+        joints = body.get("joints")
+        if not isinstance(joints, dict):
+            raise ValueError("'joints' must be an object of {joint: radians}.")
+        from .machine_mirror import set_zero_from_pose
+
+        with self._lock:
+            return set_zero_from_pose(self.machine, joints, bundle=self.bundle)
 
     def ik_solve(self, body: Mapping[str, Any]) -> Dict[str, Any]:
         """Solve for ``body["targets"]`` from ``body["joints"]`` and return poses."""

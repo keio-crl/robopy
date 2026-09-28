@@ -492,6 +492,15 @@ uv run robopy-viewer --config --mirror-follower /dev/ttyUSB0
   **範囲外の関節**（解決済みの関節範囲を外れている値。スライダでは丸めずにそのまま描きます）を出します。
   範囲外が出るなら、その関節の `direction` か `zero_count` を疑ってください。
 - 校正のない関節はページの値のままです。
+- **ゼロ点をページで決める（set machine zero）**: 実機とモデルの姿勢が全関節でずれて見えるとき（校正の基準姿勢が
+  モデルのゼロ姿勢と違っていたとき）は、実機を動かさずにページで直せます。`set machine zero` を押すと追従が止まり、
+  スライダの範囲が soft limit ではなく URDF の範囲まで広がります（soft limit は付け替える前のゼロで測ったものなので、
+  ここでは意味を持ちません）。スライダで**モデルを今の実機の姿勢に合わせ**、`this is the machine's pose → write zero`
+  を押すと、「実機は今この姿勢にいる」として各モータの `zero_count` を計算し、記録済みの可動域と
+  `control.model.soft_limits_rad` を同じ角度だけ平行移動して `.robopy/rakuda/config.yaml` に書きます（バックアップ付き。
+  `direction` はそのまま）。書いた直後から新しいゼロで追従を再開するので、モデルが実機と一致していれば成功です。
+  平行移動の結果 URDF の範囲と重ならなくなった soft limit は、ページ上では無視して警告します。
+  同じことをコマンドで行うのが `robopy-rakuda-calibrate --zero-only`（実機の方をモデルのゼロ姿勢に合わせる）です。
 
 ## :material-virtual-reality: VR テレオペ（Meta Quest） {: #vr }
 

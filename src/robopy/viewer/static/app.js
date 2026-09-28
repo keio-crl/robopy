@@ -37,6 +37,7 @@ const state = {
   groundZ: 0,                  // where the grid sits: the bottom of the robot's base
   lastFkMs: null,
   lastPoses: null,             // the most recent /api/fk (or IK) reply, re-applied to late meshes
+  zeroMode: false,             // posing the model like the machine to set its zero (sliders freed)
   playbackExpect: null,        // {t, tcp} the display expects for the FK request in flight
 };
 const STREAM_BUDGET_S = 0.6;   // trajectory duration asked for per request during a drag
@@ -356,7 +357,7 @@ function buildJointsPanel(model) {
         <!-- step="any": a stepped range snaps to multiples of (max - min) from
              its minimum, and an asymmetric range's grid misses zero, so the
              home pose sat a few thousandths of a degree off. -->
-        <input type="range" min="${j.lower}" max="${j.upper}" step="any" value="0">
+        <input type="range" min="${jointRange(j)[0]}" max="${jointRange(j)[1]}" step="any" value="0">
         <input type="text" class="num" value="0">
         <button class="jog" data-dir="-1">−</button>
         <button class="jog" data-dir="1">+</button>`;
@@ -379,9 +380,19 @@ function buildJointsPanel(model) {
 }
 function fmtLimit(rad) { return state.unitDeg ? `${(rad * DEG).toFixed(0)}°` : rad.toFixed(2); }
 
+// The range a slider spans.  Setting the machine's zero is the one time the
+// soft limits do not apply: they were measured against the zero being
+// replaced, so the model must be free to take the machine's pose within the
+// URDF (or override) range.
+function jointRange(j) {
+  if (!state.zeroMode || j.limit_source === 'override') return [j.lower, j.upper];
+  if (j.urdf_lower != null) return [j.urdf_lower, j.urdf_upper];
+  return [-Math.PI, Math.PI];
+}
+
 function setJoint(name, rad) {
   const j = state.model.joints.find((x) => x.name === name);
-  if (j) rad = Math.min(j.upper, Math.max(j.lower, rad));
+  if (j) { const [lo, hi] = jointRange(j); rad = Math.min(hi, Math.max(lo, rad)); }
   manualPoseEdit();
   state.joints[name] = rad;
   refreshJointInputs();
@@ -1238,7 +1249,7 @@ async function pollMachine() {
     if (out.length) parts.push(`OUTSIDE the range: ${out.join(', ')}`);
     status.textContent = `machine (read-only): ${parts.join('  |  ')}`;
     status.classList.toggle('warn', Boolean(m.error || out.length));
-    if (!follow || m.error) return;
+    if (!follow || m.error || state.zeroMode) return;
     applyMachinePose(m);
   } catch (err) {
     status.textContent = `machine: ${err.message}`;
@@ -1253,6 +1264,49 @@ function applyMachinePose(m) {
   refreshJointInputs();
   requestFK();
 }
+
+// Setting the machine's zero: pose the model like the machine (follow off, the
+// sliders freed to the URDF range), then confirm.  The server turns the present
+// counts into new zero_count values, shifts travel and soft limits with them
+// and writes the file; the page reloads the ranges and follows again, so the
+// model should now stand exactly as the machine does.
+function setZeroMode(on) {
+  state.zeroMode = on;
+  $('#machine-zero').hidden = on;
+  $('#machine-zero-apply').hidden = !on;
+  $('#machine-zero-cancel').hidden = !on;
+  $('#machine-take').disabled = on;
+  $('#machine-follow').disabled = on;
+  buildJointsPanel(state.model);
+  requestFK();
+}
+$('#machine-zero').onclick = () => {
+  $('#machine-follow').checked = false;
+  setZeroMode(true);
+  setStats('ZERO: move the sliders until the model stands exactly as the machine does now (soft limits lifted), then press "this is the machine\'s pose"');
+};
+$('#machine-zero-cancel').onclick = () => {
+  setZeroMode(false);
+  $('#machine-follow').checked = true;
+  setStats('zero setting cancelled; following the machine again');
+};
+$('#machine-zero-apply').onclick = async () => {
+  if (!window.confirm('Write new zero_count values to .robopy/rakuda/config.yaml?\nThe machine is taken to stand exactly as the model does now. A backup of the file is kept.')) return;
+  try {
+    const r = await api('/api/machine/zero', { joints: state.joints });
+    const model = await api('/api/model');
+    state.model = model;
+    setZeroMode(false);
+    buildInfo(model);
+    $('#machine-follow').checked = true;
+    const ignored = r.ignored_soft_limits.length ? `  |  ${r.ignored_soft_limits.length} soft limit(s) IGNORED live (see Info)` : '';
+    $('#machine-status').textContent = `zero written to ${r.written}: ${r.lines.map((l) => l.trim()).join('  |  ')}${ignored}`;
+    $('#machine-status').classList.toggle('warn', Boolean(r.ignored_soft_limits.length));
+    setStats(`new zeros written for ${Object.keys(r.zero_counts).length} motors; following the machine`);
+  } catch (err) {
+    setStats(`zero NOT written: ${err.message}`);
+  }
+};
 
 // The button: the machine's pose at this moment, once, whatever the checkbox says.
 $('#machine-take').onclick = async () => {
@@ -1291,6 +1345,8 @@ $('#machine-take').onclick = async () => {
     if (model.machine_mirror) {
       $('#machine-follow-wrap').hidden = false;
       $('#machine-take').hidden = false;
+      const first = await api('/api/machine');
+      if (first.can_set_zero) $('#machine-zero').hidden = false;
       $('#machine-status').hidden = false;
       setInterval(pollMachine, 50);  // the server reads the bus at 20 Hz
     }

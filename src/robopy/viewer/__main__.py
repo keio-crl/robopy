@@ -41,6 +41,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     machine = None
     try:
         if args.mirror_follower:
+            from robopy.config.dotrobopy import get_rakuda_yaml_path
+
             from .machine_mirror import open_follower_mirror
 
             try:
@@ -48,6 +50,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.mirror_follower,
                     loaded.config.follower_joint_calibration,
                     known_urdf_joints=loaded.bundle.model.movable_joint_names,
+                    config_path=get_rakuda_yaml_path(),
                 )
             except Exception as exc:  # noqa: BLE001 - a clear message, then exit
                 parser.exit(1, f"cannot mirror the follower on {args.mirror_follower}: {exc}\n")
