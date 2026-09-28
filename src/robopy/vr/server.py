@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import select
 import socket
 import ssl
@@ -98,6 +99,30 @@ from .websocket import (
 from .xr_math import OperatorFrame, xr_pose_to_robot
 
 logger = logging.getLogger(__name__)
+
+
+def _finite(value: Any) -> Any:
+    """``value`` with every non-finite float replaced by ``None``.
+
+    Python's ``json.dumps`` writes ``NaN`` and ``Infinity``, which are not JSON:
+    a browser's ``JSON.parse`` throws on them and the page drops the message
+    -- a hello carrying one empty timing statistic (``p50: nan``) left the
+    headset waiting for it forever.  Nothing here has a meaning for an
+    infinite or undefined number that ``null`` does not carry.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _finite(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_finite(v) for v in value]
+    return value
+
+
+def _dumps(payload: Any) -> str:
+    """Strict JSON: what every browser parses."""
+    return json.dumps(_finite(payload), allow_nan=False)
+
 
 __all__ = ["TeleopSession", "VRServer", "VRServerConfig", "head_anchor_position", "serve_vr"]
 
@@ -1008,7 +1033,7 @@ class VRServer(ViewerServer):
             if self._session is not None:
                 self._refused_operators += 1
                 ws.send_text(
-                    json.dumps(
+                    _dumps(
                         {
                             "type": "error",
                             "message": "another operator is connected; only one may drive",
@@ -1049,10 +1074,10 @@ class VRServer(ViewerServer):
                 try:
                     payload = json.loads(message.text)
                 except ValueError:
-                    ws.send_text(json.dumps({"type": "error", "message": "invalid JSON"}))
+                    ws.send_text(_dumps({"type": "error", "message": "invalid JSON"}))
                     continue
                 if not isinstance(payload, dict):
-                    ws.send_text(json.dumps({"type": "error", "message": "expected an object"}))
+                    ws.send_text(_dumps({"type": "error", "message": "expected an object"}))
                     continue
                 now = time.monotonic()
                 try:
@@ -1063,7 +1088,7 @@ class VRServer(ViewerServer):
                     reply = {"type": "error", "message": f"{type(exc).__name__}: {exc}"}
                 if reply is not None:
                     try:
-                        ws.send_text(json.dumps(reply))
+                        ws.send_text(_dumps(reply))
                     except WebSocketError:
                         break
         finally:
@@ -1087,7 +1112,7 @@ class VRServer(ViewerServer):
         OpenSSL does not allow and which ended camera streams mid-session.
         """
         if self.camera is None:
-            ws.send_text(json.dumps({"type": "error", "message": "no camera in this session"}))
+            ws.send_text(_dumps({"type": "error", "message": "no camera in this session"}))
             ws.close(1011, "no camera")
             return
         self._camera_clients += 1
@@ -1107,7 +1132,7 @@ class VRServer(ViewerServer):
 
         try:
             ws.send_text(
-                json.dumps(
+                _dumps(
                     {
                         "type": "camera",
                         "fov_deg": self.vr_config.camera_fov_deg,

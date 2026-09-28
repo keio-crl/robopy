@@ -841,3 +841,22 @@ class TestControlSystemBackend:
         _run(system, bus, 150)
         assert bus.joint("head_yaw").position_rad == pytest.approx(0.5, abs=0.03)
         assert np.isfinite(backend.hand_pose("right")).all()
+
+
+def test_every_message_is_strict_json() -> None:
+    """A hello carrying an empty timing statistic (p50: nan) must still parse in a browser."""
+    import json
+
+    from robopy.vr.server import _dumps
+
+    text = _dumps(
+        {"timing": {"p50": float("nan"), "max": float("inf")}, "ok": [1.5, float("-inf")]}
+    )
+    assert "NaN" not in text and "Infinity" not in text
+
+    # A browser's JSON.parse rejects NaN/Infinity: parse with the same strictness.
+    def strict(constant: str) -> None:
+        raise ValueError(f"{constant} is not JSON")
+
+    parsed = json.loads(text, parse_constant=strict)
+    assert parsed == {"timing": {"p50": None, "max": None}, "ok": [1.5, None]}
