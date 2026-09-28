@@ -500,7 +500,7 @@ class _FakeMachine:
         }
 
 
-def test_take_machine_pose_sets_the_joints_once(browser) -> None:  # type: ignore[no-untyped-def]
+def test_the_model_follows_the_machine_and_can_take_it_once(browser) -> None:  # type: ignore[no-untyped-def]
     rakuda = find_rakuda_model()
     if rakuda is None:
         pytest.skip("committed Rakuda model not found")
@@ -514,6 +514,19 @@ def test_take_machine_pose_sets_the_joints_once(browser) -> None:  # type: ignor
     try:
         page, errors = _open(browser, srv.url, mesh_delay_s=0.0)
         assert page.is_visible("#machine-take") and page.is_visible("#machine-follow-wrap")
+        # Real time by default: the model follows the machine as it moves.
+        assert page.is_checked("#machine-follow")
+        page.wait_for_function(
+            "() => Math.abs(window.__robopy_state.joints['torso_yaw_dof'] - 0.3) < 1e-9"
+        )
+        machine.joints = {"torso_yaw_dof": 0.6, "shoulder_roll_right_dof": -0.4}
+        page.wait_for_function(
+            "() => Math.abs(window.__robopy_state.joints['torso_yaw_dof'] - 0.6) < 1e-9",
+            timeout=2_000,
+        )
+        # Untick it: the button takes the pose once.
+        page.uncheck("#machine-follow")
+        machine.joints = {"torso_yaw_dof": 0.3, "shoulder_roll_right_dof": -0.5}
         page.click("#machine-take")
         page.wait_for_function(
             "() => Math.abs(window.__robopy_state.joints['torso_yaw_dof'] - 0.3) < 1e-9"

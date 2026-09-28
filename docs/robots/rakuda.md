@@ -481,9 +481,9 @@ uv run robopy-viewer --config --mirror-follower /dev/ttyUSB0
 
 フォロワのポートを開き、校正済みのモータ（`control.follower_joint_calibration` に `urdf_joint` と
 `zero_count` があるもの）の `PRESENT_POSITION` を 20 Hz で読んで、`zero_count` と `direction` で URDF の関節角に
-直します。Joints タブの **take machine pose** を押すとその時点の実機の姿勢を 1 回だけ取り込み（以後は
-スライダやIKでそこから動かせます）、**follow machine** にチェックを入れている間はモデルが実機の姿勢に
-追従し続けます。
+直します。ページは既定で **follow machine**（Joints タブ、チェック済み）になっていて、モデルが実機の姿勢に
+リアルタイム（20 Hz）で追従します。チェックを外すとスライダやIKで自由に動かせ、**take machine pose** を
+押すとその時点の実機の姿勢を 1 回だけ取り込みます。
 
 - **モータには何も書きません**（トルク・動作モード・目標値のいずれも）。アームの接続処理（グリッパの初期化の
   書き込み）もせず、ポートを開くだけです。トルクが切れていれば、実機を手で動かしてモデルが同じ向きに動くかを

@@ -1292,7 +1292,7 @@ $('#machine-take').onclick = async () => {
       $('#machine-follow-wrap').hidden = false;
       $('#machine-take').hidden = false;
       $('#machine-status').hidden = false;
-      setInterval(pollMachine, 100);
+      setInterval(pollMachine, 50);  // the server reads the bus at 20 Hz
     }
     const home = model.home_positions_rad || {};
     if (Object.keys(home).length) {
