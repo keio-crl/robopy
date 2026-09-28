@@ -225,15 +225,16 @@ class TestRedo:
 
 
 class TestSuspiciousResults:
-    def test_moving_another_joint_or_too_little_is_reported(self) -> None:
+    def test_too_little_travel_is_reported_and_other_motors_are_not_read(self) -> None:
         bus = simulated_buses(MOTORS)["follower"]
         console = ScriptedConsole(
             bus,
             [
                 "",  # zero pose
-                # r_arm_sh_pitch1's ends, but the operator moves l_arm_sh_pitch1
+                # while r_arm_sh_pitch1 is measured the operator also moves another
+                # joint (to get at it more easily): that is not a finding
                 "move:l_arm_sh_pitch1=0.8",
-                "move:l_arm_sh_pitch1=-0.8",
+                "move:r_arm_sh_pitch1=0.7",
                 # torso: ends barely apart
                 "move:torso_yaw=0.05",
                 "move:torso_yaw=-0.05",
@@ -244,9 +245,9 @@ class TestSuspiciousResults:
         cal.measure_limits("r_arm_sh_pitch1")
         cal.measure_limits("torso_yaw")
         table = "\n".join(cal.summary_lines())
-        assert "l_arm_sh_pitch1 moved instead" in table
+        assert "l_arm_sh_pitch1" not in "\n".join(cal._warnings["r_arm_sh_pitch1"].values())
         assert "travel only 6 deg" in table
-        assert any("probably swapped" in line for line in console.lines)
+        assert not any("moved" in line and "!!" in line for line in console.lines)
         console.answers = ["move:torso_yaw=1.0", "move:torso_yaw=-1.0"]
         cal.measure_limits("torso_yaw")  # measured again: the warning goes
         assert "travel only" not in "\n".join(cal.summary_lines())

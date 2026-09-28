@@ -896,10 +896,8 @@ uv run robopy-rakuda-calibrate --side follower --follower-port /dev/ttyUSB0 --no
 - ゼロ点や向きを取り直したときは、記録済みの両端のカウントから可動域を計算し直すので、機械端まで
   動かし直す必要はありません。
 - 怪しい測定は `!!` で警告し、見直し表の check 欄にも残します（その項目を測り直すと消えます）。
-  - `<motor> moved instead (URDF joints swapped?)`: 向き・可動域の測定中に、対象より別のモータの方が大きく
-    動きました。プロンプトの URDF 関節どおりに動かしたのなら、2 つのモータの URDF 関節の割り当てが
-    入れ替わっています。両方を `u` で直し、`r` で測り直してください。
-  - `travel only N deg`: 両端の間が 20° 未満です。端まで動かしたか確認してください。
+  - `travel only N deg`: 両端の間が 20° 未満です。端まで動かしたか、そのモータの URDF 関節の割り当てが
+    正しいか（プロンプトの関節を動かしても、別のモータが回っていないか）を確認してください。
   - `direction probably reversed`: 実測範囲を反転させると URDF の範囲に収まります。`d` で向きを測り直してください
     （モデルの正方向は URDF の軸まわりの右ねじ。左右の腕で軸が鏡像になっていない関節があります）。
   - `travel does not overlap the URDF range`: その範囲では soft limit を書けません（書くとモデルが読み込めなく

@@ -299,7 +299,7 @@ class ArmCalibrator:
         self._ends: Dict[str, Tuple[int, int]] = {}
         # Notes per step, so redoing a step replaces its note instead of piling up.
         self._notes: Dict[str, Dict[str, str]] = {m: {} for m in self.motors}
-        # Suspicions per step (another motor moved, travel too small), shown in
+        # Suspicions per step (travel too small), shown in
         # the review until the step is measured again.
         self._warnings: Dict[str, Dict[str, str]] = {m: {} for m in self.motors}
 
@@ -437,9 +437,7 @@ class ArmCalibrator:
             f"\n  {motor} -> {joint}: move the joint by hand in the direction the model calls "
             f"POSITIVE (right-hand rule about its axis), then hold."
         )
-        self._suspect(motor, "direction")
-        before = self._positions()
-        start = before[motor]
+        start = self._position(motor)
         deadline = time.monotonic() + self.move_timeout_s
         delta = 0
         polls = 0
@@ -455,7 +453,6 @@ class ArmCalibrator:
         result.direction = 1 if delta > 0 else -1
         self._mark(motor, "direction")
         self.console.say(f"  count {start} -> {start + delta}: direction={result.direction:+d}")
-        self._check_other_motors(motor, "direction", before)
         self._apply_limits(motor)
         return result.direction
 
@@ -467,25 +464,24 @@ class ArmCalibrator:
             raise RuntimeError("measure_zero() must run before the limits.")
         rad_per_count = self._rad_per_count(motor)
         self._suspect(motor, "limits")
-        snapshots: List[Dict[str, int]] = []
+        counts: List[int] = []
         for which in ("one end", "the other end"):
             self.console.ask(
                 f"  {motor}: move the joint to {which} of its travel, then press Enter"
             )
-            snapshots.append(self._positions())
-            count = snapshots[-1][motor]
-            rad = result.direction * (count - zero) * rad_per_count
-            self.console.say(f"    count={count} -> {rad:+.3f} rad")
-        self._ends[motor] = (snapshots[0][motor], snapshots[1][motor])
-        travel = abs(snapshots[1][motor] - snapshots[0][motor]) * rad_per_count
-        if not self._check_other_motors(motor, "limits", snapshots[0], snapshots[1]):
-            if travel < self.min_travel_rad:
-                self._suspect(
-                    motor,
-                    "limits",
-                    f"travel only {math.degrees(travel):.0f} deg: were both ends reached?",
-                    f"travel only {math.degrees(travel):.0f} deg",
-                )
+            counts.append(self._position(motor))
+            rad = result.direction * (counts[-1] - zero) * rad_per_count
+            self.console.say(f"    count={counts[-1]} -> {rad:+.3f} rad")
+        self._ends[motor] = (counts[0], counts[1])
+        travel = abs(counts[1] - counts[0]) * rad_per_count
+        if travel < self.min_travel_rad:
+            self._suspect(
+                motor,
+                "limits",
+                f"travel only {math.degrees(travel):.0f} deg: were both ends reached, and is "
+                "this the joint of its URDF joint?",
+                f"travel only {math.degrees(travel):.0f} deg",
+            )
         self._apply_limits(motor, announce=False)
 
     def _rad_per_count(self, motor: str) -> float:
@@ -498,43 +494,6 @@ class ArmCalibrator:
             self.console.say(f"  !! {motor}: {text}")
         else:
             self._warnings[motor].pop(step, None)
-
-    def _check_other_motors(
-        self,
-        motor: str,
-        step: str,
-        before: Mapping[str, int],
-        after: Mapping[str, int] | None = None,
-    ) -> bool:
-        """Warn when another motor moved clearly more than ``motor`` did.
-
-        That is what a wrong motor -> URDF joint answer looks like: the
-        operator moves the joint the prompt names, and a different motor
-        turns.  Returns whether a warning was given.
-        """
-        after = after if after is not None else self._positions()
-
-        def moved(m: str) -> float:
-            return abs(after[m] - before[m]) * self._rad_per_count(m)
-
-        own = moved(motor)
-        others = [(moved(m), m) for m in self.motors if m != motor and m in after and m in before]
-        if not others:
-            return False
-        most, other = max(others)
-        if most < math.radians(10.0) or most < 2.0 * own:
-            return False
-        joint = self.results[other].urdf_joint or "?"
-        self._suspect(
-            motor,
-            step,
-            f"{other} moved {math.degrees(most):.0f} deg but {motor} only "
-            f"{math.degrees(own):.0f} deg: the joint you moved is {other}'s ({joint}); "
-            f"if that is the joint the prompt meant, the URDF joints of {motor} and {other} "
-            "are probably swapped: fix them with 'u' and measure both again with 'r'",
-            f"{other} moved instead (URDF joints swapped?)",
-        )
-        return True
 
     def _apply_limits(self, motor: str, *, announce: bool = True) -> None:
         """The limits from the recorded ends, the zero and the direction."""
