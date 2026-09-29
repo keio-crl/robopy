@@ -203,6 +203,43 @@ class XArmSensorConfigs:
 
 
 @dataclass
+class XArmAdmittanceConfig:
+    """Six-axis parameters for xArm's built-in admittance control."""
+
+    translational_mass: float = 0.06  # kg
+    rotational_inertia_mass_ratio: float = 0.01  # m^2; J = mass * ratio
+    position_stiffness: float = 1200.0  # N/m
+    orientation_stiffness: float = 4.0  # Nm/rad
+    damping: Tuple[float, ...] = (0.0,) * 6  # SDK six-axis B array (reserved)
+    reference_frame: int = 0  # 0 = base frame, 1 = tool frame
+    compliant_axis: Tuple[int, ...] = (0, 0, 1, 0, 0, 0)  # Six-axis 0/1 flags
+
+    def __post_init__(self) -> None:
+        if not 0.02 <= self.translational_mass <= 1.0:
+            raise ValueError("translational_mass must be in [0.02, 1.0] kg.")
+        if not self.rotational_inertia_mass_ratio > 0:
+            raise ValueError("rotational_inertia_mass_ratio must be > 0 m^2.")
+        inertia = self.translational_mass * self.rotational_inertia_mass_ratio
+        if not 0.0001 <= inertia <= 0.01:
+            raise ValueError(
+                "translational_mass * rotational_inertia_mass_ratio "
+                "must be in [0.0001, 0.01] kg*m^2."
+            )
+        if not 0 <= self.position_stiffness <= 2000:
+            raise ValueError("position_stiffness must be in [0, 2000] N/m.")
+        if not 0 <= self.orientation_stiffness <= 20:
+            raise ValueError("orientation_stiffness must be in [0, 20] Nm/rad.")
+        if len(self.damping) != 6 or any(not value >= 0 for value in self.damping):
+            raise ValueError("damping must contain 6 non-negative values.")
+        if self.reference_frame not in (0, 1):
+            raise ValueError("reference_frame must be 0 (base) or 1 (tool).")
+        if len(self.compliant_axis) != 6 or any(
+            value not in (0, 1) for value in self.compliant_axis
+        ):
+            raise ValueError("compliant_axis must contain 6 values, each 0 or 1.")
+
+
+@dataclass
 class XArmConfig:
     """Top-level configuration for an xArm7 + GELLO system."""
 
@@ -225,6 +262,7 @@ class XArmConfig:
     sim_mode: bool = False
     sim_host: str = "127.0.0.1"
     sim_port: int = 6000
+    admittance: XArmAdmittanceConfig = field(default_factory=XArmAdmittanceConfig)
 
 
 @dataclass

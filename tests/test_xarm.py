@@ -7,12 +7,16 @@ are absent.
 
 from __future__ import annotations
 
+from unittest.mock import Mock, call
+
 import numpy as np
+import pytest
 
 from robopy.config.robot_config import (
     GELLO_XARM7_DEFAULT,
     XARM_WORKSPACE_PRESETS,
     GelloArmConfig,
+    XArmAdmittanceConfig,
     XArmArmObs,
     XArmConfig,
     XArmObs,
@@ -37,7 +41,7 @@ def test_workspace_bounds_defaults() -> None:
     bounds = XArmWorkspaceBounds()
     assert bounds.min_x == 390.4
     assert bounds.max_x == 100000.0
-    assert bounds.min_y == -257.5
+    assert bounds.min_y == -300.0
     assert bounds.max_y == 314.0
     assert bounds.min_z == 25.0
     assert bounds.max_z == 10000.0
@@ -71,7 +75,7 @@ def test_xarm_config_defaults() -> None:
     assert cfg.workspace_bounds is None
     assert cfg.control_frequency == 50.0
     assert cfg.max_delta == 0.05
-    assert cfg.gripper_open == 800
+    assert cfg.gripper_open == 84.0
     assert cfg.gripper_close == 0
     assert isinstance(cfg.gello, GelloArmConfig)
 
@@ -306,3 +310,93 @@ def test_xarm_leader_read_raw_radians_handles_negative_ticks() -> None:
     rad = leader._read_raw_radians()
     expected = np.full(8, -np.pi / 2.0, dtype=np.float32)
     np.testing.assert_allclose(rad, expected, atol=1e-5)
+
+
+def test_admittance_defaults() -> None:
+    cfg = XArmAdmittanceConfig()
+    assert cfg.translational_mass == 0.06
+    assert cfg.rotational_inertia_mass_ratio == 0.01
+    assert cfg.position_stiffness == 1200.0
+    assert cfg.orientation_stiffness == 4.0
+    assert cfg.damping == (0.0,) * 6
+    assert cfg.reference_frame == 0
+    assert cfg.compliant_axis == (0, 0, 1, 0, 0, 0)
+    first, second = XArmConfig(), XArmConfig()
+    assert isinstance(first.admittance, XArmAdmittanceConfig)
+    assert first.admittance == cfg
+    assert first.admittance is not second.admittance
+
+
+@pytest.mark.parametrize("field, value", [
+    ("translational_mass", value) for value in (-1, 0, 0.019, 1.001, float("nan"))
+] + [
+    ("rotational_inertia_mass_ratio", value)
+    for value in (-1, 0, 0.001, 0.2, float("nan"))
+] + [
+    ("position_stiffness", -1), ("position_stiffness", 2001),
+    ("orientation_stiffness", -1), ("orientation_stiffness", 21),
+    ("damping", (0,) * 5), ("damping", (0,) * 7),
+    ("damping", (0, 0, 0, 0, 0, -1)),
+    ("reference_frame", -1), ("reference_frame", 2),
+    ("compliant_axis", (0,) * 5), ("compliant_axis", (0,) * 7),
+    ("compliant_axis", (0, 0, 0, 0, 0, 2)),
+    ("compliant_axis", (-1, 0, 0, 0, 0, 0)),
+])
+def test_admittance_invalid_values(field, value) -> None:
+    with pytest.raises(ValueError, match=field):
+        XArmAdmittanceConfig(**{field: value})
+
+
+@pytest.mark.parametrize("mass, ratio, position, orientation", [
+    (0.02, 0.005, 0, 0),
+    (1.0, 0.01, 2000, 20),
+])
+def test_admittance_sdk_boundaries(mass, ratio, position, orientation) -> None:
+    XArmAdmittanceConfig(
+        translational_mass=mass,
+        rotational_inertia_mass_ratio=ratio,
+        position_stiffness=position,
+        orientation_stiffness=orientation,
+    )
+
+
+@pytest.mark.parametrize("custom", [False, True])
+def test_enable_admittance_uses_config(monkeypatch, custom) -> None:
+    values = dict(
+        translational_mass=0.1,
+        rotational_inertia_mass_ratio=0.02,
+        position_stiffness=500.0,
+        orientation_stiffness=8.0,
+        damping=(1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
+        reference_frame=1,
+        compliant_axis=(1, 0, 1, 0, 1, 0),
+    ) if custom else {}
+    admittance = XArmAdmittanceConfig(**values)
+    cfg = XArmConfig(admittance=admittance)
+    assert cfg.admittance is admittance
+    for name, value in values.items():
+        assert getattr(cfg.admittance, name) == value
+    follower = XArmFollower(cfg)
+    arm = Mock()
+    for name in ("set_ft_sensor_admittance_parameters", "set_ft_sensor_enable",
+                 "set_ft_sensor_mode", "set_state"):
+        getattr(arm, name).return_value = 0
+    follower._robot = arm
+    follower._is_connected = True
+    monkeypatch.setattr("robopy.robots.xarm.xarm_follower.time.sleep", lambda _: None)
+
+    follower.enable_admittance_control()
+
+    mass = [0.1] * 3 + [0.002] * 3 if custom else [0.06] * 3 + [0.06 * 0.01] * 3
+    stiffness = [500.0] * 3 + [8.0] * 3 if custom else [1200.0] * 3 + [4.0] * 3
+    damping = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0] if custom else [0.0] * 6
+    axes = [1, 0, 1, 0, 1, 0] if custom else [0, 0, 1, 0, 0, 0]
+    assert arm.mock_calls == [
+        call.set_ft_sensor_admittance_parameters(mass, stiffness, damping),
+        call.set_ft_sensor_admittance_parameters(1 if custom else 0, axes),
+        call.set_ft_sensor_enable(1),
+        call.set_ft_sensor_mode(1),
+        call.set_state(0),
+    ]
+    assert follower._admittance_enabled is True
+    assert follower._motion_paused is True

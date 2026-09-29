@@ -269,24 +269,13 @@ class XArmFollower(XArmArm):
                     f"{name} failed: code={code}"
                 )
 
-        # Parameters verified in the standalone SDK test
-        M = 0.06
-        J = M * 0.01
-
-        K_pos = 1200 #300
-        K_ori = 4
-
-        mass = [M, M, M, J, J, J]
-
-        stiffness = [
-            K_pos, K_pos, K_pos,
-            K_ori, K_ori, K_ori
-        ]
-
-        damping = [0] * 6
-
-        ref_frame = 0
-        c_axis = [0, 0, 1, 0, 0, 0]
+        admittance = self.config.admittance
+        inertia = admittance.translational_mass * admittance.rotational_inertia_mass_ratio
+        mass = [admittance.translational_mass] * 3 + [inertia] * 3
+        stiffness = [admittance.position_stiffness] * 3 + [admittance.orientation_stiffness] * 3
+        damping = list(admittance.damping)
+        ref_frame = admittance.reference_frame
+        c_axis = list(admittance.compliant_axis)
 
         with self._control_lock:
             self._motion_paused = True
