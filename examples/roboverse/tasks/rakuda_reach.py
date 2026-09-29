@@ -7,9 +7,9 @@ to open or close and no grasping to be had.  Reaching is the largest useful task
 the model supports as exported.
 
 The robot stands on a pedestal rather than on the floor -- see
-:mod:`robopy.roboverse.mount` for why, and for where its height comes from.
+``mount`` for why, and for where its height comes from.
 Targets are sampled inside
-:data:`~robopy.roboverse.tasks._common.REACH_TARGET_BOX`, a per-hand box
+``workspace.REACH_TARGET_BOX``, a per-hand box
 measured from the model's own reachable set and given relative to the mounting
 plane, so raising or lowering the pedestal moves the targets with the robot and
 a failure means the policy missed rather than that it was sent somewhere the arm
@@ -25,12 +25,11 @@ from __future__ import annotations
 import torch
 from metasim.constants import PhysicStateType
 from metasim.scenario.objects import PrimitiveSphereCfg
-from metasim.scenario.scenario import ScenarioCfg
-from metasim.scenario.simulator_params import SimParamCfg
 from metasim.task.base import BaseTaskEnv
 from metasim.task.registry import register_task
 
-from ._common import REACH_TARGET_BOX, RakudaMount, hand_position
+from staging import staged
+from workspace import REACH_TARGET_BOX, RakudaMount, hand_position
 
 __all__ = ["RakudaBimanualReachEnv", "RakudaReachEnv"]
 
@@ -185,14 +184,9 @@ class RakudaReachEnv(_ReachBase):
     hands = ("right",)
     markers = {"right": "target_right"}
 
-    scenario = ScenarioCfg(
+    scenario = staged(
         objects=[MOUNT.pedestal(PEDESTAL), _marker("target_right", (0.85, 0.25, 0.25))],
         robots=[ROBOT],
-        simulator="mujoco",
-        sim_params=SimParamCfg(dt=0.005),
-        decimation=4,
-        num_envs=1,
-        headless=True,
     )
 
 
@@ -209,16 +203,11 @@ class RakudaBimanualReachEnv(_ReachBase):
     hands = ("right", "left")
     markers = {"right": "target_right", "left": "target_left"}
 
-    scenario = ScenarioCfg(
+    scenario = staged(
         objects=[
             MOUNT.pedestal(PEDESTAL),
             _marker("target_right", (0.85, 0.25, 0.25)),
             _marker("target_left", (0.25, 0.45, 0.85)),
         ],
         robots=[ROBOT],
-        simulator="mujoco",
-        sim_params=SimParamCfg(dt=0.005),
-        decimation=4,
-        num_envs=1,
-        headless=True,
     )

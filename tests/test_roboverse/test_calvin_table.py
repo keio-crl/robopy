@@ -6,18 +6,24 @@ tests need MetaSim, which a plain robopy checkout does not have.
 
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from robopy.roboverse.tasks._common import MAX_PALM_REACH_M
-from robopy.sim.calvin_table import (
+from workspace import MAX_PALM_REACH_M
+from calvin_table_asset import (
     CALVIN_SCALE,
     CALVIN_TABLE_JOINTS,
     CALVIN_TABLE_SURFACE,
     CALVIN_WORK_SURFACE_Z,
+    _COLLISION_GROUP,
+    _VISUAL_GROUP,
+    _mtl_texture,
     decompose_to_boxes,
+    export_calvin_table_mjcf,
+    export_calvin_table_urdf,
     find_calvin_table,
 )
 
@@ -92,7 +98,7 @@ class TestExport:
         mujoco = pytest.importorskip("mujoco")
         mjcf = TABLE / "mjcf" / "calvin_table.xml"
         if not mjcf.is_file():
-            pytest.skip("run python -m robopy.sim.calvin_table first")
+            pytest.skip("run python examples/roboverse/calvin_table_asset.py first")
         return mujoco.MjModel.from_xml_path(str(mjcf))
 
     def test_the_joints_are_all_there(self, model):
@@ -140,7 +146,11 @@ class TestExport:
         data = mujoco.MjData(model)
         mujoco.mj_forward(model, data)
         (x0, y0), (x1, y1) = CALVIN_TABLE_SURFACE
-        collision_only = np.array([1, 0, 0, 0, 0, 0], dtype=np.uint8)
+        # Group 3, where the export put the collision geoms so they stop being
+        # drawn over the wood. The visual meshes are group 1 and are not what a
+        # block comes to rest on.
+        collision_only = np.zeros(6, dtype=np.uint8)
+        collision_only[int(_COLLISION_GROUP)] = 1
         for fx in (0.1, 0.5, 0.9):
             for fy in (0.1, 0.5, 0.9):
                 point = np.array([x0 + (x1 - x0) * fx, y0 + (y1 - y0) * fy, 5.0])
@@ -175,8 +185,8 @@ class TestScene:
         env.close()
 
     def test_the_robot_stands_at_the_pandas_base(self, rolled):
-        from robopy.roboverse.mount import STAND_HEIGHT
-        from robopy.roboverse.tasks.rakuda_calvin_table import PANDA_BASE_POSITION
+        from mount import STAND_HEIGHT
+        from tasks.rakuda_calvin import PANDA_BASE_POSITION
 
         states, _ = rolled
         base = states.robots["rakuda"].root_state[0, :3].numpy()
@@ -187,7 +197,7 @@ class TestScene:
 
     def test_the_blocks_stay_on_the_table(self, rolled):
         """The failure this scene was built through: blocks flung off the bench."""
-        from robopy.roboverse.tasks.rakuda_calvin_table import (
+        from tasks.rakuda_calvin import (
             CALVIN_BLOCKS,
             block_rest_positions,
         )
@@ -241,8 +251,8 @@ class TestPickScene:
 
     def test_it_stands_at_the_grasping_height(self, env):
         """Feet one grasp-offset below CALVIN's bench, not at the Panda's height."""
-        from robopy.roboverse.mount import GRASP_OFFSET_ABOVE_MOUNT
-        from robopy.roboverse.tasks.rakuda_calvin_table import (
+        from mount import GRASP_OFFSET_ABOVE_MOUNT
+        from tasks.rakuda_calvin import (
             CALVIN_PICK_BASE_POSITION,
             PANDA_BASE_POSITION,
         )
@@ -257,8 +267,8 @@ class TestPickScene:
         Checked in the robot's own frame, which is turned 90 degrees from the
         world's, so the arithmetic that places the base is checked too.
         """
-        from robopy.roboverse.tasks._common import OBJECT_ZONE
-        from robopy.roboverse.tasks.rakuda_calvin_table import (
+        from workspace import OBJECT_ZONE
+        from tasks.rakuda_calvin import (
             CALVIN_PICK_BASE_POSITION,
             CALVIN_PICK_TARGET,
             block_rest_positions,
@@ -276,8 +286,8 @@ class TestPickScene:
         """Not merely inside a box: the IK has to put the palm on the grasp pose."""
         import numpy as np
 
-        from robopy.roboverse.ik import Arm, solve_ik
-        from robopy.roboverse.tasks.rakuda_calvin_table import (
+        from ik import Arm, solve_ik
+        from tasks.rakuda_calvin import (
             CALVIN_PICK_TARGET,
             block_rest_positions,
         )
@@ -291,12 +301,12 @@ class TestPickScene:
         """The other half of the claim, so the two tasks stay honest about it."""
         import numpy as np
 
-        from robopy.roboverse.tasks.rakuda_calvin_table import (
+        from tasks.rakuda_calvin import (
             CALVIN_PICK_TARGET,
             PANDA_BASE_POSITION,
             block_rest_positions,
         )
-        from robopy.roboverse.mount import STAND_HEIGHT
+        from mount import STAND_HEIGHT
 
         block = np.array(block_rest_positions()[CALVIN_PICK_TARGET])
         base = np.array(
@@ -310,3 +320,135 @@ class TestPickScene:
             "the block is within reach from CALVIN's own base position, so the "
             "docstrings claiming otherwise are now wrong"
         )
+
+
+class TestLooks:
+    """What the export does so the table stops rendering as a pile of blocks.
+
+    Two separate faults, both of them in the MJCF rather than in the meshes:
+    the URDF importer left the collision geometry in a group MuJoCo draws, and
+    it ignored the MTLs entirely.
+    """
+
+    @pytest.fixture(scope="class")
+    def mjcf(self):
+        path = TABLE / "mjcf" / "calvin_table.xml"
+        if not path.is_file():
+            pytest.skip("run python examples/roboverse/calvin_table_asset.py first")
+        return ET.parse(path).getroot()
+
+    def test_no_collision_geom_is_drawn(self, mjcf):
+        """Every geom is either a visual (group 1) or hidden (group 3).
+
+        Before this, the 45 boxes standing in for the bench's concave mesh were
+        in group 0 and were painted over the bench they stand in for.
+        """
+        groups = {geom.get("group") for geom in mjcf.iter("geom")}
+        assert groups <= {_VISUAL_GROUP, _COLLISION_GROUP}, f"ungrouped geoms: {groups}"
+        assert _COLLISION_GROUP in groups, "nothing was hidden; the boxes are still being drawn"
+
+    def test_the_wood_links_carry_their_texture(self, mjcf):
+        """Each link with an MTL gets a material, and it points at a real file."""
+        asset = mjcf.find("asset")
+        files = {
+            texture.get("name"): (TABLE / "mjcf" / texture.get("file")).resolve()
+            for texture in asset.findall("texture")
+        }
+        assert files, "no textures were written"
+        for path in files.values():
+            assert path.is_file(), f"material points at a missing texture: {path}"
+
+        materials = {material.get("name"): material.get("texture") for material in asset.findall("material")}
+        textured = {
+            mtl.stem for mtl in (TABLE / "meshes").glob("*.mtl") if _mtl_texture(mtl) is not None
+        }
+        assert textured, "the MTLs are not vendored"
+        for link in textured:
+            assert f"mat_{link}" in materials, f"{link} has an MTL but no material"
+
+        used = {
+            geom.get("material")
+            for geom in mjcf.iter("geom")
+            if geom.get("group") == _VISUAL_GROUP and geom.get("material")
+        }
+        assert used == {f"mat_{link}" for link in textured}
+
+    def test_the_untextured_links_are_left_alone(self, mjcf):
+        """``switch_link``'s MTL has no ``map_Kd``; it keeps the URDF's grey."""
+        materials = {material.get("name") for material in mjcf.find("asset").findall("material")}
+        assert "mat_switch_link" not in materials
+
+
+class TestUrdfExport:
+    """The URDF the non-MuJoCo backends load.
+
+    It is the *same table* as the MJCF or it is worthless: a scene that renders
+    on MuJoCo and runs on Isaac Sim has to put the bench at one height, not two.
+    Both come out of ``_prepared_urdf``, and this is what checks that they did.
+    """
+
+    @pytest.fixture(scope="class")
+    def both(self, tmp_path_factory):
+        pytest.importorskip("mujoco")
+        # The URDF names its meshes "../meshes/x.obj", relative to itself, so it
+        # can only be measured from somewhere that has a meshes/ beside it.
+        # Linking rather than copying keeps the 348 KB where it is.
+        staging = tmp_path_factory.mktemp("calvin-urdf")
+        for shared in ("meshes", "textures"):
+            (staging / shared).symlink_to(TABLE / shared, target_is_directory=True)
+        (staging / "urdf").mkdir()
+        return (
+            export_calvin_table_mjcf(tmp_path_factory.mktemp("calvin-mjcf") / "calvin_table.xml"),
+            export_calvin_table_urdf(staging / "urdf" / "calvin_table_scaled.urdf"),
+        )
+
+    def test_they_describe_the_same_model(self, both):
+        mjcf_report, urdf_report = both
+        assert urdf_report.num_bodies == mjcf_report.num_bodies
+        assert urdf_report.num_joints == mjcf_report.num_joints
+        assert urdf_report.num_geoms == mjcf_report.num_geoms
+        assert urdf_report.num_meshes == mjcf_report.num_meshes
+        # 1e-5 rather than exact: the two files reach MuJoCo's compiler by
+        # different routes (MjSpec round-trip vs the URDF importer) and
+        # balanceinertia lands a microgram apart.
+        assert urdf_report.total_mass_kg == pytest.approx(mjcf_report.total_mass_kg, rel=1e-5)
+
+    def test_the_bench_is_at_the_same_height(self, both):
+        """The one number a task depends on: where a block comes to rest."""
+        mjcf_report, urdf_report = both
+        assert urdf_report.work_surface_z == pytest.approx(CALVIN_WORK_SURFACE_Z, abs=1e-3)
+        assert urdf_report.work_surface_z == pytest.approx(mjcf_report.work_surface_z, abs=1e-4)
+
+    def test_it_is_the_same_size(self, both):
+        mjcf_report, urdf_report = both
+        for wrote, want in zip(urdf_report.size_m, mjcf_report.size_m):
+            assert wrote == pytest.approx(want, abs=1e-4)
+
+    def test_the_checked_in_copy_is_current(self):
+        """The task points at the committed URDF, so it has to be the generated one."""
+        committed = TABLE / "urdf" / "calvin_table_scaled.urdf"
+        if not committed.is_file():
+            pytest.skip("run python examples/roboverse/calvin_table_asset.py first")
+        root = ET.parse(committed).getroot()
+        assert root.get("name") == "calvin_table"
+        # The two exports are deterministic, so a stale committed asset shows up
+        # as a byte difference rather than as a scene that is subtly wrong.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as staging:
+            staging = Path(staging)
+            for shared in ("meshes", "textures"):
+                (staging / shared).symlink_to(TABLE / shared, target_is_directory=True)
+            (staging / "urdf").mkdir()
+            fresh = staging / "urdf" / "calvin_table_scaled.urdf"
+            export_calvin_table_urdf(fresh)
+            assert fresh.read_text() == committed.read_text(), (
+                "the committed URDF is stale; re-run "
+                "python examples/roboverse/calvin_table_asset.py"
+            )
+        # No package:// and no absolute paths: an asset that only resolves on
+        # the machine it was written on is not vendored, it is borrowed.
+        for mesh in root.iter("mesh"):
+            filename = mesh.get("filename", "")
+            assert not filename.startswith(("package://", "/")), filename
+            assert (committed.parent / filename).is_file(), filename

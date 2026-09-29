@@ -22,12 +22,12 @@ from metasim.utils.setup_util import get_robot  # noqa: E402
 
 from robopy.models import find_rakuda_model  # noqa: E402
 from robopy.roboverse.robots import RAKUDA_ARM_JOINTS, RAKUDA_STAND_HEIGHT_M, RakudaCfg  # noqa: E402
-from robopy.roboverse.mount import (  # noqa: E402
+from mount import (  # noqa: E402
     HAND_FLOOR_ABOVE_MOUNT,
     WORK_OFFSET_ABOVE_MOUNT,
     RakudaMount,
 )
-from robopy.roboverse.tasks._common import (  # noqa: E402
+from workspace import (  # noqa: E402
     OBJECT_ZONE,
     PEDESTAL_FOOTPRINT,
     REACH_TARGET_BOX,
@@ -228,7 +228,7 @@ class TestTheWorkspaceFactsTheTasksRelyOn:
             )
 
     def test_the_push_cube_table_clears_the_pedestal_and_holds_the_goal(self) -> None:
-        from robopy.roboverse.tasks.rakuda_push_cube import (
+        from tasks.rakuda_push_cube import (
             CUBE_SIZE,
             CUBE_START_X,
             GOAL_OFFSET_Y,

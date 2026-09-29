@@ -12,9 +12,9 @@ are about 0.30 m long, so a hand never gets closer than 0.112 m to whatever the
 robot is bolted to -- put it on the table and it waves above everything on it.
 
 So it stands on a pedestal whose top is
-:data:`~robopy.roboverse.mount.WORK_OFFSET_ABOVE_MOUNT` below the tabletop, which
+``mount.WORK_OFFSET_ABOVE_MOUNT`` below the tabletop, which
 is the height at which the hands work best, and the table sits in front of the
-pedestal rather than under it.  :mod:`robopy.roboverse.mount` has the
+pedestal rather than under it.  ``mount`` has the
 measurements behind both.
 """
 
@@ -23,12 +23,11 @@ from __future__ import annotations
 import torch
 from metasim.constants import PhysicStateType
 from metasim.scenario.objects import PrimitiveCubeCfg
-from metasim.scenario.scenario import ScenarioCfg
-from metasim.scenario.simulator_params import SimParamCfg
 from metasim.task.base import BaseTaskEnv
 from metasim.task.registry import register_task
 
-from ._common import OBJECT_ZONE, RakudaMount, hand_position
+from staging import staged
+from workspace import OBJECT_ZONE, RakudaMount, hand_position
 
 __all__ = ["RakudaPushCubeEnv"]
 
@@ -46,7 +45,7 @@ TABLE_WIDTH = 0.60
 CUBE_SIZE = 0.04
 
 #: Where the cube starts, in the robot's frame. Measured reachable; see
-#: :data:`~robopy.roboverse.tasks._common.OBJECT_ZONE`.
+#: ``workspace.OBJECT_ZONE``.
 CUBE_START_X = OBJECT_ZONE["x"]
 CUBE_START_Y = OBJECT_ZONE["y"]
 
@@ -72,7 +71,7 @@ class RakudaPushCubeEnv(BaseTaskEnv):
     supported_simulators = ("mujoco",)
     max_episode_steps = 400
 
-    scenario = ScenarioCfg(
+    scenario = staged(
         objects=[
             MOUNT.pedestal(PEDESTAL),
             MOUNT.table("table", depth=TABLE_DEPTH, width=TABLE_WIDTH),
@@ -93,11 +92,6 @@ class RakudaPushCubeEnv(BaseTaskEnv):
             ),
         ],
         robots=[ROBOT],
-        simulator="mujoco",
-        sim_params=SimParamCfg(dt=0.005),
-        decimation=4,
-        num_envs=1,
-        headless=True,
     )
 
     def __init__(self, scenario=None, device=None) -> None:

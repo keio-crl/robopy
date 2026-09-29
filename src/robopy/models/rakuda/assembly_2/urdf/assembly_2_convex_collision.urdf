@@ -2,9 +2,9 @@
 <robot name="assembly_2">
   <link name="_5シリーズ2列_nfs5_2040_297_1___nfs5_2040_910">
     <inertial>
-      <mass value="9.57636e-05" />
+      <mass value="0.258562" />
       <origin xyz="8.29629e-16 1.99414e-06 -0.1806" rpy="0 -0 0" />
-      <inertia ixx="7.07963e-07" ixy="0" ixz="0" iyy="7.19098e-07" iyz="0" izz="1.91924e-08" />
+      <inertia ixx="0.0019115" ixy="0" ixz="0" iyy="0.00194157" iyz="0" izz="5.18194e-05" />
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 -0 0" />
@@ -24,9 +24,9 @@
   </link>
   <link name="_ゴム足Φ24x10_c_30_rk_24_black_1__none_1">
     <inertial>
-      <mass value="3.25901e-06" />
+      <mass value="0.00358491" />
       <origin xyz="0.17 0.125 -0.341462" rpy="0 -0 0" />
-      <inertia ixx="1.31586e-10" ixy="0" ixz="0" iyy="1.31586e-10" iyz="0" izz="2.11499e-10" />
+      <inertia ixx="1.44745e-07" ixy="0" ixz="0" iyy="1.44745e-07" iyz="0" izz="2.32649e-07" />
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 -0 0" />
@@ -64,9 +64,9 @@
   </link>
   <link name="axk1106_1___axk1106">
     <inertial>
-      <mass value="1.52808e-06" />
+      <mass value="0.00168089" />
       <origin xyz="-1.1355e-18 -4.88456e-19 0.00072" rpy="0 -0 0" />
-      <inertia ixx="2.97277e-10" ixy="0" ixz="0" iyy="2.97277e-10" iyz="0" izz="5.93975e-10" />
+      <inertia ixx="3.27004e-07" ixy="0" ixz="0" iyy="3.27004e-07" iyz="0" izz="6.53372e-07" />
     </inertial>
     <visual>
       <origin xyz="3.10614e-35 -1.38051e-35 0.02582" rpy="0 -0 0" />
@@ -86,9 +86,9 @@
   </link>
   <link name="axk1106_1___axk1106_1">
     <inertial>
-      <mass value="1.52808e-06" />
+      <mass value="0.00412582" />
       <origin xyz="-1.98747e-17 0.00072 0" rpy="0 -0 0" />
-      <inertia ixx="2.97277e-10" ixy="0" ixz="0" iyy="5.93975e-10" iyz="0" izz="2.97277e-10" />
+      <inertia ixx="8.02647e-07" ixy="0" ixz="0" iyy="1.60373e-06" iyz="0" izz="8.02647e-07" />
     </inertial>
     <visual>
       <origin xyz="-3.22447e-16 -0.08138 -0.0605" rpy="0 -0 0" />
@@ -108,9 +108,9 @@
   </link>
   <link name="axk1106_1___axk1106_2">
     <inertial>
-      <mass value="1.52808e-06" />
+      <mass value="0.00412582" />
       <origin xyz="4.31891e-18 -0.00072 6.93889e-18" rpy="0 -0 0" />
-      <inertia ixx="2.97277e-10" ixy="0" ixz="0" iyy="5.93975e-10" iyz="0" izz="2.97277e-10" />
+      <inertia ixx="8.02647e-07" ixy="0" ixz="0" iyy="1.60373e-06" iyz="0" izz="8.02647e-07" />
     </inertial>
     <visual>
       <origin xyz="-2.69702e-15 0.08138 -0.0605" rpy="0 -0 0" />
@@ -130,9 +130,9 @@
   </link>
   <link name="base_plate_03jk_rakuda_1__ソリッド1">
     <inertial>
-      <mass value="0.000712823" />
+      <mass value="5.59566" />
       <origin xyz="0.0403249 2.37656e-18 -0.333093" rpy="0 -0 0" />
-      <inertia ixx="5.30844e-06" ixy="0" ixz="2.28515e-10" iyy="5.28766e-06" iyz="0" izz="1.05885e-05" />
+      <inertia ixx="0.0416713" ixy="0" ixz="1.79384e-06" iyy="0.0415082" iyz="0" izz="0.0831198" />
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 -0 0" />
@@ -152,9 +152,9 @@
   </link>
   <link name="cable_guide_fr12_hinge_head_r4_1__ソリッド1">
     <inertial>
-      <mass value="2.66493e-06" />
+      <mass value="0.00280351" />
       <origin xyz="-0.00779783 0.00385581 0.0161862" rpy="0 -0 0" />
-      <inertia ixx="3.81863e-10" ixy="3.96656e-13" ixz="9.53712e-12" iyy="4.73597e-10" iyz="1.64333e-11" izz="1.17484e-10" />
+      <inertia ixx="4.0172e-07" ixy="4.17282e-10" ixz="1.0033e-08" iyy="4.98224e-07" iyz="1.72878e-08" izz="1.23593e-07" />
     </inertial>
     <visual>
       <origin xyz="-0.032 -0.0205 -0.104" rpy="0 -0 0" />
@@ -174,9 +174,9 @@
   </link>
   <link name="elbow_cover_right">
     <inertial>
-      <mass value="1.90245e-05" />
+      <mass value="0.0200138" />
       <origin xyz="0.0262267 0.00205994 -0.0183559" rpy="0 -0 0" />
-      <inertia ixx="6.87985e-09" ixy="-2.77699e-09" ixz="7.99871e-10" iyy="1.02387e-08" iyz="1.96201e-10" izz="1.10623e-08" />
+      <inertia ixx="7.2376e-06" ixy="-2.92139e-06" ixz="8.41464e-07" iyy="1.07711e-05" iyz="2.06403e-07" izz="1.16376e-05" />
     </inertial>
     <visual>
       <origin xyz="0.000742786 0.155554 0.05004" rpy="0 -0 0" />
@@ -196,9 +196,9 @@
   </link>
   <link name="fr12_h104_1__ソリッド1">
     <inertial>
-      <mass value="4.31461e-06" />
+      <mass value="0.0116495" />
       <origin xyz="0.0150008 -1.1096e-09 0.0057235" rpy="0 -0 0" />
-      <inertia ixx="1.34714e-09" ixy="0" ixz="-1.60309e-10" iyy="1.01366e-09" iyz="0" izz="1.81139e-09" />
+      <inertia ixx="3.63727e-06" ixy="-2.88988e-13" ixz="-4.32836e-07" iyy="2.73689e-06" iyz="-1.59416e-13" izz="4.89076e-06" />
     </inertial>
     <visual>
       <origin xyz="-1.04083e-17 -2.84851e-17 -0.0985" rpy="0 -0 0" />
@@ -218,9 +218,9 @@
   </link>
   <link name="fr12_h104_1__ソリッド1_1">
     <inertial>
-      <mass value="4.31461e-06" />
+      <mass value="0.0116495" />
       <origin xyz="0.0093885 -0.0102903 -0.0272799" rpy="0 -0 0" />
-      <inertia ixx="1.73957e-09" ixy="7.93925e-11" ixz="-2.18129e-10" iyy="1.06107e-09" iyz="-1.30259e-10" izz="1.37154e-09" />
+      <inertia ixx="4.69685e-06" ixy="2.1436e-07" ixz="-5.88949e-07" iyy="2.8649e-06" iyz="-3.51698e-07" izz="3.70317e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.036 -0.175742 0.0512058" rpy="0 -0 0" />
@@ -240,9 +240,9 @@
   </link>
   <link name="fr12_h104_1__ソリッド1_2">
     <inertial>
-      <mass value="4.31461e-06" />
+      <mass value="0.0116495" />
       <origin xyz="0.00979201 0.0201146 -0.0254112" rpy="0 -0 0" />
-      <inertia ixx="1.61196e-09" ixy="3.72079e-10" ixz="1.23164e-11" iyy="1.2803e-09" iyz="1.04482e-10" izz="1.27993e-09" />
+      <inertia ixx="4.35229e-06" ixy="1.00461e-06" ixz="3.32543e-08" iyy="3.4568e-06" iyz="2.82101e-07" izz="3.45582e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0422846 0.159337 0.0486631" rpy="0 -0 0" />
@@ -262,9 +262,9 @@
   </link>
   <link name="fr12_h104_1__ソリッド1_3">
     <inertial>
-      <mass value="4.31461e-06" />
+      <mass value="0.0116495" />
       <origin xyz="0.0222765 -0.020932 0.00195805" rpy="0 -0 0" />
-      <inertia ixx="1.81139e-09" ixy="5.4829e-11" ixz="-1.50642e-10" iyy="1.05267e-09" iyz="-1.07176e-10" izz="1.30813e-09" />
+      <inertia ixx="4.89076e-06" ixy="1.48038e-07" ixz="-4.06732e-07" iyy="2.84221e-06" iyz="-2.89376e-07" izz="3.53194e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.109893 -0.201014 0.120642" rpy="0 -0 0" />
@@ -284,9 +284,9 @@
   </link>
   <link name="fr12_h104_1__ソリッド1_4">
     <inertial>
-      <mass value="4.31461e-06" />
+      <mass value="0.0116495" />
       <origin xyz="0.000312605 0.0227191 -0.0205419" rpy="0 -0 0" />
-      <inertia ixx="1.25848e-09" ixy="1.24643e-10" ixz="1.1916e-10" iyy="1.07894e-09" iyz="2.33996e-11" izz="1.83477e-09" />
+      <inertia ixx="3.39791e-06" ixy="3.36536e-07" ixz="3.21732e-07" iyy="2.91314e-06" iyz="6.31789e-08" izz="4.95387e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.132211 0.114265 0.0804971" rpy="0 -0 0" />
@@ -306,9 +306,9 @@
   </link>
   <link name="fr12_s101_1__ソリッド1">
     <inertial>
-      <mass value="3.17353e-06" />
+      <mass value="0.00856853" />
       <origin xyz="0.012 0.000818014 -0.00224748" rpy="0 -0 0" />
-      <inertia ixx="6.15731e-10" ixy="0" ixz="0" iyy="6.52743e-10" iyz="-1.82981e-10" izz="1.08888e-09" />
+      <inertia ixx="1.66247e-06" ixy="0" ixz="0" iyy="1.76241e-06" iyz="-4.94048e-07" izz="2.93997e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.012 -0.151218 0.0393802" rpy="0 -0 0" />
@@ -328,9 +328,9 @@
   </link>
   <link name="fr12_s101_1__ソリッド1_1">
     <inertial>
-      <mass value="3.17353e-06" />
+      <mass value="0.00856853" />
       <origin xyz="0.0103923 0.00482014 -0.0042996" rpy="0 -0 0" />
-      <inertia ixx="6.08334e-10" ixy="1.2039e-11" ixz="-4.38185e-12" iyy="6.59275e-10" iyz="1.80603e-10" izz="1.08974e-09" />
+      <inertia ixx="1.6425e-06" ixy="3.25054e-08" ixz="-1.1831e-08" iyy="1.78004e-06" iyz="4.87629e-07" izz="2.94231e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.012 0.151218 0.0393802" rpy="0 -0 0" />
@@ -350,9 +350,9 @@
   </link>
   <link name="fr12_s102_1__ソリッド1">
     <inertial>
-      <mass value="2.0777e-06" />
+      <mass value="0.00560978" />
       <origin xyz="0.00197148 0.000674287 -0.00185259" rpy="0 -0 0" />
-      <inertia ixx="4.74963e-10" ixy="2.00588e-11" ixz="-5.51111e-11" iyy="1.9703e-10" iyz="-1.01159e-10" izz="4.38144e-10" />
+      <inertia ixx="1.2824e-06" ixy="5.41587e-08" ixz="-1.488e-07" iyy="5.31982e-07" iyz="-2.7313e-07" izz="1.18299e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0812548 -0.173366 0.10023" rpy="0 -0 0" />
@@ -372,9 +372,9 @@
   </link>
   <link name="fr12_s102_1__ソリッド1_1">
     <inertial>
-      <mass value="2.0777e-06" />
+      <mass value="0.00560978" />
       <origin xyz="0.00241456 0.00130998 -0.000476793" rpy="0 -0 0" />
-      <inertia ixx="4.47751e-10" ixy="1.53822e-10" ixz="-1.21902e-11" iyy="2.43116e-10" iyz="-1.91474e-11" izz="4.19271e-10" />
+      <inertia ixx="1.20893e-06" ixy="4.15319e-07" ixz="-3.29136e-08" iyy="6.56414e-07" iyz="-5.16981e-08" izz="1.13203e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0882102 0.116541 0.0727531" rpy="0 -0 0" />
@@ -394,9 +394,9 @@
   </link>
   <link name="fr13_h101_1__ソリッド1">
     <inertial>
-      <mass value="6.02982e-06" />
+      <mass value="0.0162805" />
       <origin xyz="0.016 0.00886218 -0.008" rpy="0 -0 0" />
-      <inertia ixx="1.1876e-09" ixy="0" ixz="0" iyy="3.12003e-09" iyz="0" izz="3.14902e-09" />
+      <inertia ixx="3.20652e-06" ixy="0" ixz="0" iyy="8.42409e-06" iyz="0" izz="8.50235e-06" />
     </inertial>
     <visual>
       <origin xyz="0.016 -0.0916 -0.0445" rpy="0 -0 0" />
@@ -416,9 +416,9 @@
   </link>
   <link name="fr13_h101_1__ソリッド1_1">
     <inertial>
-      <mass value="6.02982e-06" />
+      <mass value="0.0162805" />
       <origin xyz="-0.016 -0.00886218 -0.008" rpy="0 -0 0" />
-      <inertia ixx="1.1876e-09" ixy="0" ixz="0" iyy="3.12003e-09" iyz="0" izz="3.14902e-09" />
+      <inertia ixx="3.20652e-06" ixy="0" ixz="0" iyy="8.42409e-06" iyz="0" izz="8.50235e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.016 0.0916 -0.0445" rpy="0 -0 0" />
@@ -459,9 +459,9 @@
   </link>
   <link name="hn12_i101_1__ソリッド1">
     <inertial>
-      <mass value="5.41761e-07" />
+      <mass value="0.00146275" />
       <origin xyz="-6.93889e-18 -0.00207927 0.008" rpy="0 -0 0" />
-      <inertia ixx="1.60199e-11" ixy="0" ixz="0" iyy="2.64965e-11" iyz="0" izz="1.60199e-11" />
+      <inertia ixx="4.32538e-08" ixy="0" ixz="0" iyy="7.15405e-08" iyz="0" izz="4.32538e-08" />
     </inertial>
     <visual>
       <origin xyz="-0.024 -0.0188 -0.1185" rpy="0 -0 0" />
@@ -481,9 +481,9 @@
   </link>
   <link name="hn12_i101_1__ソリッド1_1">
     <inertial>
-      <mass value="5.41761e-07" />
+      <mass value="0.00146275" />
       <origin xyz="-1.38778e-17 0.00167196 0.000608545" rpy="0 -0 0" />
-      <inertia ixx="1.60199e-11" ixy="0" ixz="0" iyy="2.52709e-11" iyz="3.36709e-12" izz="1.72455e-11" />
+      <inertia ixx="4.32538e-08" ixy="0" ixz="0" iyy="6.82316e-08" iyz="9.09115e-09" izz="4.65627e-08" />
     </inertial>
     <visual>
       <origin xyz="-0.036 -0.140503 0.0640316" rpy="0 -0 0" />
@@ -503,9 +503,9 @@
   </link>
   <link name="hn12_i101_1__ソリッド1_2">
     <inertial>
-      <mass value="5.41761e-07" />
+      <mass value="0.00146275" />
       <origin xyz="0.00113963 -0.00185486 0.000675114" rpy="0 -0 0" />
-      <inertia ixx="1.86391e-11" ixy="-4.26289e-12" ixz="1.55156e-12" iyy="2.29582e-11" iyz="-2.52532e-12" izz="1.69391e-11" />
+      <inertia ixx="5.03255e-08" ixy="-1.15098e-08" ixz="4.18922e-09" iyy="6.19871e-08" iyz="-6.81836e-09" izz="4.57355e-08" />
     </inertial>
     <visual>
       <origin xyz="-0.0232846 0.131149 0.0674362" rpy="0 -0 0" />
@@ -525,9 +525,9 @@
   </link>
   <link name="hn12_i101_1__ソリッド1_3">
     <inertial>
-      <mass value="5.41761e-07" />
+      <mass value="0.00146275" />
       <origin xyz="-4.16334e-17 0.00214181 0.000779555" rpy="0 -0 0" />
-      <inertia ixx="1.60199e-11" ixy="0" ixz="0" iyy="2.52709e-11" iyz="3.36709e-12" izz="1.72455e-11" />
+      <inertia ixx="4.32538e-08" ixy="0" ixz="0" iyy="6.82316e-08" iyz="9.09115e-09" izz="4.65627e-08" />
     </inertial>
     <visual>
       <origin xyz="-0.109893 -0.165306 0.133639" rpy="0 -0 0" />
@@ -547,9 +547,9 @@
   </link>
   <link name="hn12_i101_1__ソリッド1_4">
     <inertial>
-      <mass value="5.41761e-07" />
+      <mass value="0.00146275" />
       <origin xyz="0.0010709 -0.00200962 -9.8142e-05" rpy="0 -0 0" />
-      <inertia ixx="1.83327e-11" ixy="-4.34003e-12" ixz="-2.1195e-13" iyy="2.41643e-11" iyz="3.97738e-13" izz="1.60394e-11" />
+      <inertia ixx="4.94983e-08" ixy="-1.17181e-08" ixz="-5.72265e-10" iyy="6.52436e-08" iyz="1.07389e-09" izz="4.33063e-08" />
     </inertial>
     <visual>
       <origin xyz="-0.114357 0.08076 0.0788609" rpy="0 -0 0" />
@@ -569,9 +569,9 @@
   </link>
   <link name="hn12_n101_1__ソリッド1">
     <inertial>
-      <mass value="5.8065e-07" />
+      <mass value="0.00156776" />
       <origin xyz="-1.29259e-07 3.15981e-08 -0.00219311" rpy="0 0 -0.239754" />
-      <inertia ixx="1.34346e-11" ixy="0" ixz="0" iyy="1.34344e-11" iyz="0" izz="2.58557e-11" />
+      <inertia ixx="3.62734e-08" ixy="-1.5846e-13" ixz="2.89641e-13" iyy="3.62728e-08" iyz="-7.08045e-14" izz="6.98104e-08" />
     </inertial>
     <visual>
       <origin xyz="-1.3165e-17 -6.21764e-19 -0.09995" rpy="0 0 -0.239754" />
@@ -591,9 +591,9 @@
   </link>
   <link name="hn12_n101_1__ソリッド1_1">
     <inertial>
-      <mass value="5.8065e-07" />
-      <origin xyz="3.7817e-16 0.000493106 0.00799987" rpy="0 -0 0" />
-      <inertia ixx="1.34344e-11" ixy="0" ixz="0" iyy="2.58557e-11" iyz="0" izz="1.34346e-11" />
+      <mass value="0.00156776" />
+      <origin xyz="3.747e-16 0.000493106 0.00799987" rpy="0 -0 0" />
+      <inertia ixx="3.62728e-08" ixy="0" ixz="0" iyy="6.98104e-08" iyz="-2.9817e-13" izz="3.62735e-08" />
     </inertial>
     <visual>
       <origin xyz="-0.024 0.01875 -0.1185" rpy="0 -0 0" />
@@ -613,9 +613,9 @@
   </link>
   <link name="hn12_n101_1__ソリッド1_2">
     <inertial>
-      <mass value="5.8065e-07" />
+      <mass value="0.00156776" />
       <origin xyz="-1.0059e-07 -0.000750005 0.00206088" rpy="-0.0805653 0.225809 -0.683061" />
-      <inertia ixx="1.34345e-11" ixy="0" ixz="0" iyy="1.48874e-11" iyz="-3.99205e-12" izz="2.44027e-11" />
+      <inertia ixx="3.62732e-08" ixy="-2.42361e-13" ixz="-3.2808e-13" iyy="4.01961e-08" iyz="-1.07785e-08" izz="6.58874e-08" />
     </inertial>
     <visual>
       <origin xyz="-0.0932758 -0.114834 0.0541661" rpy="-0.0805653 0.225809 -0.683061" />
@@ -635,9 +635,9 @@
   </link>
   <link name="hn12_n101_1__ソリッド1_3">
     <inertial>
-      <mass value="5.8065e-07" />
+      <mass value="0.00156776" />
       <origin xyz="-8.90433e-08 0.000749994 0.00206088" rpy="0.0158134 0.105868 0.296278" />
-      <inertia ixx="1.34345e-11" ixy="0" ixz="0" iyy="1.48875e-11" iyz="3.99203e-12" izz="2.44028e-11" />
+      <inertia ixx="3.62731e-08" ixy="2.52761e-13" ixz="-3.0433e-13" iyy="4.01961e-08" iyz="1.07785e-08" izz="6.58874e-08" />
     </inertial>
     <visual>
       <origin xyz="-0.0511543 0.142316 0.0441632" rpy="0.0158134 0.105868 0.296278" />
@@ -657,9 +657,9 @@
   </link>
   <link name="hn12_n101_1__ソリッド1_4">
     <inertial>
-      <mass value="5.8065e-07" />
+      <mass value="0.00156776" />
       <origin xyz="-1.30053e-07 -0.00206086 -0.00075006" rpy="0.00742103 0.200109 0.0738889" />
-      <inertia ixx="1.34346e-11" ixy="0" ixz="0" iyy="2.44027e-11" iyz="3.99212e-12" izz="1.48874e-11" />
+      <inertia ixx="3.62734e-08" ixy="3.22425e-13" ixz="-3.37927e-14" iyy="6.58873e-08" iyz="1.07787e-08" izz="4.01959e-08" />
     </inertial>
     <visual>
       <origin xyz="-0.0122922 -0.178871 0.0555645" rpy="0.00742103 0.200109 0.0738889" />
@@ -679,9 +679,9 @@
   </link>
   <link name="hn12_n101_1__ソリッド1_5">
     <inertial>
-      <mass value="5.8065e-07" />
+      <mass value="0.00156776" />
       <origin xyz="-0.00142163 0.0023137 -0.000842018" rpy="-1.45295 0.72843 -1.22917" />
-      <inertia ixx="1.65399e-11" ixy="-5.05427e-12" ixz="1.83944e-12" iyy="2.16606e-11" iyz="-2.99405e-12" izz="1.45242e-11" />
+      <inertia ixx="4.46576e-08" ixy="-1.36465e-08" ixz="4.9665e-09" iyy="5.84836e-08" iyz="-8.08394e-09" izz="3.92154e-08" />
     </inertial>
     <visual>
       <origin xyz="0.0244772 0.153323 -0.087648" rpy="-1.45295 0.72843 -1.22917" />
@@ -701,9 +701,9 @@
   </link>
   <link name="hn12_n101_1__ソリッド1_6">
     <inertial>
-      <mass value="5.8065e-07" />
+      <mass value="0.00156776" />
       <origin xyz="-0.00155085 -0.00053038 0.00145714" rpy="-0.116928 -0.0329615 0.110113" />
-      <inertia ixx="1.96453e-11" ixy="2.12417e-12" ixz="-5.83599e-12" iyy="1.41609e-11" iyz="-1.99606e-12" izz="1.89185e-11" />
+      <inertia ixx="5.30422e-08" ixy="5.73526e-09" ixz="-1.57572e-08" iyy="3.82343e-08" iyz="-5.38937e-09" izz="5.10801e-08" />
     </inertial>
     <visual>
       <origin xyz="-0.0680312 -0.169226 0.117991" rpy="-0.116928 -0.0329615 0.110113" />
@@ -723,9 +723,9 @@
   </link>
   <link name="hn12_n101_1__ソリッド1_7">
     <inertial>
-      <mass value="5.8065e-07" />
+      <mass value="0.00156776" />
       <origin xyz="-0.00189926 -0.00103042 0.000375174" rpy="0 -0 0" />
-      <inertia ixx="2.27503e-11" ixy="5.05422e-12" ixz="-1.83964e-12" iyy="1.61764e-11" iyz="-9.98075e-13" izz="1.37979e-11" />
+      <inertia ixx="6.14259e-08" ixy="1.36464e-08" ixz="-4.96702e-09" iyy="4.36764e-08" iyz="-2.6948e-09" izz="3.72543e-08" />
     </inertial>
     <visual>
       <origin xyz="-0.089466 0.11586 0.073001" rpy="0 -0 0" />
@@ -745,9 +745,9 @@
   </link>
   <link name="hn12_n101_1__ソリッド1_8">
     <inertial>
-      <mass value="5.8065e-07" />
+      <mass value="0.00156776" />
       <origin xyz="1.77348e-08 -0.00206089 -0.000749963" rpy="0.191394 0.843673 0.421435" />
-      <inertia ixx="1.34344e-11" ixy="0" ixz="0" iyy="2.44028e-11" iyz="3.99198e-12" izz="1.48875e-11" />
+      <inertia ixx="3.62728e-08" ixy="-6.83761e-14" ixz="7.16763e-14" iyy="6.58875e-08" iyz="1.07783e-08" izz="4.01963e-08" />
     </inertial>
     <visual>
       <origin xyz="0.0781334 -0.207752 0.134915" rpy="0.191394 0.843673 0.421435" />
@@ -767,9 +767,9 @@
   </link>
   <link name="hn12_n101_1__ソリッド1_9">
     <inertial>
-      <mass value="5.8065e-07" />
+      <mass value="0.00156776" />
       <origin xyz="-0.00133583 0.00250675 0.000122552" rpy="0.464522 -0.677769 -0.202825" />
-      <inertia ixx="1.61765e-11" ixy="-5.14569e-12" ixz="-2.51366e-13" iyy="2.30906e-11" iyz="4.71646e-13" izz="1.34577e-11" />
+      <inertia ixx="4.36764e-08" ixy="-1.38934e-08" ixz="-6.78687e-10" iyy="6.23446e-08" iyz="1.27344e-09" izz="3.63357e-08" />
     </inertial>
     <visual>
       <origin xyz="-0.164194 0.102893 0.0131226" rpy="0.464522 -0.677769 -0.202825" />
@@ -789,9 +789,9 @@
   </link>
   <link name="hn13_c101_1__ソリッド1">
     <inertial>
-      <mass value="1.76909e-06" />
+      <mass value="0.00477655" />
       <origin xyz="0.000762172 -0.000160873 0.00268115" rpy="0 0 -0.141435" />
-      <inertia ixx="8.19694e-11" ixy="-3.03936e-12" ixz="-4.07316e-14" iyy="7.18676e-11" iyz="1.28763e-14" izz="1.48404e-10" />
+      <inertia ixx="2.21318e-07" ixy="-8.20627e-09" ixz="-1.09975e-10" iyy="1.94043e-07" iyz="3.47661e-11" izz="4.00691e-07" />
     </inertial>
     <visual>
       <origin xyz="0 0 0.0268" rpy="0 0 -0.141435" />
@@ -811,9 +811,9 @@
   </link>
   <link name="hn13_c101_1__ソリッド1_1">
     <inertial>
-      <mass value="1.76909e-06" />
+      <mass value="0.00477655" />
       <origin xyz="0.000153022 -0.00148115 0.000763788" rpy="0 0.131144 0" />
-      <inertia ixx="7.18061e-11" ixy="1.24565e-14" ixz="2.93477e-12" iyy="1.48404e-10" iyz="4.0862e-14" izz="8.20309e-11" />
+      <inertia ixx="1.93877e-07" ixy="3.36326e-11" ixz="7.92388e-09" iyy="4.00691e-07" iyz="1.10327e-10" izz="2.21483e-07" />
     </inertial>
     <visual>
       <origin xyz="-0.0079115 -0.0826 -0.0599805" rpy="0 0.131144 0" />
@@ -833,9 +833,9 @@
   </link>
   <link name="hn13_c101_1__ソリッド1_2">
     <inertial>
-      <mass value="1.76909e-06" />
+      <mass value="0.00477655" />
       <origin xyz="-5.35046e-05 0.00148115 0.000777126" rpy="0 -0.00215705 0" />
-      <inertia ixx="7.12266e-11" ixy="7.09696e-15" ixz="-1.53337e-12" iyy="1.48404e-10" iyz="-4.21248e-14" izz="8.26105e-11" />
+      <inertia ixx="1.92312e-07" ixy="1.91618e-11" ixz="-4.1401e-09" iyy="4.00691e-07" iyz="-1.13737e-10" izz="2.23048e-07" />
     </inertial>
     <visual>
       <origin xyz="0.000130502 0.0826 -0.0604999" rpy="0 -0.00215705 0" />
@@ -855,9 +855,9 @@
   </link>
   <link name="hn13_i101_1__ソリッド1">
     <inertial>
-      <mass value="1.17425e-06" />
-      <origin xyz="0.00270614 0 2.08167e-17" rpy="0 -0 0" />
-      <inertia ixx="9.82378e-11" ixy="0" ixz="0" iyy="5.77783e-11" iyz="0" izz="5.77783e-11" />
+      <mass value="0.00317047" />
+      <origin xyz="0.00270614 0 1.38778e-17" rpy="0 -0 0" />
+      <inertia ixx="2.65242e-07" ixy="0" ixz="0" iyy="1.56001e-07" iyz="0" izz="1.56001e-07" />
     </inertial>
     <visual>
       <origin xyz="0.0245 -0.1236 -0.0365" rpy="0 -0 0" />
@@ -877,9 +877,9 @@
   </link>
   <link name="hn13_i101_1__ソリッド1_1">
     <inertial>
-      <mass value="1.17425e-06" />
+      <mass value="0.00317047" />
       <origin xyz="0.00270614 -1.38778e-17 -0.011" rpy="0 -0 0" />
-      <inertia ixx="9.82378e-11" ixy="0" ixz="0" iyy="5.77783e-11" iyz="0" izz="5.77783e-11" />
+      <inertia ixx="2.65242e-07" ixy="0" ixz="0" iyy="1.56001e-07" iyz="0" izz="1.56001e-07" />
     </inertial>
     <visual>
       <origin xyz="0.0245 0.1236 -0.0475" rpy="0 -0 0" />
@@ -899,9 +899,9 @@
   </link>
   <link name="hn13_n101_1__ソリッド1">
     <inertial>
-      <mass value="1.22568e-06" />
+      <mass value="0.00330934" />
       <origin xyz="-0.00100805 -6.17483e-08 5.16327e-12" rpy="0 -0 0" />
-      <inertia ixx="9.9976e-11" ixy="0" ixz="0" iyy="5.13522e-11" iyz="0" izz="5.13519e-11" />
+      <inertia ixx="2.69935e-07" ixy="3.35288e-13" ixz="0" iyy="1.38651e-07" iyz="0" izz="1.3865e-07" />
     </inertial>
     <visual>
       <origin xyz="-0.0245 -0.1236 -0.0365" rpy="0 -0 0" />
@@ -921,9 +921,9 @@
   </link>
   <link name="hn13_n101_1__ソリッド1_1">
     <inertial>
-      <mass value="1.22568e-06" />
+      <mass value="0.00330934" />
       <origin xyz="-0.00100805 -0.0109999 -5.16328e-12" rpy="0 -0 0" />
-      <inertia ixx="9.9976e-11" ixy="0" ixz="0" iyy="5.13522e-11" iyz="0" izz="5.13519e-11" />
+      <inertia ixx="2.69935e-07" ixy="-3.35288e-13" ixz="0" iyy="1.38651e-07" iyz="0" izz="1.3865e-07" />
     </inertial>
     <visual>
       <origin xyz="-0.0245 0.1126 -0.0365" rpy="0 -0 0" />
@@ -943,9 +943,9 @@
   </link>
   <link name="igus_jfm_1113_05_1__1">
     <inertial>
-      <mass value="3.09557e-07" />
+      <mass value="0.000835805" />
       <origin xyz="6.93889e-18 0.00158018 0.000575139" rpy="0 -0 0" />
-      <inertia ixx="7.82761e-12" ixy="0" ixz="0" iyy="1.35547e-11" iyz="2.08448e-12" izz="8.5863e-12" />
+      <inertia ixx="2.11345e-08" ixy="0" ixz="0" iyy="3.65976e-08" iyz="5.62809e-09" izz="2.3183e-08" />
     </inertial>
     <visual>
       <origin xyz="-0.036 -0.141913 0.0635185" rpy="0 -0 0" />
@@ -965,9 +965,9 @@
   </link>
   <link name="igus_jfm_1113_05_1__1_1">
     <inertial>
-      <mass value="3.09557e-07" />
+      <mass value="0.000835805" />
       <origin xyz="0.000840798 -0.00136848 0.000498085" rpy="0 -0 0" />
-      <inertia ixx="9.44905e-12" ixy="-2.63904e-12" ixz="9.60533e-13" iyy="1.21229e-11" iyz="-1.56336e-12" izz="8.39663e-12" />
+      <inertia ixx="2.55124e-08" ixy="-7.12542e-09" ixz="2.59344e-09" iyy="3.27318e-08" iyz="-4.22107e-09" izz="2.26709e-08" />
     </inertial>
     <visual>
       <origin xyz="-0.0242846 0.132777 0.0668438" rpy="0 -0 0" />
@@ -987,9 +987,9 @@
   </link>
   <link name="igus_jfm_1113_05_1__1_2">
     <inertial>
-      <mass value="3.09557e-07" />
-      <origin xyz="9.71445e-17 0.00158018 0.000575139" rpy="0 -0 0" />
-      <inertia ixx="7.82761e-12" ixy="0" ixz="0" iyy="1.35547e-11" iyz="2.08448e-12" izz="8.5863e-12" />
+      <mass value="0.000835805" />
+      <origin xyz="1.11022e-16 0.00158018 0.000575139" rpy="0 -0 0" />
+      <inertia ixx="2.11345e-08" ixy="0" ixz="0" iyy="3.65976e-08" iyz="5.62809e-09" izz="2.3183e-08" />
     </inertial>
     <visual>
       <origin xyz="-0.109893 -0.167186 0.132955" rpy="0 -0 0" />
@@ -1009,9 +1009,9 @@
   </link>
   <link name="igus_jfm_1113_05_1__1_3">
     <inertial>
-      <mass value="3.09557e-07" />
+      <mass value="0.000835805" />
       <origin xyz="0.000790091 -0.00148266 -7.24071e-05" rpy="0 -0 0" />
-      <inertia ixx="9.25938e-12" ixy="-2.6868e-12" ixz="-1.31213e-13" iyy="1.28696e-11" iyz="2.46229e-13" izz="7.83964e-12" />
+      <inertia ixx="2.50003e-08" ixy="-7.25436e-09" ixz="-3.54274e-10" iyy="3.47478e-08" iyz="6.64819e-10" izz="2.1167e-08" />
     </inertial>
     <visual>
       <origin xyz="-0.115297 0.0825234 0.078947" rpy="0 -0 0" />
@@ -1031,9 +1031,9 @@
   </link>
   <link name="intel_realsense_depth_camera_d435_1__ソリッド1_1">
     <inertial>
-      <mass value="3.65256e-05" />
+      <mass value="0.0465255" />
       <origin xyz="0.0109557 0.023919 -0.00401326" rpy="0 -0 0" />
-      <inertia ixx="2.34802e-08" ixy="1.95235e-10" ixz="7.60806e-11" iyy="3.51177e-09" iyz="-6.58575e-11" izz="2.36282e-08" />
+      <inertia ixx="2.99085e-05" ixy="2.48687e-07" ixz="9.69098e-08" iyy="4.47322e-06" iyz="-8.38878e-08" izz="3.00971e-05" />
     </inertial>
     <visual>
       <origin xyz="-0.0286509 0.0225 -0.180943" rpy="0 -0 0" />
@@ -1053,9 +1053,9 @@
   </link>
   <link name="rakuda29_joint_upper_arm_r1_1__ソリッド1">
     <inertial>
-      <mass value="5.54227e-06" />
+      <mass value="0.00583046" />
       <origin xyz="0.00343342 -0.00924123 -0.0140813" rpy="0 -0 0" />
-      <inertia ixx="1.20269e-09" ixy="-6.21575e-12" ixz="1.70776e-11" iyy="7.10025e-10" iyz="7.9484e-11" izz="5.20574e-10" />
+      <inertia ixx="1.26523e-06" ixy="-6.53897e-09" ixz="1.79657e-08" iyy="7.46946e-07" iyz="8.36171e-08" izz="5.47644e-07" />
     </inertial>
     <visual>
       <origin xyz="-0.022 -0.15048 -0.00212003" rpy="0 -0 0" />
@@ -1075,9 +1075,9 @@
   </link>
   <link name="rakuda29_joint_upper_arm_r1_1__ソリッド1_1">
     <inertial>
-      <mass value="5.54227e-06" />
+      <mass value="0.00583046" />
       <origin xyz="0.00343342 -0.0161305 -0.00484676" rpy="0 -0 0" />
-      <inertia ixx="1.20269e-09" ixy="6.21575e-12" ixz="1.70776e-11" iyy="7.10025e-10" iyz="-7.9484e-11" izz="5.20574e-10" />
+      <inertia ixx="1.26523e-06" ixy="6.53897e-09" ixz="1.79657e-08" iyy="7.46946e-07" iyz="-8.36171e-08" izz="5.47644e-07" />
     </inertial>
     <visual>
       <origin xyz="-0.022 0.125108 0.00711452" rpy="0 -0 0" />
@@ -1097,9 +1097,9 @@
   </link>
   <link name="rakuda2_r3_waist_base_1__ソリッド1">
     <inertial>
-      <mass value="2.8514e-05" />
+      <mass value="0.0299967" />
       <origin xyz="8.71564e-05 -3.17173e-09 -0.0378542" rpy="0 -0 0" />
-      <inertia ixx="6.34795e-09" ixy="-1.56503e-15" ixz="2.07114e-11" iyy="8.70515e-09" iyz="0" izz="1.15873e-08" />
+      <inertia ixx="6.67805e-06" ixy="-1.64641e-12" ixz="2.17884e-08" iyy="9.15782e-06" iyz="5.77822e-13" izz="1.21899e-05" />
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 -0 0" />
@@ -1119,9 +1119,9 @@
   </link>
   <link name="rakuda34_r2__spacer_axk1160_waist_ring_r1_1__ソリッド1">
     <inertial>
-      <mass value="2.61695e-07" />
-      <origin xyz="-3.16824e-18 0.000875 0" rpy="0 -0 0" />
-      <inertia ixx="2.58074e-11" ixy="0" ixz="0" iyy="5.14812e-11" iyz="0" izz="2.58074e-11" />
+      <mass value="0.000287864" />
+      <origin xyz="-3.16824e-18 0.000875 -6.93889e-18" rpy="0 -0 0" />
+      <inertia ixx="2.83881e-08" ixy="0" ixz="0" iyy="5.66294e-08" iyz="0" izz="2.83881e-08" />
     </inertial>
     <visual>
       <origin xyz="-3.22364e-16 -0.08115 -0.0605" rpy="0 -0 0" />
@@ -1141,9 +1141,9 @@
   </link>
   <link name="rakuda34_r2__spacer_axk1160_waist_ring_r1_1__ソリッド1_1">
     <inertial>
-      <mass value="2.61695e-07" />
-      <origin xyz="-3.10112e-18 -0.000875 0" rpy="0 -0 0" />
-      <inertia ixx="2.58074e-11" ixy="0" ixz="0" iyy="5.14812e-11" iyz="0" izz="2.58074e-11" />
+      <mass value="0.000287864" />
+      <origin xyz="-3.10112e-18 -0.000875 -6.93889e-18" rpy="0 -0 0" />
+      <inertia ixx="2.83881e-08" ixy="0" ixz="0" iyy="5.66294e-08" iyz="0" izz="2.83881e-08" />
     </inertial>
     <visual>
       <origin xyz="-2.69693e-15 0.08115 -0.0605" rpy="0 -0 0" />
@@ -1163,9 +1163,9 @@
   </link>
   <link name="rakuda_r3__arm_cover_elbow_r1_1__ソリッド1">
     <inertial>
-      <mass value="1.94674e-05" />
+      <mass value="0.0204797" />
       <origin xyz="0.0262421 -2.19884e-05 -0.0174824" rpy="0 -0 0" />
-      <inertia ixx="5.31701e-09" ixy="4.1866e-11" ixz="-1.15045e-10" iyy="1.2218e-08" iyz="2.57263e-10" izz="1.16048e-08" />
+      <inertia ixx="5.5935e-06" ixy="4.4043e-08" ixz="-1.21028e-07" iyy="1.28534e-05" iyz="2.70641e-07" izz="1.22083e-05" />
     </inertial>
     <visual>
       <origin xyz="-0.00075 -0.16079 0.0481345" rpy="0 -0 0" />
@@ -1185,9 +1185,9 @@
   </link>
   <link name="rakuda_r3__arm_cover_upperarm_side_1__ソリッド1">
     <inertial>
-      <mass value="2.58744e-05" />
+      <mass value="0.0272199" />
       <origin xyz="-0.008 -0.0119914 -0.00141357" rpy="0 -0 0" />
-      <inertia ixx="2.21746e-08" ixy="0" ixz="0" iyy="1.52514e-08" iyz="4.5722e-09" izz="1.76168e-08" />
+      <inertia ixx="2.33277e-05" ixy="-5.51165e-13" ixz="5.32414e-13" iyy="1.60445e-05" iyz="4.80995e-06" izz="1.85328e-05" />
     </inertial>
     <visual>
       <origin xyz="-0.008 -0.141392 -0.0365907" rpy="0 -0 0" />
@@ -1207,9 +1207,9 @@
   </link>
   <link name="rakuda_r3__arm_cover_upperarm_side_1__ソリッド1_1">
     <inertial>
-      <mass value="2.58744e-05" />
+      <mass value="0.0272199" />
       <origin xyz="-0.008 0.0119914 -0.00141357" rpy="0 -0 0" />
-      <inertia ixx="2.21746e-08" ixy="0" ixz="0" iyy="1.52514e-08" iyz="-4.5722e-09" izz="1.76168e-08" />
+      <inertia ixx="2.33277e-05" ixy="-5.51165e-13" ixz="-5.32414e-13" iyy="1.60445e-05" iyz="-4.80995e-06" izz="1.85328e-05" />
     </inertial>
     <visual>
       <origin xyz="-0.008 0.141392 -0.0365907" rpy="0 -0 0" />
@@ -1229,9 +1229,9 @@
   </link>
   <link name="rakuda_r3__arm_joint_upper_arm_back_1__ソリッド2">
     <inertial>
-      <mass value="4.29668e-06" />
+      <mass value="0.00452011" />
       <origin xyz="-0.00338641 0.0141012 0.000728549" rpy="0 -0 0" />
-      <inertia ixx="6.09218e-10" ixy="2.97743e-12" ixz="-8.18043e-12" iyy="2.64771e-10" iyz="-4.29633e-11" izz="3.67174e-10" />
+      <inertia ixx="6.40897e-07" ixy="3.13226e-09" ixz="-8.60581e-09" iyy="2.78539e-07" iyz="-4.51974e-08" izz="3.86267e-07" />
     </inertial>
     <visual>
       <origin xyz="0.022 -0.125108 0.00711452" rpy="0 -0 0" />
@@ -1251,9 +1251,9 @@
   </link>
   <link name="rakuda_r3__arm_joint_upper_arm_back_1__ソリッド2_1">
     <inertial>
-      <mass value="4.29668e-06" />
+      <mass value="0.00452011" />
       <origin xyz="-0.00338641 0.0112705 -0.00850599" rpy="0 -0 0" />
-      <inertia ixx="6.09218e-10" ixy="-2.97743e-12" ixz="-8.18043e-12" iyy="2.64771e-10" iyz="4.29633e-11" izz="3.67174e-10" />
+      <inertia ixx="6.40897e-07" ixy="-3.13226e-09" ixz="-8.60581e-09" iyy="2.78539e-07" iyz="4.51974e-08" izz="3.86267e-07" />
     </inertial>
     <visual>
       <origin xyz="0.022 0.15048 -0.00212003" rpy="0 -0 0" />
@@ -1273,9 +1273,9 @@
   </link>
   <link name="rakuda_r3__base_cable_guide_d435usb_r1_1__ソリッド1">
     <inertial>
-      <mass value="3.18899e-06" />
+      <mass value="0.00335482" />
       <origin xyz="-0.00414997 0.00625 0.0025973" rpy="0 -0 0" />
-      <inertia ixx="2.83603e-10" ixy="0" ixz="2.37026e-13" iyy="1.12989e-10" iyz="0" izz="2.03846e-10" />
+      <inertia ixx="2.9835e-07" ixy="0" ixz="2.49351e-10" iyy="1.18864e-07" iyz="0" izz="2.14446e-07" />
     </inertial>
     <visual>
       <origin xyz="0.052 0.00625 -0.018" rpy="0 -0 0" />
@@ -1295,9 +1295,9 @@
   </link>
   <link name="rakuda_r3__chest_cover_r1_1__ソリッド1">
     <inertial>
-      <mass value="1.28949e-05" />
+      <mass value="0.0135654" />
       <origin xyz="0.0167499 0.00603898 0.00671886" rpy="0 -0 0" />
-      <inertia ixx="4.8768e-09" ixy="7.1877e-15" ixz="-4.51015e-15" iyy="7.58952e-09" iyz="-2.64134e-10" izz="5.9642e-09" />
+      <inertia ixx="5.13039e-06" ixy="7.56146e-12" ixz="-4.74468e-12" iyy="7.98418e-06" iyz="-2.77869e-07" izz="6.27434e-06" />
     </inertial>
     <visual>
       <origin xyz="0.01675 -0.049 -0.0545" rpy="0 -0 0" />
@@ -1321,9 +1321,9 @@
   </link>
   <link name="rakuda_r3__head_cable_guide_d435usb_1__ソリッド1">
     <inertial>
-      <mass value="4.08926e-07" />
+      <mass value="0.00043019" />
       <origin xyz="-0.00138791 -1.38778e-16 -0.00721013" rpy="0 -0 0" />
-      <inertia ixx="1.77363e-11" ixy="0" ixz="-5.39938e-12" iyy="1.72007e-11" iyz="0" izz="4.86688e-12" />
+      <inertia ixx="1.86586e-08" ixy="0" ixz="-5.68014e-09" iyy="1.80951e-08" iyz="0" izz="5.11995e-09" />
     </inertial>
     <visual>
       <origin xyz="-0.0382723 0.06355 -0.185156" rpy="0 -0 0" />
@@ -1343,9 +1343,9 @@
   </link>
   <link name="rakuda_r3__head_cover_front_1__ソリッド1">
     <inertial>
-      <mass value="1.06876e-05" />
+      <mass value="0.0112433" />
       <origin xyz="-0.00461827 0.006 0.0029553" rpy="0 -0 0" />
-      <inertia ixx="5.31408e-09" ixy="0" ixz="-1.64833e-09" iyy="5.84727e-09" iyz="0" izz="3.0809e-09" />
+      <inertia ixx="5.59041e-06" ixy="1.81872e-15" ixz="-1.73404e-06" iyy="6.15133e-06" iyz="-3.86397e-14" izz="3.24111e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0387587 0.006 -0.125385" rpy="0 -0 0" />
@@ -1365,9 +1365,9 @@
   </link>
   <link name="rakuda_r3__head_mount_d435_1__ソリッド1">
     <inertial>
-      <mass value="1.89546e-05" />
+      <mass value="0.0199402" />
       <origin xyz="0.00244452 -0.0165994 0.0116651" rpy="0 -0 0" />
-      <inertia ixx="1.80172e-08" ixy="1.10195e-09" ixz="-2.03648e-09" iyy="6.45868e-09" iyz="2.37755e-09" izz="1.33244e-08" />
+      <inertia ixx="1.89541e-05" ixy="1.15925e-06" ixz="-2.14238e-06" iyy="6.79453e-06" iyz="2.50118e-06" izz="1.40173e-05" />
     </inertial>
     <visual>
       <origin xyz="-0.0201859 -0.006 -0.157685" rpy="0 -0 0" />
@@ -1387,9 +1387,9 @@
   </link>
   <link name="rakuda_r3__neck_cable_guide2head_base_1__ソリッド1">
     <inertial>
-      <mass value="1.04854e-05" />
+      <mass value="0.0110306" />
       <origin xyz="-0.0248369 -0.0113396 0.00594938" rpy="0 -0 0" />
-      <inertia ixx="1.26905e-09" ixy="-2.55796e-11" ixz="3.55406e-10" iyy="1.94419e-09" iyz="-7.50401e-12" izz="2.74348e-09" />
+      <inertia ixx="1.33504e-06" ixy="-2.69097e-08" ixz="3.73887e-07" iyy="2.04529e-06" iyz="-7.89422e-09" izz="2.88614e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.032 -0.011 -0.1" rpy="0 -0 0" />
@@ -1409,9 +1409,9 @@
   </link>
   <link name="rakuda_r3__neck_cover_r4_1__ソリッド1">
     <inertial>
-      <mass value="1.89252e-05" />
+      <mass value="0.0199093" />
       <origin xyz="0.0131323 0.008 -0.00383055" rpy="0 -0 0" />
-      <inertia ixx="7.32563e-09" ixy="0" ixz="6.4847e-10" iyy="7.02346e-09" iyz="0" izz="1.10038e-08" />
+      <inertia ixx="7.70656e-06" ixy="9.08903e-15" ixz="6.82191e-07" iyy="7.38867e-06" iyz="0" izz="1.1576e-05" />
     </inertial>
     <visual>
       <origin xyz="0.03525 0.008 -0.0855" rpy="0 -0 0" />
@@ -1431,9 +1431,9 @@
   </link>
   <link name="rakuda_r3__plate_waist_x540_r8_1__ソリッド1">
     <inertial>
-      <mass value="9.67876e-05" />
+      <mass value="0.101821" />
       <origin xyz="-0.0105798 0.0135 0.0203445" rpy="0 -0 0" />
-      <inertia ixx="8.44084e-08" ixy="-6.27692e-15" ixz="-1.44353e-09" iyy="6.69174e-08" iyz="1.71769e-14" izz="6.90281e-08" />
+      <inertia ixx="8.87976e-05" ixy="-6.60332e-12" ixz="-1.51859e-06" iyy="7.03971e-05" iyz="1.80701e-11" izz="7.26176e-05" />
     </inertial>
     <visual>
       <origin xyz="-0.0105 0.0135 -0.022" rpy="0 -0 0" />
@@ -1453,9 +1453,9 @@
   </link>
   <link name="rakuda_r3__shoulder_base_hinge_1__ソリッド1">
     <inertial>
-      <mass value="1.4263e-05" />
+      <mass value="0.0150046" />
       <origin xyz="1.04929e-07 0.00300227 -0.00980595" rpy="0 -0 0" />
-      <inertia ixx="3.87476e-09" ixy="-3.19622e-15" ixz="-9.86351e-15" iyy="6.23857e-09" iyz="8.58305e-11" izz="2.51699e-09" />
+      <inertia ixx="4.07625e-06" ixy="-3.36243e-12" ixz="-1.03764e-11" iyy="6.56298e-06" iyz="9.02937e-08" izz="2.64787e-06" />
     </inertial>
     <visual>
       <origin xyz="-3.20924e-16 -0.0836 -0.0605" rpy="0 -0 0" />
@@ -1475,9 +1475,9 @@
   </link>
   <link name="rakuda_r3__shoulder_base_hinge_1__ソリッド1_1">
     <inertial>
-      <mass value="1.4263e-05" />
+      <mass value="0.0150046" />
       <origin xyz="-1.04929e-07 -0.00300227 -0.00980595" rpy="0 -0 0" />
-      <inertia ixx="3.87476e-09" ixy="-3.19622e-15" ixz="9.86351e-15" iyy="6.23857e-09" iyz="-8.58305e-11" izz="2.51699e-09" />
+      <inertia ixx="4.07625e-06" ixy="-3.36243e-12" ixz="1.03764e-11" iyy="6.56298e-06" iyz="-9.02937e-08" izz="2.64787e-06" />
     </inertial>
     <visual>
       <origin xyz="-2.69837e-15 0.0836 -0.0605" rpy="0 -0 0" />
@@ -1497,9 +1497,9 @@
   </link>
   <link name="rakuda_r3__shoulder_hinge_cover_1__ソリッド1">
     <inertial>
-      <mass value="7.08032e-06" />
+      <mass value="0.00744849" />
       <origin xyz="0.00276299 0.00543175 -0.008" rpy="0 -0 0" />
-      <inertia ixx="2.9791e-09" ixy="9.51188e-12" ixz="0" iyy="8.07274e-10" iyz="0" izz="2.27569e-09" />
+      <inertia ixx="3.13402e-06" ixy="1.00065e-08" ixz="-6.18363e-14" iyy="8.49252e-07" iyz="1.85415e-13" izz="2.39402e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0265 -0.1076 -0.0445" rpy="0 -0 0" />
@@ -1523,9 +1523,9 @@
   </link>
   <link name="rakuda_r3__shoulder_hinge_cover_1__ソリッド1_2">
     <inertial>
-      <mass value="7.08032e-06" />
+      <mass value="0.00744849" />
       <origin xyz="-0.00276299 -0.00543175 -0.008" rpy="0 -0 0" />
-      <inertia ixx="2.9791e-09" ixy="9.51188e-12" ixz="0" iyy="8.07274e-10" iyz="0" izz="2.27569e-09" />
+      <inertia ixx="3.13402e-06" ixy="1.00065e-08" ixz="6.18363e-14" iyy="8.49252e-07" iyz="-1.85414e-13" izz="2.39402e-06" />
     </inertial>
     <visual>
       <origin xyz="0.0265 0.1076 -0.0445" rpy="0 -0 0" />
@@ -1549,9 +1549,9 @@
   </link>
   <link name="rakuda_r3__spacer_axk1160_waist_r2_1__ソリッド1">
     <inertial>
-      <mass value="5.47367e-06" />
+      <mass value="0.0057583" />
       <origin xyz="0.01526 -0.0135 0.00109804" rpy="0 -0 0" />
-      <inertia ixx="1.20586e-09" ixy="0" ixz="-4.58215e-11" iyy="9.05749e-10" iyz="0" izz="2.05106e-09" />
+      <inertia ixx="1.26857e-06" ixy="-9.46329e-14" ixz="-4.82042e-08" iyy="9.52848e-07" iyz="8.31355e-15" izz="2.15771e-06" />
     </inertial>
     <visual>
       <origin xyz="0.0105 -0.0135 0.022" rpy="0 -0 0" />
@@ -1571,9 +1571,9 @@
   </link>
   <link name="rakuda_r3__upper_arm_cover_inside_l_1__ソリッド1">
     <inertial>
-      <mass value="6.71233e-06" />
+      <mass value="0.00706138" />
       <origin xyz="0.00252002 -0.0171047 -0.00409554" rpy="0 -0 0" />
-      <inertia ixx="1.34657e-09" ixy="5.44178e-10" ixz="-6.37808e-11" iyy="1.16678e-09" iyz="4.75708e-11" izz="1.72904e-09" />
+      <inertia ixx="1.41659e-06" ixy="5.72475e-07" ixz="-6.70974e-08" iyy="1.22745e-06" iyz="5.00445e-08" izz="1.81895e-06" />
     </inertial>
     <visual>
       <origin xyz="0.02325 -0.154289 0.024428" rpy="0 -0 0" />
@@ -1593,9 +1593,9 @@
   </link>
   <link name="rakuda_r3__upper_arm_cover_inside_l_r1_1__ソリッド1">
     <inertial>
-      <mass value="6.89641e-06" />
+      <mass value="0.00725502" />
       <origin xyz="-0.00660335 -0.00723941 0.00757773" rpy="0 -0 0" />
-      <inertia ixx="1.78143e-09" ixy="-2.10382e-11" ixz="-3.90197e-11" iyy="1.52801e-09" iyz="4.39227e-10" izz="9.09467e-10" />
+      <inertia ixx="1.87406e-06" ixy="-2.21322e-08" ixz="-4.10487e-08" iyy="1.60746e-06" iyz="4.62067e-07" izz="9.56759e-07" />
     </inertial>
     <visual>
       <origin xyz="-0.0809519 0.141216 0.101285" rpy="0 -0 0" />
@@ -1615,9 +1615,9 @@
   </link>
   <link name="rakuda_r3__upper_arm_cover_inside_r_1__ソリッド1">
     <inertial>
-      <mass value="6.71234e-06" />
+      <mass value="0.00706138" />
       <origin xyz="0.00252003 0.0171047 -0.00409554" rpy="0 -0 0" />
-      <inertia ixx="1.34657e-09" ixy="-5.44178e-10" ixz="-6.37809e-11" iyy="1.16678e-09" iyz="-4.75707e-11" izz="1.72904e-09" />
+      <inertia ixx="1.41659e-06" ixy="-5.72475e-07" ixz="-6.70975e-08" iyy="1.22745e-06" iyz="-5.00444e-08" izz="1.81895e-06" />
     </inertial>
     <visual>
       <origin xyz="0.02325 0.154289 0.024428" rpy="0 -0 0" />
@@ -1637,9 +1637,9 @@
   </link>
   <link name="rakuda_r3__upper_arm_cover_inside_r_1__ソリッド1_1">
     <inertial>
-      <mass value="6.71234e-06" />
+      <mass value="0.00706138" />
       <origin xyz="0.000366579 0.0153266 0.00898089" rpy="0 -0 0" />
-      <inertia ixx="1.73568e-09" ixy="-1.32069e-10" ixz="-2.0031e-10" iyy="1.58205e-09" iyz="-3.76514e-10" izz="9.24657e-10" />
+      <inertia ixx="1.82594e-06" ixy="-1.38936e-07" ixz="-2.10726e-07" iyy="1.66431e-06" iyz="-3.96093e-07" izz="9.72739e-07" />
     </inertial>
     <visual>
       <origin xyz="-0.0471369 -0.171229 0.11775" rpy="0 -0 0" />
@@ -1659,9 +1659,9 @@
   </link>
   <link name="rakuda_r3__waist_cover_hip_1__ソリッド1">
     <inertial>
-      <mass value="8.51661e-06" />
+      <mass value="0.00895947" />
       <origin xyz="-0.00377657 -0.00999962 -0.00540183" rpy="0 -0 0" />
-      <inertia ixx="2.41789e-09" ixy="0" ixz="3.31404e-11" iyy="1.80363e-09" iyz="-4.61832e-14" izz="6.84924e-10" />
+      <inertia ixx="2.54362e-06" ixy="8.43714e-13" ixz="3.48637e-08" iyy="1.89742e-06" iyz="-4.85847e-11" izz="7.2054e-07" />
     </inertial>
     <visual>
       <origin xyz="0.04475 -0.01 -0.008" rpy="0 -0 0" />
@@ -1681,9 +1681,9 @@
   </link>
   <link name="rakuda_r3__x540_thrust_axk1160_1__ソリッド1">
     <inertial>
-      <mass value="5.48524e-06" />
+      <mass value="0.00577047" />
       <origin xyz="-0.0135 -0.00109164 -0.00575005" rpy="0 -0 0" />
-      <inertia ixx="9.07073e-10" ixy="0" ixz="0" iyy="2.05297e-09" iyz="4.59883e-11" izz="1.20666e-09" />
+      <inertia ixx="9.54241e-07" ixy="8.3421e-15" ixz="9.45882e-14" iyy="2.15973e-06" iyz="4.83797e-08" izz="1.26941e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0135 -0.079 -0.071" rpy="0 -0 0" />
@@ -1703,9 +1703,9 @@
   </link>
   <link name="rakuda_r3__x540_thrust_axk1160_1__ソリッド1_1">
     <inertial>
-      <mass value="5.48524e-06" />
+      <mass value="0.00577047" />
       <origin xyz="-0.0135 0.00109164 0.01525" rpy="0 -0 0" />
-      <inertia ixx="9.07073e-10" ixy="0" ixz="0" iyy="2.05297e-09" iyz="-4.59883e-11" izz="1.20666e-09" />
+      <inertia ixx="9.54241e-07" ixy="8.3421e-15" ixz="-9.45882e-14" iyy="2.15973e-06" iyz="-4.83797e-08" izz="1.26941e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0135 0.079 -0.05" rpy="0 -0 0" />
@@ -1726,9 +1726,9 @@
   <link name="root" />
   <link name="x430_thrust_washer_1__part_1">
     <inertial>
-      <mass value="2.64406e-06" />
+      <mass value="0.00278155" />
       <origin xyz="0.00311118 2.88829e-18 -0.0013106" rpy="0 -0 0" />
-      <inertia ixx="4.60922e-10" ixy="0" ixz="1.01315e-11" iyy="2.35691e-10" iyz="0" izz="6.66768e-10" />
+      <inertia ixx="4.8489e-07" ixy="0" ixz="1.06583e-08" iyy="2.47947e-07" iyz="0" izz="7.0144e-07" />
     </inertial>
     <visual>
       <origin xyz="-6.12323e-19 2.41902e-18 -0.0965" rpy="0 -0 0" />
@@ -1748,9 +1748,9 @@
   </link>
   <link name="x430_thrust_washer_1__part_1_1">
     <inertial>
-      <mass value="2.64406e-06" />
+      <mass value="0.00278155" />
       <origin xyz="0.00311118 -0.000448252 0.00123156" rpy="0 -0 0" />
-      <inertia ixx="4.60922e-10" ixy="3.46517e-12" ixz="-9.52048e-12" iyy="2.86118e-10" iyz="-1.38546e-10" izz="6.16342e-10" />
+      <inertia ixx="4.8489e-07" ixy="3.64536e-09" ixz="-1.00155e-08" iyy="3.00996e-07" iyz="-1.4575e-07" izz="6.48392e-07" />
     </inertial>
     <visual>
       <origin xyz="-0.012 -0.150534 0.0375008" rpy="0 -0 0" />
@@ -1770,9 +1770,9 @@
   </link>
   <link name="x430_thrust_washer_1__part_1_2">
     <inertial>
-      <mass value="2.64406e-06" />
+      <mass value="0.00278155" />
       <origin xyz="-0.00488882 0.0107849 -0.00253066" rpy="0 -0 0" />
-      <inertia ixx="4.60922e-10" ixy="-3.46517e-12" ixz="-9.52048e-12" iyy="2.86118e-10" iyz="1.38546e-10" izz="6.16342e-10" />
+      <inertia ixx="4.8489e-07" ixy="-3.64536e-09" ixz="-1.00155e-08" iyy="3.00996e-07" iyz="1.4575e-07" izz="6.48392e-07" />
     </inertial>
     <visual>
       <origin xyz="-0.02 0.160871 0.0337386" rpy="0 -0 0" />
@@ -1792,9 +1792,9 @@
   </link>
   <link name="x430_thrust_washer_1__part_1_3">
     <inertial>
-      <mass value="2.64406e-06" />
+      <mass value="0.00278155" />
       <origin xyz="0.0012732 -0.00106938 0.00293811" rpy="0 -0 0" />
-      <inertia ixx="5.73977e-10" ixy="3.52018e-11" ixz="-9.67161e-11" iyy="2.72893e-10" iyz="-1.02211e-10" izz="5.16512e-10" />
+      <inertia ixx="6.03824e-07" ixy="3.70323e-08" ixz="-1.01745e-07" iyy="2.87083e-07" iyz="-1.07525e-07" izz="5.43371e-07" />
     </inertial>
     <visual>
       <origin xyz="-0.0798406 -0.172882 0.0989009" rpy="0 -0 0" />
@@ -1814,9 +1814,9 @@
   </link>
   <link name="x430_thrust_washer_1__part_1_4">
     <inertial>
-      <mass value="2.64406e-06" />
+      <mass value="0.00278155" />
       <origin xyz="0.00436499 -0.00576731 0.0139234" rpy="0 -0 0" />
-      <inertia ixx="5.58999e-10" ixy="1.78406e-10" ixz="-5.55972e-11" iyy="3.60457e-10" iyz="4.16321e-11" izz="4.43926e-10" />
+      <inertia ixx="5.88067e-07" ixy="1.87683e-07" ixz="-5.84882e-08" iyy="3.79201e-07" iyz="4.37969e-08" izz="4.6701e-07" />
     </inertial>
     <visual>
       <origin xyz="-0.0809782 0.111265 0.0831868" rpy="0 -0 0" />
@@ -1836,9 +1836,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド2_11">
     <inertial>
-      <mass value="3.876e-08" />
+      <mass value="7.05432e-05" />
       <origin xyz="-0.000738505 -0.000388798 -9.71212e-05" rpy="0 -0 0" />
-      <inertia ixx="1.54883e-13" ixy="5.80018e-14" ixz="3.9017e-15" iyy="7.67575e-14" iyz="-3.42715e-15" izz="1.58433e-13" />
+      <inertia ixx="2.81888e-10" ixy="1.05563e-10" ixz="7.10109e-12" iyy="1.39699e-10" iyz="-6.23742e-12" izz="2.88348e-10" />
     </inertial>
     <visual>
       <origin xyz="-0.116624 0.0995764 0.110087" rpy="0 -0 0" />
@@ -1858,9 +1858,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド2_2">
     <inertial>
-      <mass value="3.876e-08" />
+      <mass value="7.05432e-05" />
       <origin xyz="0.000839942 7.52044e-06 -2.06622e-05" rpy="0 -0 0" />
-      <inertia ixx="1.85859e-13" ixy="0" ixz="0" iyy="5.88827e-14" iyz="-3.62697e-14" izz="1.45332e-13" />
+      <inertia ixx="3.38264e-10" ixy="-3.84034e-13" ixz="1.05513e-12" iyy="1.07166e-10" iyz="-6.60108e-11" izz="2.64504e-10" />
     </inertial>
     <visual>
       <origin xyz="-0.02155 -0.139487 0.00714872" rpy="0 -0 0" />
@@ -1880,9 +1880,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド2_3">
     <inertial>
-      <mass value="3.876e-08" />
+      <mass value="7.05432e-05" />
       <origin xyz="0.000839942 2.06622e-05 7.52044e-06" rpy="0 -0 0" />
-      <inertia ixx="1.85859e-13" ixy="0" ixz="0" iyy="1.45332e-13" iyz="3.62697e-14" izz="5.88827e-14" />
+      <inertia ixx="3.38264e-10" ixy="-1.05513e-12" ixz="-3.84034e-13" iyy="2.64504e-10" iyz="6.60108e-11" izz="1.07166e-10" />
     </inertial>
     <visual>
       <origin xyz="-0.04555 -0.14351 0.0629371" rpy="0 -0 0" />
@@ -1902,9 +1902,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド2_4">
     <inertial>
-      <mass value="3.876e-08" />
+      <mass value="7.05432e-05" />
       <origin xyz="0.000839942 -7.52044e-06 -2.06622e-05" rpy="0 -0 0" />
-      <inertia ixx="1.85859e-13" ixy="0" ixz="0" iyy="5.88827e-14" iyz="3.62697e-14" izz="1.45332e-13" />
+      <inertia ixx="3.38264e-10" ixy="3.84034e-13" ixz="1.05513e-12" iyy="1.07166e-10" iyz="6.60108e-11" izz="2.64504e-10" />
     </inertial>
     <visual>
       <origin xyz="-0.02155 0.139487 0.00714872" rpy="0 -0 0" />
@@ -1924,9 +1924,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド2_5">
     <inertial>
-      <mass value="3.876e-08" />
+      <mass value="7.05432e-05" />
       <origin xyz="0.000738405 0.000376749 -0.000137126" rpy="0 -0 0" />
-      <inertia ixx="1.78493e-13" ixy="1.1409e-14" ixz="-4.15253e-15" iyy="1.51836e-13" iyz="-3.8637e-14" izz="5.97443e-14" />
+      <inertia ixx="3.24858e-10" ixy="2.07644e-11" ixz="-7.55761e-12" iyy="2.76341e-10" iyz="-7.03194e-11" izz="1.08735e-10" />
     </inertial>
     <visual>
       <origin xyz="-0.0334052 0.129673 0.0679734" rpy="0 -0 0" />
@@ -1946,9 +1946,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド2_6">
     <inertial>
-      <mass value="3.876e-08" />
+      <mass value="7.05432e-05" />
       <origin xyz="0.000609476 -0.000197818 0.0005435" rpy="0 -0 0" />
-      <inertia ixx="1.71579e-13" ixy="-4.67311e-15" ixz="1.28393e-14" iyy="6.05532e-14" iyz="-4.08592e-14" izz="1.57941e-13" />
+      <inertia ixx="3.12274e-10" ixy="-8.50506e-12" ixz="2.33675e-11" iyy="1.10207e-10" iyz="-7.43638e-11" izz="2.87453e-10" />
     </inertial>
     <visual>
       <origin xyz="-0.0637539 -0.162761 0.0710931" rpy="0 -0 0" />
@@ -1968,9 +1968,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド2_7">
     <inertial>
-      <mass value="3.876e-08" />
+      <mass value="7.05432e-05" />
       <origin xyz="1.90424e-05 0.000297608 0.000785527" rpy="0 -0 0" />
-      <inertia ixx="1.3032e-13" ixy="4.57363e-14" ixz="-1.72152e-14" iyy="8.67935e-14" iyz="3.57485e-14" izz="1.7296e-13" />
+      <inertia ixx="2.37182e-10" ixy="8.324e-11" ixz="-3.13317e-11" iyy="1.57964e-10" iyz="6.50623e-11" izz="3.14787e-10" />
     </inertial>
     <visual>
       <origin xyz="-0.0585056 0.12939 0.0579134" rpy="0 -0 0" />
@@ -1990,9 +1990,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド2_9">
     <inertial>
-      <mass value="3.876e-08" />
+      <mass value="7.05432e-05" />
       <origin xyz="0.000737742 0.000375256 -0.000144585" rpy="0 -0 0" />
-      <inertia ixx="1.75225e-13" ixy="1.0623e-14" ixz="-2.29707e-14" iyy="1.64867e-13" iyz="-7.05924e-15" izz="4.99812e-14" />
+      <inertia ixx="3.1891e-10" ixy="1.93339e-11" ixz="-4.18066e-11" iyy="3.00058e-10" iyz="-1.28478e-11" izz="9.09657e-11" />
     </inertial>
     <visual>
       <origin xyz="-0.124366 0.0795353 0.0806533" rpy="0 -0 0" />
@@ -2012,9 +2012,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド3">
     <inertial>
-      <mass value="8.00924e-06" />
+      <mass value="0.0145757" />
       <origin xyz="0.0183398 0.011 0.00453739" rpy="0 -0 0" />
-      <inertia ixx="5.70448e-10" ixy="0" ixz="-1.17453e-11" iyy="1.64186e-09" iyz="0" izz="2.12201e-09" />
+      <inertia ixx="1.03813e-06" ixy="0" ixz="-2.13747e-08" iyy="2.98795e-06" iyz="0" izz="3.86176e-06" />
     </inertial>
     <visual>
       <origin xyz="0.032 0.011 -0.0625" rpy="0 -0 0" />
@@ -2034,9 +2034,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド3_1">
     <inertial>
-      <mass value="8.00924e-06" />
+      <mass value="0.0145768" />
       <origin xyz="0.00406404 0.00396261 -0.020996" rpy="0 -0 0" />
-      <inertia ixx="1.51653e-09" ixy="-4.01713e-12" ixz="-3.44345e-10" iyy="2.12201e-09" iyz="-1.1037e-11" izz="6.9578e-10" />
+      <inertia ixx="2.76008e-06" ixy="-7.31117e-09" ixz="-6.26708e-07" iyy="3.86206e-06" iyz="-2.00873e-08" izz="1.26632e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.024608 -0.0085 -0.160332" rpy="0 -0 0" />
@@ -2056,9 +2056,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド3_10">
     <inertial>
-      <mass value="8.00924e-06" />
+      <mass value="0.0145768" />
       <origin xyz="0.00453739 -0.00467206 0.0128364" rpy="0 -0 0" />
-      <inertia ixx="2.12201e-09" ixy="-4.01713e-12" ixz="1.1037e-11" iyy="1.51653e-09" iyz="3.44345e-10" izz="6.9578e-10" />
+      <inertia ixx="3.86206e-06" ixy="-7.31117e-09" ixz="2.00873e-08" iyy="2.76008e-06" iyz="6.26708e-07" izz="1.26632e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.137893 -0.18316 0.127141" rpy="0 -0 0" />
@@ -2078,9 +2078,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド3_11">
     <inertial>
-      <mass value="8.00924e-06" />
+      <mass value="0.0145768" />
       <origin xyz="-0.0210541 0.00153406 -0.00568415" rpy="0 -0 0" />
-      <inertia ixx="8.13582e-10" ixy="-4.35376e-10" ixz="-1.22936e-10" iyy="1.41416e-09" iyz="-8.82062e-11" izz="2.10658e-09" />
+      <inertia ixx="1.48072e-06" ixy="-7.92384e-07" ixz="-2.23743e-07" iyy="2.57377e-06" iyz="-1.60535e-07" izz="3.83397e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.158288 0.0900912 0.105147" rpy="0 -0 0" />
@@ -2100,9 +2100,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド3_2">
     <inertial>
-      <mass value="8.00924e-06" />
+      <mass value="0.0145768" />
       <origin xyz="0.0183398 -0.0116919 -3.85835e-05" rpy="0 -0 0" />
-      <inertia ixx="5.70448e-10" ixy="-4.01713e-12" ixz="1.1037e-11" iyy="1.69803e-09" iyz="-1.54318e-10" izz="2.06585e-09" />
+      <inertia ixx="1.03822e-06" ixy="-7.31117e-09" ixz="2.00873e-08" iyy="3.09041e-06" iyz="-2.8086e-07" izz="3.75984e-06" />
     </inertial>
     <visual>
       <origin xyz="0.02 -0.152149 0.00977641" rpy="0 -0 0" />
@@ -2122,9 +2122,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド3_3">
     <inertial>
-      <mass value="8.00924e-06" />
+      <mass value="0.0145768" />
       <origin xyz="0.0183398 3.85835e-05 -0.0116919" rpy="0 -0 0" />
-      <inertia ixx="5.70448e-10" ixy="-1.1037e-11" ixz="-4.01713e-12" iyy="2.06585e-09" iyz="1.54318e-10" izz="1.69803e-09" />
+      <inertia ixx="1.03822e-06" ixy="-2.00873e-08" ixz="-7.31117e-09" iyy="3.75984e-06" iyz="2.8086e-07" izz="3.09041e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.004 -0.146138 0.0502747" rpy="0 -0 0" />
@@ -2144,9 +2144,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド3_4">
     <inertial>
-      <mass value="8.00924e-06" />
+      <mass value="0.0145768" />
       <origin xyz="0.0183398 0.0116919 -3.85835e-05" rpy="0 -0 0" />
-      <inertia ixx="5.70448e-10" ixy="4.01713e-12" ixz="1.1037e-11" iyy="1.69803e-09" iyz="1.54318e-10" izz="2.06585e-09" />
+      <inertia ixx="1.03822e-06" ixy="7.31117e-09" ixz="2.00873e-08" iyy="3.09041e-06" iyz="2.8086e-07" izz="3.75984e-06" />
     </inertial>
     <visual>
       <origin xyz="0.02 0.152149 0.00977641" rpy="0 -0 0" />
@@ -2166,9 +2166,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド3_5">
     <inertial>
-      <mass value="8.00924e-06" />
+      <mass value="0.0145768" />
       <origin xyz="0.0139014 0.00807943 -0.0146466" rpy="0 -0 0" />
-      <inertia ixx="9.48168e-10" ixy="-6.25812e-10" ixz="2.27777e-10" iyy="1.73231e-09" iyz="-3.29218e-11" izz="1.65384e-09" />
+      <inertia ixx="1.72567e-06" ixy="-1.13898e-06" ixz="4.14554e-07" iyy="3.15281e-06" iyz="-5.99176e-08" izz="3.00999e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.000821797 0.150967 0.0485172" rpy="0 -0 0" />
@@ -2188,9 +2188,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド3_6">
     <inertial>
-      <mass value="8.00924e-06" />
+      <mass value="0.0145768" />
       <origin xyz="0.0161766 0.00699858 0.0129334" rpy="0 -0 0" />
-      <inertia ixx="1.33449e-09" ixy="2.65333e-10" ixz="-7.28997e-10" iyy="1.60865e-09" iyz="9.12383e-11" izz="1.39118e-09" />
+      <inertia ixx="2.42876e-06" ixy="4.82907e-07" ixz="-1.32677e-06" iyy="2.92775e-06" iyz="1.66054e-07" izz="2.53196e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0331716 -0.162062 0.101334" rpy="0 -0 0" />
@@ -2210,9 +2210,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド3_7">
     <inertial>
-      <mass value="8.00924e-06" />
+      <mass value="0.0145768" />
       <origin xyz="-0.00157051 0.00367543 -0.024388" rpy="0 -0 0" />
-      <inertia ixx="2.00197e-09" ixy="1.91895e-10" ixz="-8.06686e-11" iyy="1.61875e-09" iyz="-3.87423e-10" izz="7.13596e-10" />
+      <inertia ixx="3.64359e-06" ixy="3.49249e-07" ixz="-1.46817e-07" iyy="2.94612e-06" iyz="-7.0511e-07" izz="1.29875e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0625333 0.139671 0.055821" rpy="0 -0 0" />
@@ -2232,9 +2232,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド3_8">
     <inertial>
-      <mass value="8.00924e-06" />
+      <mass value="0.0145768" />
       <origin xyz="0.00519002 0.00337204 -0.0208505" rpy="0 -0 0" />
-      <inertia ixx="1.10615e-09" ixy="-1.91026e-10" ixz="5.00558e-10" iyy="1.99784e-09" iyz="3.32853e-10" izz="1.23033e-09" />
+      <inertia ixx="2.0132e-06" ixy="-3.47668e-07" ixz="9.11016e-07" iyy="3.63607e-06" iyz="6.05793e-07" izz="2.23919e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0950434 -0.164774 0.101476" rpy="0 -0 0" />
@@ -2254,9 +2254,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド3_9">
     <inertial>
-      <mass value="8.00924e-06" />
+      <mass value="0.0145768" />
       <origin xyz="-0.0225012 -0.00715678 -0.00695287" rpy="0 -0 0" />
-      <inertia ixx="9.34739e-10" ixy="-6.2849e-10" ixz="1.50343e-10" iyy="1.78834e-09" iyz="1.02782e-10" izz="1.61124e-09" />
+      <inertia ixx="1.70123e-06" ixy="-1.14385e-06" ixz="2.73624e-07" iyy="3.25477e-06" iyz="1.87063e-07" izz="2.93246e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.1281 0.0857854 0.0698535" rpy="0 -0 0" />
@@ -2276,9 +2276,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド4">
     <inertial>
-      <mass value="2.20536e-05" />
+      <mass value="0.0401343" />
       <origin xyz="0.0200352 0.011 0.00767145" rpy="0 -0 0" />
-      <inertia ixx="1.98691e-09" ixy="0" ixz="2.68609e-12" iyy="4.3975e-09" iyz="0" izz="5.32775e-09" />
+      <inertia ixx="3.61589e-06" ixy="0" ixz="4.88829e-09" iyy="8.00282e-06" iyz="0" izz="9.69574e-06" />
     </inertial>
     <visual>
       <origin xyz="0.032 0.011 -0.071825" rpy="0 -0 0" />
@@ -2298,9 +2298,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド4_1">
     <inertial>
-      <mass value="2.20536e-05" />
+      <mass value="0.0401375" />
       <origin xyz="-1.20507e-05 0.00850355 -3.31092e-05" rpy="0 -0 0" />
-      <inertia ixx="4.11551e-09" ixy="9.18696e-13" ixz="-7.74748e-10" iyy="5.32775e-09" iyz="2.5241e-12" izz="2.2689e-09" />
+      <inertia ixx="7.49024e-06" ixy="1.67203e-09" ixz="-1.41004e-06" iyy="9.6965e-06" iyz="4.59385e-09" izz="4.12939e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0281042 0.0085 -0.137776" rpy="0 -0 0" />
@@ -2320,9 +2320,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド4_10">
     <inertial>
-      <mass value="2.20536e-05" />
+      <mass value="0.0401375" />
       <origin xyz="0.00849645 0.00350827 0.022523" rpy="0 -0 0" />
-      <inertia ixx="5.32775e-09" ixy="9.18696e-13" ixz="-2.5241e-12" iyy="4.11551e-09" iyz="7.74748e-10" izz="2.2689e-09" />
+      <inertia ixx="9.6965e-06" ixy="1.67203e-09" ixz="-4.59385e-09" iyy="7.49024e-06" iyz="1.41004e-06" izz="4.12939e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.146393 -0.17556 0.13842" rpy="0 -0 0" />
@@ -2342,9 +2342,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド4_11">
     <inertial>
-      <mass value="2.20536e-05" />
+      <mass value="0.0401375" />
       <origin xyz="0.0129172 0.0196617 -0.00619229" rpy="0 -0 0" />
-      <inertia ixx="2.5304e-09" ixy="-9.83118e-10" ixz="-2.42432e-10" iyy="3.88207e-09" iyz="-1.73249e-10" izz="5.2997e-09" />
+      <inertia ixx="4.60532e-06" ixy="-1.78927e-06" ixz="-4.41226e-07" iyy="7.06537e-06" iyz="-3.15313e-07" izz="9.64545e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.123558 0.10801 0.117189" rpy="0 -0 0" />
@@ -2364,9 +2364,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド4_2">
     <inertial>
-      <mass value="2.20536e-05" />
+      <mass value="0.0401375" />
       <origin xyz="0.0232852 -0.00546663 -0.00837098" rpy="0 -0 0" />
-      <inertia ixx="1.98691e-09" ixy="9.18696e-13" ixz="-2.5241e-12" iyy="4.50632e-09" iyz="-2.98976e-10" izz="5.21893e-09" />
+      <inertia ixx="3.61618e-06" ixy="1.67203e-09" ixz="-4.59385e-09" iyy="8.2015e-06" iyz="-5.44137e-07" izz="9.49845e-06" />
     </inertial>
     <visual>
       <origin xyz="0.02325 -0.150185 0.0131517" rpy="0 -0 0" />
@@ -2386,9 +2386,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド4_3">
     <inertial>
-      <mass value="2.20536e-05" />
+      <mass value="0.0401375" />
       <origin xyz="3.5234e-05 -0.00799072 -0.00290839" rpy="0 -0 0" />
-      <inertia ixx="1.98691e-09" ixy="2.5241e-12" ixz="9.18696e-13" iyy="5.21893e-09" iyz="2.98976e-10" izz="4.50632e-09" />
+      <inertia ixx="3.61618e-06" ixy="4.59385e-09" ixz="1.67203e-09" iyy="9.49845e-06" iyz="5.44137e-07" izz="8.2015e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.024 -0.165875 0.054797" rpy="0 -0 0" />
@@ -2408,9 +2408,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド4_4">
     <inertial>
-      <mass value="2.20536e-05" />
+      <mass value="0.0401375" />
       <origin xyz="-0.0232148 -0.00546421 0.00837765" rpy="0 -0 0" />
-      <inertia ixx="1.98691e-09" ixy="-9.18696e-13" ixz="-2.5241e-12" iyy="4.50632e-09" iyz="2.98976e-10" izz="5.21893e-09" />
+      <inertia ixx="3.61618e-06" ixy="-1.67203e-09" ixz="-4.59385e-09" iyy="8.2015e-06" iyz="5.44137e-07" izz="9.49845e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.02325 0.139254 0.0299003" rpy="0 -0 0" />
@@ -2430,9 +2430,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド4_5">
     <inertial>
-      <mass value="2.20536e-05" />
+      <mass value="0.0401375" />
       <origin xyz="-0.00422126 0.00693672 -0.00252476" rpy="0 -0 0" />
-      <inertia ixx="2.82445e-09" ixy="-1.36065e-09" ixz="4.95234e-10" iyy="4.47937e-09" iyz="-2.97976e-11" izz="4.40835e-09" />
+      <inertia ixx="5.14049e-06" ixy="-2.47637e-06" ixz="9.01327e-07" iyy="8.15245e-06" iyz="-5.42317e-08" izz="8.02319e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0266423 0.159167 0.0572386" rpy="0 -0 0" />
@@ -2452,9 +2452,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド4_6">
     <inertial>
-      <mass value="2.20536e-05" />
+      <mass value="0.0401375" />
       <origin xyz="-0.00810932 0.0172198 -0.0151492" rpy="0 -0 0" />
-      <inertia ixx="3.66002e-09" ixy="5.71317e-10" ixz="-1.56968e-09" iyy="4.3106e-09" iyz="2.38749e-10" izz="3.74154e-09" />
+      <inertia ixx="6.66123e-06" ixy="1.0398e-06" ixz="-2.85682e-06" iyy="7.8453e-06" iyz="4.34524e-07" izz="6.80961e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0674663 -0.154443 0.0804036" rpy="0 -0 0" />
@@ -2474,9 +2474,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド4_7">
     <inertial>
-      <mass value="2.20536e-05" />
+      <mass value="0.0401375" />
       <origin xyz="0.00185814 0.00611545 -0.0234719" rpy="0 -0 0" />
-      <inertia ixx="5.09519e-09" ixy="3.79313e-10" ixz="-1.35583e-10" iyy="4.32174e-09" iyz="-8.48464e-10" izz="2.29524e-09" />
+      <inertia ixx="9.27324e-06" ixy="6.9035e-07" ixz="-2.46761e-07" iyy="7.86556e-06" iyz="-1.5442e-06" izz="4.17733e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0698945 0.135677 0.0572746" rpy="0 -0 0" />
@@ -2496,9 +2496,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド4_8">
     <inertial>
-      <mass value="2.20536e-05" />
+      <mass value="0.0401375" />
       <origin xyz="2.49142e-05 -0.0079822 -0.0029318" rpy="0 -0 0" />
-      <inertia ixx="3.19221e-09" ixy="-4.1045e-10" ixz="1.13326e-09" iyy="5.07916e-09" iyz="6.84896e-10" izz="3.4408e-09" />
+      <inertia ixx="5.80981e-06" ixy="-7.47019e-07" ixz="2.06253e-06" iyy="9.24407e-06" iyz="1.24651e-06" izz="6.26225e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.101407 -0.188246 0.11626" rpy="0 -0 0" />
@@ -2518,9 +2518,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド4_9">
     <inertial>
-      <mass value="2.20536e-05" />
+      <mass value="0.0401375" />
       <origin xyz="-0.00396485 0.00751411 0.000360126" rpy="0 -0 0" />
-      <inertia ixx="2.7971e-09" ixy="-1.36769e-09" ixz="3.3787e-10" iyy="4.58629e-09" iyz="2.29354e-10" izz="4.32877e-09" />
+      <inertia ixx="5.09073e-06" ixy="-2.4892e-06" ixz="6.14924e-07" iyy="8.34705e-06" iyz="4.17425e-07" izz="7.87836e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.116886 0.110645 0.0779929" rpy="0 -0 0" />
@@ -2540,9 +2540,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド5">
     <inertial>
-      <mass value="1.07968e-05" />
+      <mass value="0.0196486" />
       <origin xyz="-6.82349e-05 -3.7857e-18 0.00419582" rpy="0 -0 0" />
-      <inertia ixx="7.70692e-10" ixy="0" ixz="6.76405e-13" iyy="1.92087e-09" iyz="0" izz="2.5602e-09" />
+      <inertia ixx="1.40255e-06" ixy="0" ixz="1.23096e-09" iyy="3.49572e-06" iyz="0" izz="4.6592e-06" />
     </inertial>
     <visual>
       <origin xyz="0.012 -5.78498e-18 -0.088" rpy="0 -0 0" />
@@ -2562,9 +2562,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド5_1">
     <inertial>
-      <mass value="1.07968e-05" />
+      <mass value="0.0196502" />
       <origin xyz="0.00412758 0.00775418 0.0113404" rpy="0 -0 0" />
-      <inertia ixx="1.78633e-09" ixy="2.31344e-13" ixz="-3.69662e-10" iyy="2.5602e-09" iyz="6.35613e-13" izz="9.05238e-10" />
+      <inertia ixx="3.25112e-06" ixy="4.21046e-10" ixz="-6.72784e-07" iyy="4.65957e-06" iyz="1.15682e-09" izz="1.64753e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.024 0.02045 -0.1265" rpy="0 -0 0" />
@@ -2584,9 +2584,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド5_10">
     <inertial>
-      <mass value="1.07968e-05" />
+      <mass value="0.0196502" />
       <origin xyz="0.00419582 -2.33377e-05 6.41198e-05" rpy="0 -0 0" />
-      <inertia ixx="2.5602e-09" ixy="2.31344e-13" ixz="-6.35613e-13" iyy="1.78633e-09" iyz="3.69662e-10" izz="9.05238e-10" />
+      <inertia ixx="4.65957e-06" ixy="4.21046e-10" ixz="-1.15682e-09" iyy="3.25112e-06" iyz="6.72784e-07" izz="1.64753e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.163393 -0.179056 0.115864" rpy="0 -0 0" />
@@ -2606,9 +2606,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド5_11">
     <inertial>
-      <mass value="1.07968e-05" />
+      <mass value="0.0196502" />
       <origin xyz="0.000307488 0.000367451 -0.00416893" rpy="0 -0 0" />
-      <inertia ixx="1.03075e-09" ixy="-4.68101e-10" ixz="-1.27669e-10" iyy="1.67624e-09" iyz="-9.8502e-11" izz="2.54478e-09" />
+      <inertia ixx="1.87597e-06" ixy="-8.51944e-07" ixz="-2.32357e-07" iyy="3.05076e-06" iyz="-1.79274e-07" izz="4.63149e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.137008 0.0876518 0.131839" rpy="0 -0 0" />
@@ -2628,9 +2628,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド5_2">
     <inertial>
-      <mass value="1.07968e-05" />
+      <mass value="0.0196502" />
       <origin xyz="-6.82349e-05 0.00143505 -0.00394278" rpy="0 -0 0" />
-      <inertia ixx="7.70692e-10" ixy="2.31344e-13" ixz="-6.35613e-13" iyy="1.99566e-09" iyz="-2.05476e-10" izz="2.48541e-09" />
+      <inertia ixx="1.40266e-06" ixy="4.21046e-10" ixz="-1.15682e-09" iyy="3.6321e-06" iyz="-3.73966e-07" izz="4.52345e-06" />
     </inertial>
     <visual>
       <origin xyz="-1.09871e-15 -0.147627 0.0295134" rpy="0 -0 0" />
@@ -2650,9 +2650,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド5_3">
     <inertial>
-      <mass value="1.07968e-05" />
+      <mass value="0.0196502" />
       <origin xyz="0.0199318 -0.000282388 -0.0118087" rpy="0 -0 0" />
-      <inertia ixx="7.70692e-10" ixy="6.35613e-13" ixz="2.31344e-13" iyy="2.48541e-09" iyz="2.05476e-10" izz="1.99566e-09" />
+      <inertia ixx="1.40266e-06" ixy="1.15682e-09" ixz="4.21046e-10" iyy="4.52345e-06" iyz="3.73966e-07" izz="3.6321e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.004 -0.1701 0.0415532" rpy="0 -0 0" />
@@ -2672,9 +2672,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド5_4">
     <inertial>
-      <mass value="1.07968e-05" />
+      <mass value="0.0196502" />
       <origin xyz="-6.82349e-05 -0.00143505 -0.00394278" rpy="0 -0 0" />
-      <inertia ixx="7.70692e-10" ixy="-2.31344e-13" ixz="-6.35613e-13" iyy="1.99566e-09" iyz="2.05476e-10" izz="2.48541e-09" />
+      <inertia ixx="1.40266e-06" ixy="-4.21046e-10" ixz="-1.15682e-09" iyy="3.6321e-06" iyz="3.73966e-07" izz="4.52345e-06" />
     </inertial>
     <visual>
       <origin xyz="-1.81974e-15 0.147627 0.0295134" rpy="0 -0 0" />
@@ -2694,9 +2694,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド5_5">
     <inertial>
-      <mass value="1.07968e-05" />
+      <mass value="0.0196502" />
       <origin xyz="0.0151093 0.00910538 -0.01502" rpy="0 -0 0" />
-      <inertia ixx="1.21866e-09" ixy="-7.28467e-10" ixz="2.6514e-10" iyy="2.08985e-09" iyz="-6.15031e-11" izz="1.94326e-09" />
+      <inertia ixx="2.21795e-06" ixy="-1.32581e-06" ixz="4.82555e-07" iyy="3.80353e-06" iyz="-1.11936e-07" izz="3.53673e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0135718 0.171719 0.0409641" rpy="0 -0 0" />
@@ -2716,9 +2716,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド5_6">
     <inertial>
-      <mass value="1.07968e-05" />
+      <mass value="0.0196502" />
       <origin xyz="0.00291864 0.00103124 -0.0028333" rpy="0 -0 0" />
-      <inertia ixx="1.66612e-09" ixy="3.06024e-10" ixz="-8.40794e-10" iyy="1.89092e-09" iyz="8.23103e-11" izz="1.69473e-09" />
+      <inertia ixx="3.03234e-06" ixy="5.56964e-07" ixz="-1.53025e-06" iyy="3.44147e-06" iyz="1.49805e-07" izz="3.08441e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0653449 -0.173728 0.101227" rpy="0 -0 0" />
@@ -2738,9 +2738,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド5_7">
     <inertial>
-      <mass value="1.07968e-05" />
+      <mass value="0.0196502" />
       <origin xyz="0.00363368 0.00194805 -0.000781647" rpy="0 -0 0" />
-      <inertia ixx="2.40037e-09" ixy="2.60342e-10" ixz="-9.41333e-11" iyy="1.92768e-09" iyz="-4.20771e-10" izz="9.23717e-10" />
+      <inertia ixx="4.36867e-06" ixy="4.73822e-07" ixz="-1.71323e-07" iyy="3.50838e-06" iyz="-7.65804e-07" izz="1.68117e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.079117 0.125579 0.0822338" rpy="0 -0 0" />
@@ -2760,9 +2760,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド5_8">
     <inertial>
-      <mass value="1.07968e-05" />
+      <mass value="0.0196502" />
       <origin xyz="0.00631571 0.00343608 -0.0220251" rpy="0 -0 0" />
-      <inertia ixx="1.34578e-09" ixy="-1.96243e-10" ixz="5.40573e-10" iyy="2.41845e-09" iyz="3.8994e-10" izz="1.48754e-09" />
+      <inertia ixx="2.44933e-06" ixy="-3.57163e-07" ixz="9.83842e-07" iyy="4.40158e-06" iyz="7.09691e-07" izz="2.70732e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0950434 -0.188736 0.0927543" rpy="0 -0 0" />
@@ -2782,9 +2782,9 @@
   </link>
   <link name="xm430_w350_1__ソリッド5_9">
     <inertial>
-      <mass value="1.07968e-05" />
+      <mass value="0.0196502" />
       <origin xyz="0.013358 0.0126862 -0.0140508" rpy="0 -0 0" />
-      <inertia ixx="1.19992e-09" ixy="-7.33224e-10" ixz="1.57327e-10" iyy="2.16341e-09" iyz="1.16776e-10" izz="1.88843e-09" />
+      <inertia ixx="2.18386e-06" ixy="-1.33447e-06" ixz="2.86336e-07" iyy="3.93741e-06" iyz="2.12531e-07" izz="3.43695e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.10544 0.127063 0.064111" rpy="0 -0 0" />
@@ -2811,9 +2811,9 @@
   </link>
   <link name="xm540_w270_1__ソリッド2_2">
     <inertial>
-      <mass value="2.20928e-05" />
+      <mass value="0.0422856" />
       <origin xyz="-0.00936588 0.00529444 -0.0145464" rpy="0 -0 0" />
-      <inertia ixx="8.12315e-09" ixy="2.84749e-12" ixz="-7.82341e-12" iyy="5.88008e-09" iyz="1.31832e-09" izz="2.73785e-09" />
+      <inertia ixx="1.55477e-05" ixy="5.45009e-09" ixz="-1.4974e-08" iyy="1.12545e-05" iyz="2.52327e-06" izz="5.24025e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0256 -0.1236 -0.0365" rpy="0 -0 0" />
@@ -2833,9 +2833,9 @@
   </link>
   <link name="xm540_w270_1__ソリッド2_3">
     <inertial>
-      <mass value="2.20928e-05" />
+      <mass value="0.0422856" />
       <origin xyz="2.37986e-18 -0.00573412 2.00833e-05" rpy="0 -0 0" />
-      <inertia ixx="6.35991e-09" ixy="0" ixz="0" iyy="8.12315e-09" iyz="8.3255e-12" izz="2.25802e-09" />
+      <inertia ixx="1.21729e-05" ixy="0" ixz="0" iyy="1.55477e-05" iyz="1.5935e-08" izz="4.32186e-06" />
     </inertial>
     <visual>
       <origin xyz="3.5126e-18 0.0675 -0.045" rpy="0 -0 0" />
@@ -2852,9 +2852,9 @@
   </link>
   <link name="xm540_w270_1__ソリッド2_4">
     <inertial>
-      <mass value="2.20928e-05" />
+      <mass value="0.0422856" />
       <origin xyz="-0.00936588 -0.00712599 -0.0137422" rpy="-0.12931 2.68802e-15 -9.26576e-16" />
-      <inertia ixx="8.12315e-09" ixy="-3.83254e-12" ixz="-7.39091e-12" iyy="5.49068e-09" iyz="-1.67629e-09" izz="3.12726e-09" />
+      <inertia ixx="1.55477e-05" ixy="-7.33548e-09" ixz="-1.41462e-08" iyy="1.05092e-05" iyz="-3.20841e-06" izz="5.98557e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0256 0.117861 -0.0521335" rpy="-0.12931 2.68802e-15 -9.26576e-16" />
@@ -2881,9 +2881,9 @@
   </link>
   <link name="xm540_w270_1__ソリッド4_1">
     <inertial>
-      <mass value="1.73735e-05" />
+      <mass value="0.0332444" />
       <origin xyz="0.0240073 -0.0135 0.00541686" rpy="0 -0 0" />
-      <inertia ixx="1.8e-09" ixy="0" ixz="4.83889e-11" iyy="5.55583e-09" iyz="0" izz="6.992e-09" />
+      <inertia ixx="3.44431e-06" ixy="3.88796e-14" ixz="9.25927e-08" iyy="1.06311e-05" iyz="-3.16556e-14" izz="1.33793e-05" />
     </inertial>
     <visual>
       <origin xyz="0.0415 -0.0135 -0.0105" rpy="0 -0 0" />
@@ -2907,9 +2907,9 @@
   </link>
   <link name="xm540_w270_1__ソリッド4_1_2">
     <inertial>
-      <mass value="1.73735e-05" />
+      <mass value="0.0332529" />
       <origin xyz="-0.00541686 -0.00311179 -0.0309218" rpy="0 -0 0" />
-      <inertia ixx="6.992e-09" ixy="1.655e-11" ixz="-4.54707e-11" iyy="5.11648e-09" iyz="1.2071e-09" izz="2.23935e-09" />
+      <inertia ixx="1.33827e-05" ixy="3.16767e-08" ixz="-8.7031e-08" iyy="9.79295e-06" iyz="2.31039e-06" izz="4.28611e-06" />
     </inertial>
     <visual>
       <origin xyz="0.0105 -0.132695 -0.050984" rpy="0 -0 0" />
@@ -2936,9 +2936,9 @@
   </link>
   <link name="xm540_w270_1__ソリッド4_1_4">
     <inertial>
-      <mass value="1.73735e-05" />
+      <mass value="0.0332529" />
       <origin xyz="-0.00541686 -0.0222599 -0.0216872" rpy="0 -0 0" />
-      <inertia ixx="6.992e-09" ixy="-1.655e-11" ixz="-4.54707e-11" iyy="5.11648e-09" iyz="-1.2071e-09" izz="2.23935e-09" />
+      <inertia ixx="1.33827e-05" ixy="-3.16766e-08" ixz="-8.7031e-08" iyy="9.79295e-06" iyz="-2.31039e-06" izz="4.28611e-06" />
     </inertial>
     <visual>
       <origin xyz="0.0105 0.107323 -0.0417495" rpy="0 -0 0" />
@@ -2958,9 +2958,9 @@
   </link>
   <link name="xm540_w270_1__ソリッド4_2">
     <inertial>
-      <mass value="4.446e-08" />
+      <mass value="8.50964e-05" />
       <origin xyz="2.19883e-05 -0.000287277 0.000789287" rpy="0 -0 0" />
-      <inertia ixx="2.35939e-13" ixy="0" ixz="0" iyy="7.75363e-14" iyz="-6.90627e-14" izz="2.42148e-13" />
+      <inertia ixx="4.51588e-10" ixy="4.63262e-13" ixz="-1.2728e-12" iyy="1.48404e-10" iyz="-1.32186e-10" izz="4.63471e-10" />
     </inertial>
     <visual>
       <origin xyz="0.0203 -0.119479 -0.0478233" rpy="0 -0 0" />
@@ -2980,9 +2980,9 @@
   </link>
   <link name="xm540_w270_1__ソリッド4_3">
     <inertial>
-      <mass value="4.446e-08" />
+      <mass value="8.50964e-05" />
       <origin xyz="-3.53701e-19 -2.19883e-05 0.000839942" rpy="0 -0 0" />
-      <inertia ixx="5.23995e-14" ixy="0" ixz="0" iyy="2.35939e-13" iyz="0" izz="2.67285e-13" />
+      <inertia ixx="1.00293e-10" ixy="0" ixz="0" iyy="4.51588e-10" iyz="1.35449e-12" izz="5.11583e-10" />
     </inertial>
     <visual>
       <origin xyz="-4.99053e-19 0.0367 -0.07255" rpy="0 -0 0" />
@@ -3002,9 +3002,9 @@
   </link>
   <link name="xm540_w270_1__ソリッド4_4">
     <inertial>
-      <mass value="4.446e-08" />
+      <mass value="8.50964e-05" />
       <origin xyz="2.19883e-05 0.000287277 0.000789287" rpy="0 -0 0" />
-      <inertia ixx="2.35939e-13" ixy="0" ixz="0" iyy="7.75363e-14" iyz="6.90627e-14" izz="2.42148e-13" />
+      <inertia ixx="4.51588e-10" ixy="-4.63262e-13" ixz="-1.2728e-12" iyy="1.48404e-10" iyz="1.32186e-10" izz="4.63471e-10" />
     </inertial>
     <visual>
       <origin xyz="0.0203 0.119479 -0.0478233" rpy="0 -0 0" />
@@ -3031,9 +3031,9 @@
   </link>
   <link name="xm540_w270_1__ソリッド5_2">
     <inertial>
-      <mass value="4.04398e-05" />
+      <mass value="0.0774018" />
       <origin xyz="-0.0104358 -1.30556e-05 3.587e-05" rpy="0 -0 0" />
-      <inertia ixx="1.51484e-08" ixy="-3.01234e-12" ixz="8.27635e-12" iyy="1.20039e-08" iyz="2.48963e-09" izz="6.06984e-09" />
+      <inertia ixx="2.8994e-05" ixy="-5.76563e-09" ixz="1.58409e-08" iyy="2.29754e-05" iyz="4.76514e-06" izz="1.16177e-05" />
     </inertial>
     <visual>
       <origin xyz="-0.0105 -0.128901 -0.0219348" rpy="0 -0 0" />
@@ -3053,9 +3053,9 @@
   </link>
   <link name="xm540_w270_1__ソリッド5_3">
     <inertial>
-      <mass value="4.04398e-05" />
+      <mass value="0.0774018" />
       <origin xyz="-0.0135 -0.0105642 0.0260382" rpy="0 -0 0" />
-      <inertia ixx="1.291e-08" ixy="0" ixz="0" iyy="1.51484e-08" iyz="-8.8075e-12" izz="5.16369e-09" />
+      <inertia ixx="2.47098e-05" ixy="0" ixz="0" iyy="2.8994e-05" iyz="-1.68576e-08" izz="9.8833e-06" />
     </inertial>
     <visual>
       <origin xyz="-0.0135 0.0465 -0.019" rpy="0 -0 0" />
@@ -3072,9 +3072,9 @@
   </link>
   <link name="xm540_w270_1__ソリッド5_4">
     <inertial>
-      <mass value="4.04398e-05" />
+      <mass value="0.0774018" />
       <origin xyz="-0.0104358 -0.0215653 -0.0197789" rpy="0 -0 0" />
-      <inertia ixx="1.51484e-08" ixy="3.01234e-12" ixz="8.27635e-12" iyy="1.20039e-08" iyz="-2.48963e-09" izz="6.06984e-09" />
+      <inertia ixx="2.8994e-05" ixy="5.76563e-09" ixz="1.58409e-08" iyy="2.29754e-05" iyz="-4.76514e-06" izz="1.16177e-05" />
     </inertial>
     <visual>
       <origin xyz="-0.0105 0.107323 -0.0417495" rpy="0 -0 0" />

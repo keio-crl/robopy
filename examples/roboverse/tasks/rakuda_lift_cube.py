@@ -34,14 +34,13 @@ from __future__ import annotations
 import torch
 from metasim.constants import PhysicStateType
 from metasim.scenario.objects import PrimitiveCubeCfg
-from metasim.scenario.scenario import ScenarioCfg
-from metasim.scenario.simulator_params import SimParamCfg
 from metasim.task.base import BaseTaskEnv
 from metasim.task.registry import register_task
 
-from robopy.roboverse.mount import GRASP_OFFSET_ABOVE_MOUNT
+from mount import GRASP_OFFSET_ABOVE_MOUNT
 
-from ._common import OBJECT_ZONE, RakudaMount, hand_position
+from staging import staged
+from workspace import OBJECT_ZONE, RakudaMount, hand_position
 
 __all__ = ["RakudaLiftCubeEnv"]
 
@@ -50,7 +49,7 @@ PEDESTAL = "rakuda_mount"
 #: The robot's stand.  A lower surface than the reaching tasks use, because a
 #: gripper has to arrive pointing *down* at what it grasps and this arm can only
 #: do that well below its shoulders -- at the reaching offset it cannot do it at
-#: all.  See :data:`~robopy.roboverse.mount.GRASP_OFFSET_ABOVE_MOUNT`.
+#: all.  See ``mount.GRASP_OFFSET_ABOVE_MOUNT``.
 MOUNT = RakudaMount(offset=GRASP_OFFSET_ABOVE_MOUNT)
 
 TABLE_DEPTH = 0.34
@@ -83,7 +82,7 @@ class RakudaLiftCubeEnv(BaseTaskEnv):
     supported_simulators = ("mujoco",)
     max_episode_steps = 500
 
-    scenario = ScenarioCfg(
+    scenario = staged(
         objects=[
             MOUNT.pedestal(PEDESTAL),
             MOUNT.table("table", depth=TABLE_DEPTH, width=TABLE_WIDTH),
@@ -96,11 +95,6 @@ class RakudaLiftCubeEnv(BaseTaskEnv):
             ),
         ],
         robots=[ROBOT],
-        simulator="mujoco",
-        sim_params=SimParamCfg(dt=0.005),
-        decimation=4,
-        num_envs=1,
-        headless=True,
     )
 
     def __init__(self, scenario=None, device=None) -> None:

@@ -8,13 +8,13 @@ and each task would otherwise rediscover the same limits.
 The shape of the problem:
 
 * The CAD origin is at the waist, so a Rakuda at ``z = 0`` is buried to the
-  chest.  Its base body sits :data:`~robopy.roboverse.mount.STAND_HEIGHT` above
+  chest.  Its base body sits ``mount.STAND_HEIGHT`` above
   whatever it is bolted to.
 * Its shoulders are 0.41 m above its own base plate and each arm is about 0.30 m
   long, so **a hand never gets closer than 0.112 m to the mounting plane**.  The
   robot cannot reach the surface it stands on.
 * So it goes on a pedestal, positioned relative to the work surface rather than
-  to the floor -- see :mod:`robopy.roboverse.mount`, which is where the heights
+  to the floor -- see ``mount``, which is where the heights
   come from and why.
 * Forward reach runs out around ``x = 0.365``, and the pedestal occupies ``x``
   out to ``0.178``, which leaves a usable strip of table roughly
@@ -22,7 +22,7 @@ The shape of the problem:
 
 Positions here are given **relative to the mounting plane** wherever height is
 involved, because that is the frame in which they are constants.  A task turns
-them into world coordinates with its :class:`~robopy.roboverse.mount.RakudaMount`.
+them into world coordinates with its ``mount.RakudaMount``.
 
 The robot faces ``+x``: the head camera's own frame points along
 ``(0.923, -0.370, 0.104)``.
@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from typing import Dict, Tuple
 
-from robopy.roboverse.mount import (
+from mount import (
     HAND_FLOOR_ABOVE_MOUNT,
     PLATE_CENTRE_XY,
     PLATE_SIZE_XY,

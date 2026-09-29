@@ -1,0 +1,509 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CALVIN's play table, scaled and with the bench boxed.
+  GENERATED, DO NOT EDIT BY HAND.
+
+  source:      calvin_table_D.urdf (calvin_env, MIT)
+  regenerate:  python examples/roboverse/calvin_table_asset.py
+
+  This is the file the non-MuJoCo backends load; MuJoCo loads mjcf/calvin_table.xml,
+  which is generated from the same two steps. CALVIN's global_scaling of 0.8 is
+  baked in rather than left to the simulator, and base_link's concave collision
+  mesh is replaced by an exact box decomposition, because every engine but
+  PyBullet convex-hulls a collision mesh and the hull of this bench is a wedge
+  that flings anything placed on it away.
+
+  Textures come from the MTLs beside the OBJs, which Isaac Sim's importer reads.
+-->
+<robot name="calvin_table" concave="yes">
+  <mujoco>
+    <compiler balanceinertia="true" discardvisual="false" strippath="false" fusestatic="false" />
+  </mujoco>
+  <link name="base_link">
+    <inertial>
+      <origin xyz="-0.006995641397468289 0.40082628438873363 -0.03604347253487656" rpy="0 0 0" />
+      <mass value="0.0" />
+      <inertia ixx="0.4986765313916176" ixy="-0.08347639086317078" ixz="0.10097702958443891" iyy="2.113861125167298" iyz="0.09144982349731072" izz="2.0553188051325817" />
+    </inertial>
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="../meshes/base_link.obj" scale="0.8 0.8 0.8" />
+      </geometry>
+      <material name="white">
+        <color rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.42000000000000004 -0.1629904 0.22000000000000003" rpy="0 0 0" />
+      <geometry>
+        <box size="0.040000000000000036 0.034019200000000006 0.44000000000000006" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.0 0.017009600000000003 0.41" rpy="0 0 0" />
+      <geometry>
+        <box size="0.8800000000000001 0.3259808 0.020000000000000018" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.0 -0.0629904 0.4300000000000001" rpy="0 0 0" />
+      <geometry>
+        <box size="0.8800000000000001 0.1659808 0.020000000000000018" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.4 0.1 0.44000000000000006" rpy="0 0 0" />
+      <geometry>
+        <box size="0.08000000000000003 0.16000000000000003 0.03999999999999995" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.4 0.120464 0.522478" rpy="0 0 0" />
+      <geometry>
+        <box size="0.08000000000000003 0.11907200000000001 0.12495600000000007" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.4 0.148464 0.6064012000000001" rpy="0 0 0" />
+      <geometry>
+        <box size="0.08000000000000003 0.063072 0.04289039999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.0 0.16000000000000003 0.6378463999999999" rpy="0 0 0" />
+      <geometry>
+        <box size="0.8800000000000001 0.040000000000000015 0.020000000000000018" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.42000000000000004 0.16400000000000003 0.2" rpy="0 0 0" />
+      <geometry>
+        <box size="0.040000000000000036 0.03200000000000001 0.4" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.0 0.0010095999999999994 0.31000000000000005" rpy="0 0 0" />
+      <geometry>
+        <box size="0.8400000000000001 0.29398080000000004 0.020000000000000018" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.22000000000000003 0.0010095999999999994 0.36000000000000004" rpy="0 0 0" />
+      <geometry>
+        <box size="0.4 0.29398080000000004 0.07999999999999999" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.020000000000000018 -0.1629904 0.42000000000000004" rpy="0 0 0" />
+      <geometry>
+        <box size="0.8400000000000001 0.034019200000000006 0.040000000000000036" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.020000000000000018 -0.15299040000000003 0.31000000000000005" rpy="0 0 0" />
+      <geometry>
+        <box size="0.8400000000000001 0.01401920000000001 0.020000000000000018" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.21000000000000002 -0.15299040000000003 0.36000000000000004" rpy="0 0 0" />
+      <geometry>
+        <box size="0.38 0.01401920000000001 0.07999999999999999" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.06999999999999999 0.1342264 0.6378463999999999" rpy="0 0 0" />
+      <geometry>
+        <box size="0.66 0.011547200000000002 0.020000000000000018" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.020000000000000018 0.15400000000000003 0.35000000000000003" rpy="0 0 0" />
+      <geometry>
+        <box size="0.8400000000000001 0.01200000000000001 0.1" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.040000000000000015 0.17000000000000004 0.5239231999999999" rpy="0 0 0" />
+      <geometry>
+        <box size="0.8 0.019999999999999997 0.20784639999999996" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.15500000000000003 -0.12000000000000002 0.45" rpy="0 0 0" />
+      <geometry>
+        <box size="0.010000000000000009 0.030000000000000006 0.01999999999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.15031080000000002 -0.1375 0.45" rpy="0 0 0" />
+      <geometry>
+        <box size="0.008660000000000001 0.004999999999999983 0.01999999999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.15031080000000002 -0.1025 0.45" rpy="0 0 0" />
+      <geometry>
+        <box size="0.008660000000000001 0.0050000000000000044 0.01999999999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.145 -0.14299040000000002 0.45" rpy="0 0 0" />
+      <geometry>
+        <box size="0.010000000000000009 0.005980800000000008 0.01999999999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.145 -0.09700960000000002 0.45" rpy="0 0 0" />
+      <geometry>
+        <box size="0.010000000000000009 0.005980799999999998 0.01999999999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.12 -0.15031080000000002 0.45" rpy="0 0 0" />
+      <geometry>
+        <box size="0.0519616 0.008660000000000001 0.01999999999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.14049040000000002 -0.09200960000000001 0.45" rpy="0 0 0" />
+      <geometry>
+        <box size="0.010980799999999992 0.0040192000000000005 0.01999999999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.12 -0.08767960000000001 0.45" rpy="0 0 0" />
+      <geometry>
+        <box size="0.039999999999999994 0.0046408000000000005 0.01999999999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.12000000000000002 -0.15732040000000003 0.45" rpy="0 0 0" />
+      <geometry>
+        <box size="0.030000000000000006 0.005359200000000008 0.01999999999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.12000000000000002 -0.08267960000000002 0.45" rpy="0 0 0" />
+      <geometry>
+        <box size="0.030000000000000006 0.005359199999999998 0.01999999999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.1125 -0.09200960000000001 0.5539232000000001" rpy="0 0 0" />
+      <geometry>
+        <box size="0.014999999999999993 0.0040192000000000005 0.18784640000000002" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.0995096 -0.09200960000000001 0.45" rpy="0 0 0" />
+      <geometry>
+        <box size="0.010980800000000002 0.0040192000000000005 0.01999999999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.095 -0.14299040000000002 0.45" rpy="0 0 0" />
+      <geometry>
+        <box size="0.009999999999999998 0.005980800000000008 0.01999999999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.095 -0.09700960000000002 0.45" rpy="0 0 0" />
+      <geometry>
+        <box size="0.009999999999999998 0.005980799999999998 0.01999999999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.08968920000000001 -0.1375 0.45" rpy="0 0 0" />
+      <geometry>
+        <box size="0.008660000000000001 0.004999999999999983 0.01999999999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.09200960000000001 -0.1125 0.5539232000000001" rpy="0 0 0" />
+      <geometry>
+        <box size="0.0040192000000000005 0.014999999999999993 0.18784640000000002" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.08968920000000001 -0.1025 0.45" rpy="0 0 0" />
+      <geometry>
+        <box size="0.008660000000000001 0.0050000000000000044 0.01999999999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.08500000000000002 -0.12000000000000002 0.45" rpy="0 0 0" />
+      <geometry>
+        <box size="0.009999999999999998 0.030000000000000006 0.01999999999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.05 -0.1025 0.5439232" rpy="0 0 0" />
+      <geometry>
+        <box size="0.06000000000000001 0.0050000000000000044 0.20784639999999996" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.2 0.104464 0.36000000000000004" rpy="0 0 0" />
+      <geometry>
+        <box size="0.44000000000000006 0.087072 0.07999999999999999" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.30000000000000004 0.09000000000000001 0.44000000000000006" rpy="0 0 0" />
+      <geometry>
+        <box size="0.28 0.14 0.03999999999999995" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.30000000000000004 0.110464 0.522478" rpy="0 0 0" />
+      <geometry>
+        <box size="0.28 0.09907200000000001 0.12495600000000007" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.30000000000000004 0.138464 0.6064012000000001" rpy="0 0 0" />
+      <geometry>
+        <box size="0.28 0.043072 0.04289039999999993" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.41 -0.15299040000000003 0.36000000000000004" rpy="0 0 0" />
+      <geometry>
+        <box size="0.06000000000000005 0.01401920000000001 0.07999999999999999" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.4 -0.0425264 0.36000000000000004" rpy="0 0 0" />
+      <geometry>
+        <box size="0.040000000000000036 0.2069088 0.07999999999999999" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.42000000000000004 -0.1629904 0.15000000000000002" rpy="0 0 0" />
+      <geometry>
+        <box size="0.040000000000000036 0.034019200000000006 0.30000000000000004" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.42000000000000004 -0.17000000000000004 0.35000000000000003" rpy="0 0 0" />
+      <geometry>
+        <box size="0.040000000000000036 0.019999999999999997 0.1" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.42000000000000004 0.16400000000000003 0.15000000000000002" rpy="0 0 0" />
+      <geometry>
+        <box size="0.040000000000000036 0.03200000000000001 0.30000000000000004" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.42000000000000004 0.17000000000000004 0.35000000000000003" rpy="0 0 0" />
+      <geometry>
+        <box size="0.040000000000000036 0.019999999999999997 0.1" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="button_link">
+    <inertial>
+      <origin xyz="2.2204460492503123e-17 0.01199999999999992 -2.2204460492503123e-17" rpy="0 0 0" />
+      <mass value="0.07875193667571509" />
+      <inertia ixx="2.394058874941745e-05" ixy="-5.843927262295558e-38" ixz="0.0" iyy="4.0320991577966194e-05" iyz="-1.2277803395468627e-37" izz="2.394058874941745e-05" />
+    </inertial>
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="../meshes/button_link.STL" scale="0.8 0.8 0.8" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.0 0.0 0.0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="../meshes/button_link.STL" scale="0.8 0.8 0.8" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="base__button" type="prismatic">
+    <origin xyz="-0.12 -0.12 0.45999999999999996" rpy="1.5707963267949 0 0" />
+    <parent link="base_link" />
+    <child link="button_link" />
+    <axis xyz="0 -1 0" />
+    <limit lower="0.0" upper="0.020000000000000004" effort="0" velocity="0" />
+  </joint>
+  <link name="switch_link">
+    <inertial>
+      <origin xyz="0.0 0.040156351111461444 -0.008" rpy="0 0 0" />
+      <mass value="0.12225879232096823" />
+      <inertia ixx="4.91204426760415e-05" ixy="9.731932531059788e-21" ixz="1.859333892136521e-21" iyy="0.00022076343487917985" iyz="1.1546319456101632e-19" izz="0.00025160177599089747" />
+    </inertial>
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="../meshes/switch_link.obj" scale="0.8 0.8 0.8" />
+      </geometry>
+      <material name="gray">
+        <color rgba="0.4 0.4 0.4 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="../meshes/switch_link_vhacd2.obj" scale="0.8 0.8 0.8" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="base__switch" type="prismatic">
+    <origin xyz="0.30000000000000004 0.06092820323027488 0.4948897274573416" rpy="2.61799387799149 0 0" />
+    <parent link="base_link" />
+    <child link="switch_link" />
+    <axis xyz="0 0 -1" />
+    <limit lower="0.0" upper="0.08800000000000001" effort="0" velocity="0" />
+  </joint>
+  <link name="slide_link">
+    <inertial>
+      <origin xyz="-0.13999999999999999 -8.88178419700128e-17 0.016331784195742962" rpy="0 0 0" />
+      <mass value="0.7902675967779023" />
+      <inertia ixx="0.0033556805670144586" ixy="-1.1739991066087198e-19" ixz="-3.5394874401673064e-21" iyy="0.00478655350919486" iyz="-7.673861546209085e-18" izz="0.007607963052858116" />
+    </inertial>
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="../meshes/slide_link.obj" scale="0.8 0.8 0.8" />
+      </geometry>
+      <material name="white">
+        <color rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="../meshes/slide_link_vhacd2.obj" scale="0.8 0.8 0.8" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="base__slide" type="prismatic">
+    <origin xyz="-0.1 0.07500000000000001 0.5352640000000001" rpy="1.04719755119659 0 0" />
+    <parent link="base_link" />
+    <child link="slide_link" />
+    <axis xyz="-1 0 0" />
+    <limit lower="0.0" upper="0.27999999999999997" effort="0" velocity="0" />
+  </joint>
+  <link name="drawer_link">
+    <inertial>
+      <origin xyz="4.4408920985006246e-17 0.026558443416850402 0.07908432339715393" rpy="0 0 0" />
+      <mass value="2.1664157584624597" />
+      <inertia ixx="0.019404152676366127" ixy="-6.556007099627408e-19" ixz="-9.538879140233906e-19" iyy="0.05365844744541308" iyz="-1.3655497325122196e-05" izz="0.03669696994815509" />
+    </inertial>
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="../meshes/drawer_link.obj" scale="0.8 0.8 0.8" />
+      </geometry>
+      <material name="white">
+        <color rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="../meshes/drawer_link_vhacd2.obj" scale="0.8 0.8 0.8" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="base__drawer" type="prismatic">
+    <origin xyz="0.18000000000000002 0.0 0.32000000000000006" rpy="1.5707963267949 0 0" />
+    <parent link="base_link" />
+    <child link="drawer_link" />
+    <axis xyz="0 0 1" />
+    <limit lower="0.0" upper="0.22000000000000003" effort="0" velocity="0" />
+  </joint>
+  <link name="led_link">
+    <inertial>
+      <origin xyz="0.0 0.008 0.0" rpy="0 0 0" />
+      <mass value="0.10444800000000001" />
+      <inertia ixx="1.6154624000000005e-05" ixy="-1.330224819184878e-21" ixz="9.029221814671444e-22" iyy="0.0002367488000000001" iyz="7.077671781985388e-22" izz="0.00022505062400000005" />
+    </inertial>
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="../meshes/led_link.STL" scale="0.8 0.8 0.8" />
+      </geometry>
+      <material name="white">
+        <color rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="../meshes/led_link.STL" scale="0.8 0.8 0.8" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="base__led" type="fixed">
+    <origin xyz="-0.12 0.16000000000000003 0.6478460969082649" rpy="1.5707963267949 0 0" />
+    <parent link="base_link" />
+    <child link="led_link" />
+    <axis xyz="0 0 0" />
+    <limit lower="0" upper="0" effort="0" velocity="0" />
+  </joint>
+  <link name="light_link">
+    <inertial>
+      <origin xyz="-4.4408920985006246e-17 0.0224213103393892 -0.028000000000000004" rpy="0 0 0" />
+      <mass value="0.08904617579424053" />
+      <inertia ixx="2.696910916261784e-05" ixy="6.215282547658361e-22" ixz="1.3250820386167327e-38" iyy="2.863283855420294e-05" iyz="2.6301503552307466e-38" izz="2.696910916261784e-05" />
+    </inertial>
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="../meshes/light_link.STL" scale="0.8 0.8 0.8" />
+      </geometry>
+      <material name="white">
+        <color rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="../meshes/light_link.STL" scale="0.8 0.8 0.8" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="base__light" type="fixed">
+    <origin xyz="0.30000000000000004 0.132 0.6478480000000001" rpy="1.5708 0 0" />
+    <parent link="base_link" />
+    <child link="light_link" />
+    <axis xyz="0 0 0" />
+  </joint>
+  <link name="plank_link">
+    <inertial>
+      <origin xyz="4.4408920985006246e-17 0.010000000000000002 0.0" rpy="0 0 0" />
+      <mass value="1.4560000000000004" />
+      <inertia ixx="0.0024266666666666694" ixy="3.271457179228833e-20" ixz="2.794801427323068e-19" iyy="0.03518666666666657" iyz="6.162975822039156e-35" izz="0.032857066666666566" />
+    </inertial>
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="../meshes/plank_link.obj" scale="0.8 0.8 0.8" />
+      </geometry>
+      <material name="white">
+        <color rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="../meshes/plank_link.obj" scale="0.8 0.8 0.8" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="base__plank" type="fixed">
+    <origin xyz="-0.1 0.09000000000000001 0.42000000000000004" rpy="1.5708 0 0" />
+    <parent link="base_link" />
+    <child link="plank_link" />
+    <axis xyz="0 0 0" />
+  </joint>
+</robot>

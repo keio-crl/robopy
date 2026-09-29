@@ -36,3 +36,5 @@ key.pem
 
 # robopy-vr session recordings and their videos
 recordings/
+
+*.zip
