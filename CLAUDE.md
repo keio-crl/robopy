@@ -25,21 +25,23 @@
 - 校正を変えたら（zero, direction, travel, URDF 幅）、実機を脱力／静止させた状態で **制御に使う
   limit profile で全関節が範囲内か**を確かめる。viewer で見た目が合うことは確認にならない。
 
-## IK はシミュレーションと実機で「別の設定」で動いている（要注意）
+## IK のプロファイルは一つ（`teleop_solver_settings`）。別の場所に既定値を書かない
 
-- `robopy-vr`（シミュレーション）と `robopy-viewer` のソルバは `viewer/server.py` の `IKSetup` が組む:
-  hierarchical、**position_only**、limit avoidance あり、gain 時定数 0.08 s。
-- `robopy-vr --hardware` の実機は `rakuda_control.build_model_and_ik` が `DualArmIKConfig` の**既定値**＋
-  `control.ik` で組む: weighted、**pose（向きも合わせる）**、orientation_cost 0.15、limit avoidance なし。
-- `robopy-vr --orientation-weight` は前者にしか届かず、position_only では何の効果もない。
-- ゆえに「シミュレーションでは腕が理想的なのに実機は追従が悪い／腕が外向きにロールする」の第一容疑者は
-  この差。シミュレーションで検証した挙動を実機に持ち込むときは、**同じソルバ設定になっているか**を
-  `IK settings` の起動ログ（両方が印字する）で突き合わせる。設定は `control.ik`（`orientation_mode`,
-  `orientation_cost`, `task_priority_mode`, `posture_cost`, `preferred_posture_rad` …）に書けば両方に効く。
+- viewer の `IKSetup`、VR シミュレーション、実機の `rakuda_control.build_model_and_ik` は全部
+  `kinematics/dual_arm_ik.py` の `teleop_solver_settings` から `DualArmIKConfig` を組み、その上に
+  `control.ik` を乗せる。以前は実機側が `DualArmIKConfig` の素の既定値（weighted・pose・向き重み 0.15）で
+  動いていて、シミュレーション（hierarchical・position_only）で検証した挙動と別物だった。
+  「シミュレーションでは腕が理想的なのに実機は追従が悪い」が出たら、まず両方の起動ログの `IK` 行を
+  突き合わせる。ソルバの既定値を変えるときは `teleop_solver_settings` だけを触る。意図した差は一つだけ:
+  実機は `gain_time_constant_s=None`（参照ガバナ `control.trajectory` が加減速を担うので二重の遅れを作らない）。
+- `robopy-vr --orientation-mode / --orientation-weight` はシミュレーションと `--hardware` の両方に渡る
+  （実機側は `cfg.control.ik` に書き込んでからシステムを組む）。position_only では重みは無意味。
 - Rakuda の腕は 6 軸で、`elbow_yaw_*`（上腕ロール、軸は 20° 傾斜）と `wrist_yaw_*`（前腕ロール）が
-  ロール軸。position_only では 3 自由度の零空間にこの 2 軸が入り、姿勢コスト既定 1e-3 では引き戻されず
-  ±30〜70° まで流れる。pose モードでは向きを保つためにこの 2 軸を 45〜65° 回し、位置誤差が数 cm 残る。
-  ロール軸には `posture_cost` を個別に（0.05〜0.5）掛けて中立へ戻す。
+  ロール軸。position_only では 3 自由度の零空間にこの 2 軸が入り、姿勢コストが無いと左右対称に外向きへ
+  ±30〜70° 流れる。pose モードでは向きを保つためにこの 2 軸を 45〜65° 回し、位置誤差が数 cm 残る。
+  プロファイルはロール軸に `posture_cost` 0.3・基準 0 を掛けている（`ROLL_POSTURE_COST`）。
+- 保持中（動かしていない）関節が限界を超えて読めても IK は止まらない: その関節を限界に置いて解き、
+  限界値を指令して内側へ戻す（警告は一度）。動かしている関節の限界超過も内向きの動きだけ許して続行する。
 
 ## direction / zero を触るときの整合
 

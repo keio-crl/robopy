@@ -104,6 +104,67 @@ logger = logging.getLogger(__name__)
 #: measured against, and a joint resting on a stop reads slightly past them.
 HELD_JOINT_LIMIT_TOLERANCE_RAD = 0.05
 
+#: Posture weight on an arm's roll joints in :func:`teleop_solver_settings`.
+#: Strong enough to bring a roll back to neutral within a second or two of the
+#: hand standing still; as a second-stage objective it never costs position.
+ROLL_POSTURE_COST = 0.3
+
+
+def arm_roll_joints(joints: Sequence[str]) -> List[str]:
+    """The roll joints among ``joints``: the upper-arm and forearm rolls.
+
+    In the Rakuda export (and the synthetic fixture, which copies its names)
+    these are ``elbow_yaw_*`` and ``wrist_yaw_*``: their axes run along the
+    arm, so with the arm hanging they spin the forearm and the gripper.  A
+    position task leaves them free; without a posture objective they drift
+    towards their limits, symmetrically outward on both arms.
+    """
+    return [j for j in joints if "elbow_yaw" in j or "wrist_yaw" in j]
+
+
+def teleop_solver_settings(
+    torso_joint: str,
+    *,
+    arm_joints: Sequence[str] = (),
+    require_soft_limits: bool = True,
+) -> Dict[str, Any]:
+    """The natural-motion solver profile every operator-facing path starts from.
+
+    The viewer, the VR simulation and the machine's control system all build
+    their :class:`DualArmIKConfig` from this one dictionary (each then applies
+    ``control.ik`` from the config on top), so what is tuned in the
+    simulation is what the machine runs.  A second profile, kept in a second
+    place, is how the machine came to hold the hands' orientation while the
+    simulation ignored it.
+
+    * hierarchical priority: the hands first, then posture and motion costs;
+    * position only by default (``control.ik.orientation_mode`` selects
+      ``pose`` or ``axis_aligned``); with the two-axis wrist a held
+      orientation costs several centimetres of position;
+    * a posture objective on the arms' roll joints (:func:`arm_roll_joints`)
+      towards their neutral zero, weight :data:`ROLL_POSTURE_COST`;
+    * limit avoidance near the ends of travel, and a time-constant gain so the
+      response does not depend on the period.
+    """
+    settings: Dict[str, Any] = dict(
+        # A little more Tikhonov damping than the bare default: it penalises
+        # step size without biasing the equilibrium, which keeps a straight
+        # (singular) arm from wandering along its null space.
+        damping=1e-3,
+        task_priority_mode="hierarchical",
+        orientation_mode="position_only",
+        gain_time_constant_s=0.08,
+        joint_motion_cost={torso_joint: 2.0},
+        limit_avoidance_enabled=True,
+        require_soft_limits=require_soft_limits,
+    )
+    rolls = arm_roll_joints(arm_joints)
+    if rolls:
+        settings["posture_cost"] = {j: ROLL_POSTURE_COST for j in rolls}
+        settings["posture_reference"] = {j: 0.0 for j in rolls}
+    return settings
+
+
 ORIENTATION_MODES: Tuple[str, ...] = ("position_only", "pose", "axis_aligned")
 PRIORITY_MODES: Tuple[str, ...] = ("weighted", "hierarchical")
 
@@ -631,6 +692,9 @@ class DualArmIK:
         self._assumed_zero_joints: List[str] = []
         # Solved-for joints seen resting a little past a limit (warned once each).
         self._on_stop_warned: set[str] = set()
+        # Held joints found past a limit this step, and the limit each is
+        # commanded to instead (see the position bounds).
+        self._held_clamped: Dict[str, float] = {}
         self._stage2_note = ""
 
     # -- properties ---------------------------------------------------------
@@ -1027,6 +1091,9 @@ class DualArmIK:
         # same turn as the measurement it was computed from.
         positions_next = self._model.positions_from_q(q_next, reference=state.positions_dict())
         targets = {name: positions_next[name] for name in self._active_joints}
+        # A held joint found past its limit is commanded to the limit, not
+        # left where it was read (see the position bounds).
+        targets.update(self._held_clamped)
         velocities = {
             name: float(step_active[i] / dt) for i, name in enumerate(self._active_joints)
         }
@@ -1425,20 +1492,36 @@ class DualArmIK:
             if slot not in free_slots and known_step[slot] == 0.0
         ]
         fixed_lower, fixed_upper = self._model.position_limits(fixed_names)
+        self._held_clamped = {}
         for name, lo, hi in zip(fixed_names, fixed_lower, fixed_upper):
             # A stationary joint may sit on a valid limit (Rakuda's elbows
             # do at zero). The motion margin must not force it to move.  A
-            # machine resting on its stop reads a few thousandths of a radian
-            # past the limit its travel was measured to; that is the limit,
-            # not a violation, and the solve goes on from the limit itself.
+            # machine resting on its stop reads past the limit its travel
+            # was measured to -- a few thousandths of a radian, or a few
+            # hundredths under gravity.  That is not the arm being driven's
+            # problem: the solve goes on with the held joint taken at its
+            # limit, and the limit is what it is commanded to, so it comes
+            # back inside instead of parking the whole solver.  (A held joint
+            # past its limit used to make every arm infeasible: one elbow on
+            # its stop stopped both hands.)
             if not (lo - 1e-9 <= positions[name] <= hi + 1e-9):
                 amount = positions[name] - hi if positions[name] > hi else lo - positions[name]
-                if amount > HELD_JOINT_LIMIT_TOLERANCE_RAD:
-                    raise ValueError(
-                        f"Held joint '{name}' is outside its limits by {amount:.4f} rad "
-                        f"(at {positions[name]:.4f}, allowed [{lo:.4f}, {hi:.4f}])."
+                clamped = min(hi, max(lo, positions[name]))
+                if name not in self._on_stop_warned:
+                    self._on_stop_warned.add(name)
+                    logger.warning(
+                        "Held joint '%s' reads %.4f rad past its limit (at %.4f, allowed "
+                        "[%.4f, %.4f]); solving with it at the limit and commanding it there.",
+                        name,
+                        amount,
+                        positions[name],
+                        lo,
+                        hi,
                     )
-                positions[name] = min(hi, max(lo, positions[name]))
+                positions[name] = clamped
+                self._held_clamped[name] = clamped
+            else:
+                self._on_stop_warned.discard(name)
         lower, upper = self._model.position_limits(names)
         current = np.asarray([positions[name] for name in names])
         # The position bound never *forces* motion. Outside the margin band
@@ -1452,37 +1535,41 @@ class DualArmIK:
         # name and amount, not clamped back silently.
         lb_position = np.minimum(lower + cfg.position_limit_margin_rad - current, 0.0)
         ub_position = np.maximum(upper - cfg.position_limit_margin_rad - current, 0.0)
-        # A joint resting on its mechanical stop reads a little past the limit
-        # its travel was measured to (the limits *are* those stops, a margin
-        # inside).  Up to HELD_JOINT_LIMIT_TOLERANCE_RAD past, that is "on the
-        # limit": the position bound above already allows only the inward
-        # step, so the solve goes on and the joint comes back inside.  Only a
-        # joint genuinely beyond that is reported by name and amount.
-        beyond = []
+        # A joint resting on its mechanical stop reads past the limit its
+        # travel was measured to (the limits *are* those stops, a margin
+        # inside).  However far past, the position bound above allows only
+        # the inward step, so the solve goes on and the joint comes back
+        # inside; the amount is logged once per excursion, and reported large
+        # (over HELD_JOINT_LIMIT_TOLERANCE_RAD) as a calibration to look at.
         for i, name in enumerate(names):
             amount = 0.0
             if current[i] > upper[i]:
                 amount = float(current[i] - upper[i])
             elif current[i] < lower[i]:
                 amount = float(lower[i] - current[i])
-            if amount > HELD_JOINT_LIMIT_TOLERANCE_RAD:
-                beyond.append((name, amount))
-            elif amount > 1e-9 and name not in self._on_stop_warned:
+            if amount <= 1e-9:
+                self._on_stop_warned.discard(name)
+            elif name not in self._on_stop_warned:
                 self._on_stop_warned.add(name)
-                logger.warning(
-                    "%s reads %.4f rad past its limit (on its stop; within the %.3f rad "
-                    "tolerance): only inward motion is allowed until it is back inside.",
-                    name,
-                    amount,
-                    HELD_JOINT_LIMIT_TOLERANCE_RAD,
-                )
-        if beyond:
-            listed = ", ".join(f"{name} by {amount:.4f} rad" for name, amount in beyond)
-            raise ValueError(
-                f"The configuration is outside the position limits of: {listed}. No feasible "
-                "step exists; move the machine back inside its limits (the amounts above) "
-                "before commanding motion."
-            )
+                if amount > HELD_JOINT_LIMIT_TOLERANCE_RAD:
+                    logger.warning(
+                        "%s reads %.4f rad past its limit (at %.4f, allowed [%.4f, %.4f]): "
+                        "only inward motion is allowed until it is back inside. This is more "
+                        "than a joint resting on its stop; check the joint's recorded travel "
+                        "and soft limit against the machine.",
+                        name,
+                        amount,
+                        current[i],
+                        lower[i],
+                        upper[i],
+                    )
+                else:
+                    logger.warning(
+                        "%s reads %.4f rad past its limit (on its stop): only inward motion is "
+                        "allowed until it is back inside.",
+                        name,
+                        amount,
+                    )
         lb_hard = np.maximum(lb_speed, lb_position)
         ub_hard = np.minimum(ub_speed, ub_position)
 

@@ -177,14 +177,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     arms.add_argument("--no-orientation", action="store_true", help="translation-only hand targets")
     arms.add_argument(
+        "--orientation-mode",
+        choices=["position_only", "pose", "axis_aligned"],
+        default=None,
+        help="what of the hand's pose the solver follows: position_only (the default of the "
+        "shared solver profile; the arms' roll joints are held at neutral by a posture cost), "
+        "pose (position and full orientation; with the two-axis wrist a held orientation "
+        "costs centimetres of position and rolls the arm), or axis_aligned (position and the "
+        "gripper's approach axis; needs control.ik.approach_axis_tcp). Default: "
+        "control.ik.orientation_mode from the config, else position_only. Applies to the "
+        "simulation and, with --hardware, to the machine's solver",
+    )
+    arms.add_argument(
         "--orientation-weight",
         type=float,
         default=None,
         metavar="W",
-        help="weight of the hand's orientation error against its position (1.0) in the solver. "
-        "With the two-axis wrist both cannot be met at once; a low weight gives up the roll "
-        "about the gripper's axis first. Default: control.ik.orientation_cost from the "
-        f"config, else {DEFAULT_ORIENTATION_WEIGHT} (the viewer's own default is 0.15)",
+        help="weight of the hand's orientation error against its position (1.0) in the solver, "
+        "in the pose and axis_aligned modes (no effect in position_only). Default: "
+        f"control.ik.orientation_cost from the config, else {DEFAULT_ORIENTATION_WEIGHT}. "
+        "Applies to the simulation and, with --hardware, to the machine's solver",
     )
     arms.add_argument(
         "--max-hand-speed", type=float, default=0.6, help="m/s slew limit of the targets"
@@ -546,6 +558,39 @@ def _home_head_before_loop(backend: Any, bus: Any) -> Dict[str, Any]:
     return {"moved": True, "arrived": arrived, "start": home}
 
 
+def _print_joints_against_limits(system: Any) -> None:
+    """``--hardware-check``: every measured joint next to the limits the solver obeys.
+
+    The limits are the profile the control system resolved (URDF, overrides,
+    soft limits), so a joint the machine rests past them shows up here, before
+    torque is enabled, rather than as an infeasible solve later.
+    """
+    measured = system.follower_positions_urdf()
+    names = [n for n in system.model.movable_joint_names if n in measured]
+    lower, upper = system.model.position_limits(names)
+    print("  measured joints against the solver's limits (rad):")
+    outside = []
+    for i, name in enumerate(names):
+        value = measured[name]
+        lo, hi = float(lower[i]), float(upper[i])
+        flag = ""
+        if value < lo - 1e-9:
+            flag = f"  <-- {lo - value:.4f} below the lower limit"
+            outside.append(name)
+        elif value > hi + 1e-9:
+            flag = f"  <-- {value - hi:.4f} above the upper limit"
+            outside.append(name)
+        print(f"    {name:28s} {value:+8.4f}   [{lo:+8.4f}, {hi:+8.4f}]{flag}")
+    if outside:
+        print(
+            f"  {len(outside)} joint(s) rest outside the limits: {', '.join(outside)}. The solver "
+            "holds such a joint at its limit and commands it there; if the machine sits there "
+            "at rest, its recorded travel or soft limit is narrower than the machine."
+        )
+    else:
+        print("  every measured joint is inside its limits")
+
+
 def _grippers_from_calibration(control: Any, grippers: Dict[str, Dict[str, Any]]) -> Dict[str, str]:
     """Fill a side's gripper travel from ``follower_joint_calibration`` when --gripper did not.
 
@@ -875,16 +920,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not 0.0 <= args.orientation_weight <= 10.0:
             parser.error("--orientation-weight must be within [0, 10]")
         ik_overrides["orientation_cost"] = float(args.orientation_weight)
+    if args.orientation_mode is not None:
+        ik_overrides["orientation_mode"] = args.orientation_mode
     loaded = load_model(args, parser, ik_overrides=ik_overrides)
     bundle = loaded.bundle
     if loaded.ik is not None and not args.no_orientation:
         if "orientation_cost" not in loaded.ik_overrides:
             loaded.ik.solver.set_task_costs(orientation_cost=DEFAULT_ORIENTATION_WEIGHT)
-        print(
-            f"Hand orientation: weight {loaded.ik.solver.orientation_cost:.2f} against position "
-            "1.0 (--orientation-weight, or control.ik.orientation_cost, to change; the roll about "
-            "the gripper's axis is what a low weight gives up first)"
-        )
+        mode = loaded.ik.solver.orientation_mode
+        if mode == "position_only":
+            print(
+                "Hand orientation: not followed (solver mode position_only; the arms' roll "
+                "joints are held at neutral by a posture cost). --orientation-mode pose or "
+                "control.ik.orientation_mode to follow it"
+            )
+        else:
+            print(
+                f"Hand orientation: mode {mode}, weight {loaded.ik.solver.orientation_cost:.2f} "
+                "against position 1.0 (--orientation-weight, or control.ik.orientation_cost, to "
+                "change; the roll about the gripper's axis is what a low weight gives up first)"
+            )
     pair = None
     follower = None
     leader = None
@@ -910,6 +965,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 parser.error(
                     "--hardware needs control.mode: cartesian_teleop in .robopy/rakuda/config.yaml"
                 )
+            # The machine's solver takes the same orientation settings as the
+            # simulation's: the flags go into control.ik before the system is built.
+            if args.orientation_mode is not None:
+                cfg.control.ik.orientation_mode = args.orientation_mode
+            if args.orientation_weight is not None:
+                cfg.control.ik.orientation_cost = float(args.orientation_weight)
+            elif cfg.control.ik.orientation_cost is None and not args.no_orientation:
+                cfg.control.ik.orientation_cost = DEFAULT_ORIENTATION_WEIGHT
             if cfg.leader_port:
                 print("HARDWARE MODE: connecting to both arms and building Cartesian control.")
                 pair = RakudaPairSys(cfg)
@@ -962,6 +1025,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 report = system.report()
                 gaps = report["calibration_gaps"].get("follower", {})
                 print(f"  follower calibration gaps: {gaps or 'none'}")
+                _print_joints_against_limits(system)
                 print(
                     "check only: torque NOT enabled, loop NOT started. Remove --hardware-check "
                     "to drive."

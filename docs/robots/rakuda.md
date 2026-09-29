@@ -530,7 +530,8 @@ uv run --extra kinematics robopy-vr --host 0.0.0.0 --cert cert.pem --key key.pem
 
 # 実機（.robopy/rakuda/config.yaml の control.mode: cartesian_teleop が必要。ロボットが動きます）。
 #   リーダーのポートが無ければフォロワだけを駆動する。--hardware-check はトルクを入れずに接続・検証・
-#   「どのモータを駆動するか」「手先が今どこにあるか」を表示して終わる（実機に入る前の確認）
+#   「どのモータを駆動するか」「手先が今どこにあるか」「各関節の実測値とソルバが守る上下限（範囲外は印付き）」を
+#   表示して終わる（実機に入る前の確認。校正・URDF・soft limit を変えたら必ず一度見る）
 uv run --extra kinematics robopy-vr --hardware --hardware-check --follower-port /dev/ttyUSB0
 uv run --extra kinematics --extra realsense robopy-vr --hardware --follower-port /dev/ttyUSB0 --host 0.0.0.0 --self-signed
 #   ページのツインは既定で凸包（collision、2.9 MB）を描く。視覚メッシュ（53 MB）はヘッドセットでの読み込み・解析が
@@ -697,10 +698,18 @@ WebXR は https か localhost でしか動きません。方法は 2 つあり�
 自然な対応がないため）。`--no-orientation` で切れます。Rakuda の手首は 2 軸なので、向きを保った並進は
 届かないことが多く、その場合ソルバは重み付きの妥協解に落ちます（Info 表示の残差を見てください）。
 
-手先の**向きの追従の強さ**はソルバの重み `orientation_cost`（位置の重み 1.0 に対する比）で決まります。2 軸手首では
-位置と向きを同時には満たせないことが多く、重みが小さいと向き、特に**グリッパの軸まわりのロール**（手首 yaw が担う
-成分）が最初に妥協されます。VR の既定は 0.5（viewer 単体の既定は 0.15）で、`--orientation-weight W` か config の
-`control.ik.orientation_cost` で変えられます。ロールの追従が弱ければ上げ、位置がずれるようになれば下げてください。
+ソルバは viewer・VR シミュレーション・実機（`--hardware`）で**同じプロファイル**（`teleop_solver_settings`）から
+組まれ、その上に config の `control.ik` が乗ります。既定は **position_only**（手先の位置だけを追い、向きは追わない）で、
+腕のロール軸（`elbow_yaw_*`＝上腕ロール、`wrist_yaw_*`＝前腕ロール）には中立 0 へ戻す姿勢コスト（0.3）が掛かって
+います。位置だけを追うとこの 2 軸は零空間に入り、姿勢コストが無いと左右対称に外向きへ流れて 90° 近くまで
+回ってしまうためです。
+
+手先の**向き**も追わせるには `--orientation-mode pose`（または config の `control.ik.orientation_mode`）を指定します。
+向きの重みは `orientation_cost`（位置の重み 1.0 に対する比、既定 0.5、`--orientation-weight W`）です。2 軸手首では
+位置と向きを同時には満たせないことが多く、向きを保とうとするとソルバは上腕・前腕のロールを 45〜65° 回し、位置が
+数 cm ずれます。重みが小さいと向き、特に**グリッパの軸まわりのロール**が最初に妥協されます。`axis_aligned`
+（グリッパの接近軸だけ合わせ、軸まわりは自由）は `control.ik.approach_axis_tcp` を明示したときだけ選べます。
+どちらのフラグも `--hardware` では実機のソルバにも渡ります。
 
 `--mapping relative` にすると、押した瞬間の手先を基準にコントローラの移動量だけを加える方式になります
 （押しても動かず、離して腕を戻し、また押して続ける操作）。

@@ -159,7 +159,11 @@ class IKSetup:
         they are not given, and ``trajectory_profile`` names where they came
         from so the page can say so.
         """
-        from robopy.kinematics.dual_arm_ik import DualArmIK, DualArmIKConfig  # noqa: PLC0415
+        from robopy.kinematics.dual_arm_ik import (  # noqa: PLC0415
+            DualArmIK,
+            DualArmIKConfig,
+            teleop_solver_settings,
+        )
 
         names = bundle.joint_order
         torso = torso_joint or next((n for n in names if "torso" in n), None)
@@ -177,7 +181,13 @@ class IKSetup:
 
         unbounded = bundle.model.unbounded_joints([torso, *left, *right])
         self.geometric_study_only = bool(unbounded)
-        settings: Dict[str, Any] = dict(
+        # The natural-motion profile shared with the machine's control system
+        # (robopy.robots.rakuda.rakuda_control.build_model_and_ik): what is
+        # tuned here is what the machine runs.
+        settings: Dict[str, Any] = teleop_solver_settings(
+            torso, arm_joints=[*left, *right], require_soft_limits=not unbounded
+        )
+        settings.update(
             # Per-step bounds stay in place so every path is one the machine
             # could take; the trajectory mode plays them back at their timing.
             max_joint_step_rad=0.05,
@@ -187,20 +197,6 @@ class IKSetup:
             # period, so the acceleration bound means something here (the
             # legacy end-point mode still switches it off per request).
             max_joint_acceleration_rad_s2=8.0,
-            # A little more Tikhonov damping than the controller default: it
-            # penalises step size without biasing the equilibrium, which
-            # keeps a straight (singular) arm from wandering along its
-            # null space while a jog converges.
-            damping=1e-3,
-            # The natural-motion profile: hand tasks first, the posture and
-            # the joint-motion costs second; the error is corrected with a
-            # time constant so the response does not depend on the period.
-            task_priority_mode="hierarchical",
-            orientation_mode="position_only",
-            gain_time_constant_s=0.08,
-            joint_motion_cost={torso: 2.0},
-            limit_avoidance_enabled=True,
-            require_soft_limits=not unbounded,
         )
         settings.update(config_overrides or {})
         if settings.get("orientation_mode") == "axis_aligned" and not settings.get(

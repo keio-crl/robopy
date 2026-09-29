@@ -145,7 +145,11 @@ def build_model_and_ik(config: RakudaControlConfig) -> Tuple[Any, Any]:
         ValueError: If the model configuration is incomplete.
         MissingKinematicsExtra: If the optional extra is not installed.
     """
-    from robopy.kinematics.dual_arm_ik import DualArmIK, DualArmIKConfig  # noqa: PLC0415
+    from robopy.kinematics.dual_arm_ik import (  # noqa: PLC0415
+        DualArmIK,
+        DualArmIKConfig,
+        teleop_solver_settings,
+    )
     from robopy.kinematics.urdf_model import WholeBodyModel  # noqa: PLC0415
 
     spec = config.model
@@ -227,10 +231,21 @@ def build_model_and_ik(config: RakudaControlConfig) -> Tuple[Any, Any]:
         left_arm_joints=spec.left_arm_joints,
         right_arm_joints=spec.right_arm_joints,
         head_joints=spec.head_joints,
-        # control.ik is the shared behaviour (the viewer builds its solver from
-        # the same section); the loop's timing comes from the control section.
+        # The same natural-motion profile the viewer and the VR simulation
+        # start from, then control.ik on top (the viewer applies the same
+        # section); the loop's timing comes from the control section.
         config=DualArmIKConfig(
             **{
+                **teleop_solver_settings(
+                    spec.torso_joint,
+                    arm_joints=[*spec.left_arm_joints, *spec.right_arm_joints],
+                ),
+                # The one deliberate difference from the simulation: the machine's
+                # Cartesian reference governor (control.trajectory) already ramps
+                # the target's velocity and acceleration, so the solver follows
+                # the reference at full gain.  A second lag here would only add
+                # to the delay the operator feels.
+                "gain_time_constant_s": None,
                 **config.ik.solver_overrides(),
                 "compute_budget_s": config.ik_period_s,
                 "max_state_age_s": config.max_state_age_s,
@@ -238,10 +253,13 @@ def build_model_and_ik(config: RakudaControlConfig) -> Tuple[Any, Any]:
         ),
     )
     logger.info(
-        "IK: %s priority, %s hands, preferred posture %s",
+        "IK: %s priority, %s hands (orientation weight %.2f), posture %s",
         ik.config.task_priority_mode,
         ik.config.orientation_mode,
-        "configured" if ik.config.posture_reference else "the pose at alignment",
+        ik.config.orientation_cost,
+        f"cost {ik.config.posture_cost} towards {ik.config.posture_reference}"
+        if ik.config.posture_reference
+        else "the pose at alignment",
     )
     return model, ik
 

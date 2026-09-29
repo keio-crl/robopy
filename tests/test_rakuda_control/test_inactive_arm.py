@@ -124,13 +124,20 @@ def test_no_active_arms_handles_empty_qp(dual_arm_ik, whole_body_model, torso):
         assert all(result.joint_velocities_rad_s[j] == 0.0 for j in joints)
 
 
-def test_inactive_joint_limits_are_still_checked(dual_arm_ik, whole_body_model):
+def test_a_held_joint_past_its_limit_is_commanded_to_the_limit(dual_arm_ik, whole_body_model):
+    # One elbow resting past its limit must not stop the other arm: the solve
+    # goes on with the held joint taken at its limit, and that limit is what
+    # the held joint is commanded to, so it comes back inside.
     start = _zero(whole_body_model)
     target = _single(whole_body_model, start, "right")
     start["elbow_pitch_left_dof"] = 10.0
     result = dual_arm_ik.solve_step(_state(whole_body_model, start), target, DT)
-    assert result.status is DualArmIKStatus.INFEASIBLE
-    assert "Held joint" in result.message
+    assert result.is_commandable, result.message
+    _, upper = whole_body_model.position_limits(["elbow_pitch_left_dof"])
+    assert result.joint_targets_rad["elbow_pitch_left_dof"] == pytest.approx(float(upper[0]))
+    # The right arm is solved for as usual (its target is where it is: no motion asked).
+    assert all(j in result.joint_targets_rad for j in SYNTHETIC_ARM_JOINTS["right"])
+    assert result.right_position_error_m is not None
 
 
 def test_inactive_arm_collision_constraints_are_still_checked(dual_arm_ik, whole_body_model):
