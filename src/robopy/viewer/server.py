@@ -162,6 +162,7 @@ class IKSetup:
         from robopy.kinematics.dual_arm_ik import (  # noqa: PLC0415
             DualArmIK,
             DualArmIKConfig,
+            approach_axes_from_model,
             teleop_solver_settings,
         )
 
@@ -184,8 +185,19 @@ class IKSetup:
         # The natural-motion profile shared with the machine's control system
         # (robopy.robots.rakuda.rakuda_control.build_model_and_ik): what is
         # tuned here is what the machine runs.
+        approach_axes = None
+        if not (config_overrides or {}).get("approach_axis_tcp"):
+            try:
+                approach_axes = approach_axes_from_model(
+                    bundle.model, bundle.tcp_frames, {"left": left[-1], "right": right[-1]}
+                )
+            except (ValueError, KeyError):
+                approach_axes = None
         settings: Dict[str, Any] = teleop_solver_settings(
-            torso, arm_joints=[*left, *right], require_soft_limits=not unbounded
+            torso,
+            arm_joints=[*left, *right],
+            require_soft_limits=not unbounded,
+            approach_axes=approach_axes,
         )
         settings.update(
             # Per-step bounds stay in place so every path is one the machine
@@ -278,9 +290,7 @@ class IKSetup:
             "orientation_mode": self.solver.orientation_mode,
             "orientation_modes": ["position_only", "pose"]
             + (["axis_aligned"] if cfg.approach_axis_tcp is not None else []),
-            "approach_axis_tcp": None
-            if cfg.approach_axis_tcp is None
-            else list(cfg.approach_axis_tcp),
+            "approach_axis_tcp": _jsonable(cfg.approach_axis_tcp),
             "orientation_weight": self.solver.orientation_cost,
             "collision_modelled": self.collision_modelled,
             "trajectory": {

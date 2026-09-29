@@ -1,3 +1,9 @@
+// The approach axis is one [x, y, z] for both grippers, or {left: [...], right: [...]}.
+function formatApproachAxis(axis, digits) {
+  const fmt = (a) => `[${a.map((v) => Number(v).toFixed(digits)).join(', ')}]`;
+  if (Array.isArray(axis)) return fmt(axis);
+  return Object.keys(axis).map((k) => `${k} ${fmt(axis[k])}`).join(', ');
+}
 // robopy viewer -- joint-space and end-effector control of the model, no hardware.
 //
 // The page never computes kinematics itself: every pose comes from the server,
@@ -645,7 +651,7 @@ function buildModeControls(model) {
   sel.value = ik.orientation_mode;
   $('#ori-weight').value = ik.orientation_weight;
   if (ik.approach_axis_tcp) {
-    $('#ori-select-wrap').title += ` Approach axis in the TCP frame: [${ik.approach_axis_tcp.map((v) => v.toFixed(2)).join(', ')}].`;
+    $('#ori-select-wrap').title += ` Approach axis in the TCP frame: ${formatApproachAxis(ik.approach_axis_tcp, 2)}.`;
   }
   syncWeightInput();
   $('#ik-collision').hidden = ik.collision_modelled;
@@ -1199,7 +1205,7 @@ function buildInfo(model) {
     ['TCP frames', JSON.stringify(model.tcp_frames)],
     ['IK', model.ik ? `groups: ${JSON.stringify(model.ik.groups)}` : 'not available'],
     ['IK modes', model.ik ? `priority ${model.ik.priority_mode}; orientation ${model.ik.orientation_modes.join(' | ')} (default ${model.ik.orientation_mode})`
-      + (model.ik.approach_axis_tcp ? `; approach axis (TCP) [${model.ik.approach_axis_tcp.join(', ')}]` : '; no approach axis stated') : '—'],
+      + (model.ik.approach_axis_tcp ? `; approach axis (TCP) ${formatApproachAxis(model.ik.approach_axis_tcp, 3)}` : '; no approach axis stated') : '—'],
     ['collision', model.ik ? (model.ik.collision_modelled ? 'self-collision pairs registered and evaluated' : 'NOT evaluated: no collision pairs registered') : '—'],
     ['trajectory', model.ik ? `${model.ik.trajectory.profile} profile: v ≤ ${model.ik.trajectory.max_linear_velocity_m_s} m/s, a ≤ ${model.ik.trajectory.max_linear_acceleration_m_s2} m/s², ω ≤ ${model.ik.trajectory.max_angular_velocity_rad_s} rad/s, α ≤ ${model.ik.trajectory.max_angular_acceleration_rad_s2} rad/s², sample ${model.ik.trajectory.sample_period_s} s` : '—'],
     ['IK config', model.ik ? JSON.stringify(model.ik.config) : '—'],

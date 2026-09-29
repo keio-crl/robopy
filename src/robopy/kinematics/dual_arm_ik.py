@@ -110,6 +110,63 @@ HELD_JOINT_LIMIT_TOLERANCE_RAD = 0.05
 ROLL_POSTURE_COST = 0.3
 
 
+def approach_axis_for(
+    spec: Tuple[float, float, float] | Mapping[str, Sequence[float]], side: str
+) -> Tuple[float, float, float]:
+    """``side``'s approach axis from a configured value: one vector for both, or one per side."""
+    if isinstance(spec, Mapping):
+        if side not in spec:
+            raise ValueError(f"approach_axis_tcp names no '{side}' axis: {dict(spec)!r}.")
+        x, y, z = (float(v) for v in spec[side])
+    else:
+        x, y, z = (float(v) for v in spec)
+    return (x, y, z)
+
+
+def approach_axes_from_model(
+    model: Any, frames: Mapping[str, str], from_joints: Mapping[str, str]
+) -> Dict[str, Tuple[float, float, float]]:
+    """Each gripper's approach axis inferred from the model: the hand's long axis.
+
+    At the model's zero configuration the unit vector from the last wrist
+    joint's origin to the TCP origin, expressed in the TCP frame.  A gripper
+    is mounted along the hand, so this is the direction it reaches with,
+    within the fit of the model; the operator's pointing follows it and the
+    roll about it stays free.  A measured ``control.ik.approach_axis_tcp``
+    takes precedence wherever it is given.
+
+    Args:
+        model: The kinematic model.
+        frames: ``{"left": tcp_frame, "right": tcp_frame}``.
+        from_joints: ``{"left": joint, "right": joint}``: the last joint of each
+            arm (the wrist pitch), whose frame origin the axis starts from.
+
+    Raises:
+        ValueError: A frame is unknown, or the two origins coincide.
+    """
+    q0 = model.q_from_positions({name: 0.0 for name in model.movable_joint_names})
+    axes: Dict[str, Tuple[float, float, float]] = {}
+    for side in ("left", "right"):
+        tcp = np.asarray(model.frame_pose(q0, frames[side]), dtype=np.float64)
+        wrist = np.asarray(model.frame_pose(q0, from_joints[side]), dtype=np.float64)
+        along = tcp[:3, 3] - wrist[:3, 3]
+        length = float(np.linalg.norm(along))
+        if length < 1e-6:
+            raise ValueError(
+                f"{side}: the TCP frame '{frames[side]}' sits on joint '{from_joints[side]}'; no "
+                "approach direction can be read from the model."
+            )
+        in_tcp = tcp[:3, :3].T @ (along / length)
+        axes[side] = (float(in_tcp[0]), float(in_tcp[1]), float(in_tcp[2]))
+    return axes
+
+
+#: Weight of the approach-axis task against position (1.0) in
+#: :func:`teleop_solver_settings`.  Both sit in the first stage; with the
+#: two-axis wrist a pointing the arm cannot reach costs position at this ratio.
+APPROACH_AXIS_COST = 0.5
+
+
 def arm_roll_joints(joints: Sequence[str]) -> List[str]:
     """The roll joints among ``joints``: the upper-arm and forearm rolls.
 
@@ -127,6 +184,7 @@ def teleop_solver_settings(
     *,
     arm_joints: Sequence[str] = (),
     require_soft_limits: bool = True,
+    approach_axes: Mapping[str, Sequence[float]] | None = None,
 ) -> Dict[str, Any]:
     """The natural-motion solver profile every operator-facing path starts from.
 
@@ -138,9 +196,12 @@ def teleop_solver_settings(
     simulation ignored it.
 
     * hierarchical priority: the hands first, then posture and motion costs;
-    * position only by default (``control.ik.orientation_mode`` selects
-      ``pose`` or ``axis_aligned``); with the two-axis wrist a held
-      orientation costs several centimetres of position;
+    * with ``approach_axes`` (see :func:`approach_axes_from_model`):
+      ``axis_aligned`` -- position plus the direction the gripper points,
+      the roll about it free -- weighted :data:`APPROACH_AXIS_COST`; without
+      them position only.  ``control.ik.orientation_mode`` selects ``pose``
+      (full orientation) instead; with the two-axis wrist that costs several
+      centimetres of position;
     * a posture objective on the arms' roll joints (:func:`arm_roll_joints`)
       towards their neutral zero, weight :data:`ROLL_POSTURE_COST`;
     * limit avoidance near the ends of travel, and a time-constant gain so the
@@ -158,6 +219,12 @@ def teleop_solver_settings(
         limit_avoidance_enabled=True,
         require_soft_limits=require_soft_limits,
     )
+    if approach_axes:
+        settings["orientation_mode"] = "axis_aligned"
+        settings["approach_axis_tcp"] = {
+            side: tuple(float(v) for v in axis) for side, axis in approach_axes.items()
+        }
+        settings["orientation_cost"] = APPROACH_AXIS_COST
     rolls = arm_roll_joints(arm_joints)
     if rolls:
         settings["posture_cost"] = {j: ROLL_POSTURE_COST for j in rolls}
@@ -330,7 +397,7 @@ class DualArmIKConfig:
     limit_avoidance_cost: float = 1.0
     task_priority_mode: str = "weighted"
     orientation_mode: str = "pose"
-    approach_axis_tcp: Tuple[float, float, float] | None = None
+    approach_axis_tcp: Tuple[float, float, float] | Mapping[str, Sequence[float]] | None = None
     torso_regularisation: float = 1e-2
     damping: float = 1e-6
     singularity_sigma_min: float = 0.0
@@ -366,9 +433,13 @@ class DualArmIKConfig:
                 "axis in TCP coordinates is stated, not assumed to be Z."
             )
         if self.approach_axis_tcp is not None:
-            axis = np.asarray(self.approach_axis_tcp, dtype=np.float64)
-            if axis.shape != (3,) or float(np.linalg.norm(axis)) < 1e-9:
-                raise ValueError("approach_axis_tcp must be a non-zero 3-vector.")
+            for side in ("left", "right"):
+                axis = np.asarray(approach_axis_for(self.approach_axis_tcp, side), dtype=np.float64)
+                if axis.shape != (3,) or not np.all(np.isfinite(axis)) or not np.any(axis):
+                    raise ValueError(
+                        "approach_axis_tcp must be a non-zero 3-vector, or {'left': [...], "
+                        "'right': [...]} of them."
+                    )
         if self.gain_time_constant_s is not None and self.gain_time_constant_s <= 0.0:
             raise ValueError("gain_time_constant_s must be positive.")
         if self.limit_avoidance_band_rad <= 0.0 or self.limit_avoidance_cost < 0.0:
@@ -666,7 +737,7 @@ class DualArmIK:
                 self._axis_tasks[side] = AxisAlignmentTask(
                     model,
                     frame,
-                    cfg.approach_axis_tcp,
+                    approach_axis_for(cfg.approach_axis_tcp, side),
                     cost=cfg.orientation_cost * priority,
                     gain=cfg.gain,
                     lm_damping=cfg.lm_damping,

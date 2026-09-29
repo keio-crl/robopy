@@ -472,7 +472,7 @@ class TestTrajectoryMode:
         assert res["reference"]["left"]["p"] == pytest.approx(goal["p"], abs=1e-6)
         assert res["goals"]["left"]["p"] == pytest.approx(goal["p"])
         assert "collision_modelled" in res and res["priority_mode"] == "hierarchical"
-        assert res["orientation_mode"] == "position_only"
+        assert res["orientation_mode"] == "axis_aligned"  # the profile's default
         assert len(res["poses"]["geometries"]) == len(bundle.geometries)
 
     def test_a_retarget_resumes_from_the_playing_trajectory(
@@ -566,18 +566,21 @@ class TestTrajectoryMode:
                 "mode": "trajectory",
                 "joints": start,
                 "targets": {"left": goal},
-                "orientation_mode": "axis_aligned",
+                "orientation_mode": "sideways",
             },
         )
-        assert status == 400 and "approach_axis_tcp" in err["error"]
+        assert status == 400 and "orientation" in err["error"]
 
     def test_the_description_states_the_session(self, server: ViewerServer) -> None:
         _, model = _call(server, "/api/model")
         ik = model["ik"]
         assert ik["priority_mode"] == "hierarchical"
-        assert ik["orientation_mode"] == "position_only"
-        assert ik["orientation_modes"] == ["position_only", "pose"]  # no approach axis stated
-        assert ik["approach_axis_tcp"] is None
+        # The profile's default: the gripper points where the target points,
+        # along an approach axis read off the model for each side.
+        assert ik["orientation_mode"] == "axis_aligned"
+        assert ik["orientation_modes"] == ["position_only", "pose", "axis_aligned"]
+        assert set(ik["approach_axis_tcp"]) == {"left", "right"}
+        assert len(ik["approach_axis_tcp"]["left"]) == 3
         assert ik["collision_modelled"] is False  # the fixture registers no pairs
         traj = ik["trajectory"]
         assert traj["profile"] == "simulation"
@@ -625,7 +628,7 @@ class TestTrajectoryMode:
                 "mode": "trajectory",
                 "joints": start,
                 "targets": {"left": goal},
-                "orientation_mode": "position_only",
+                "orientation_mode": "axis_aligned",
             },
         )
 

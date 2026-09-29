@@ -475,9 +475,22 @@ class TestArmTeleop:
         assert measured.gripper_target(7.0) == pytest.approx(1.1)  # clamped
         arm = ArmTeleop("left", measured)
         arm.set_anchor([0.0, 0.0, 1.0], [0.0, 0.0, 1.6])
+        # The trigger drives the gripper only while the clutch is engaged.
         cmd = arm.update(
             ControllerSample(pose=np.eye(4), clutch=False, trigger=0.25), np.eye(4), 0.0
         )
+        assert cmd.gripper_rad is None
+        cmd = arm.update(
+            ControllerSample(pose=np.eye(4), clutch=True, trigger=0.25), np.eye(4), 0.1
+        )
+        assert cmd.gripper_rad == pytest.approx(0.35)
+        # Released: the last angle stays, whatever the trigger does; out of
+        # view likewise.
+        cmd = arm.update(
+            ControllerSample(pose=np.eye(4), clutch=False, trigger=1.0), np.eye(4), 0.2
+        )
+        assert cmd.gripper_rad == pytest.approx(0.35)
+        cmd = arm.update(None, np.eye(4), 0.3)
         assert cmd.gripper_rad == pytest.approx(0.35)
 
     def test_config_validation(self) -> None:
@@ -604,6 +617,7 @@ class TestDualArmTeleop:
         teleop.release_all()
         held = teleop.update({"left": None, "right": None}, hands, 1.0)
         assert not held.target.left_enabled and not held.target.right_enabled
-        assert held.gripper_targets_rad == {}
+        # Released and out of view: the gripper keeps its last commanded angle.
+        assert held.gripper_targets_rad == pytest.approx({"l_arm_grip": 0.5})
         with pytest.raises(ValueError):
             DualArmTeleop(target_ttl_s=0.0)

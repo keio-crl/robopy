@@ -148,6 +148,7 @@ def build_model_and_ik(config: RakudaControlConfig) -> Tuple[Any, Any]:
     from robopy.kinematics.dual_arm_ik import (  # noqa: PLC0415
         DualArmIK,
         DualArmIKConfig,
+        approach_axes_from_model,
         teleop_solver_settings,
     )
     from robopy.kinematics.urdf_model import WholeBodyModel  # noqa: PLC0415
@@ -223,6 +224,15 @@ def build_model_and_ik(config: RakudaControlConfig) -> Tuple[Any, Any]:
             unvalidated,
         )
 
+    approach_axes = None
+    if config.ik.approach_axis_tcp is None:
+        # The direction each gripper points, read off the model (a measured
+        # control.ik.approach_axis_tcp replaces it).
+        approach_axes = approach_axes_from_model(
+            model,
+            {"left": "left_tcp", "right": "right_tcp"},
+            {"left": spec.left_arm_joints[-1], "right": spec.right_arm_joints[-1]},
+        )
     ik = DualArmIK(
         model,
         left_frame="left_tcp",
@@ -239,6 +249,7 @@ def build_model_and_ik(config: RakudaControlConfig) -> Tuple[Any, Any]:
                 **teleop_solver_settings(
                     spec.torso_joint,
                     arm_joints=[*spec.left_arm_joints, *spec.right_arm_joints],
+                    approach_axes=approach_axes,
                 ),
                 # The one deliberate difference from the simulation: the machine's
                 # Cartesian reference governor (control.trajectory) already ramps
@@ -253,10 +264,11 @@ def build_model_and_ik(config: RakudaControlConfig) -> Tuple[Any, Any]:
         ),
     )
     logger.info(
-        "IK: %s priority, %s hands (orientation weight %.2f), posture %s",
+        "IK: %s priority, %s hands (orientation weight %.2f, approach axis %s), posture %s",
         ik.config.task_priority_mode,
         ik.config.orientation_mode,
         ik.config.orientation_cost,
+        ik.config.approach_axis_tcp,
         f"cost {ik.config.posture_cost} towards {ik.config.posture_reference}"
         if ik.config.posture_reference
         else "the pose at alignment",

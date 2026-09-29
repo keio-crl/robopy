@@ -222,7 +222,7 @@ def ensure_default_rakuda_yaml(path: Path, *, joint_names: tuple[str, ...]) -> N
             "#   ik:                        # shared by the viewer and the machine; null = default",
             "#     task_priority_mode: hierarchical   # weighted | hierarchical",
             "#     orientation_mode: position_only    # position_only | pose | axis_aligned",
-            "#     approach_axis_tcp: null            # [x, y, z] in TCP coords, for axis_aligned",
+            "#     approach_axis_tcp: null            # [x,y,z] or {left:,right:}; null: model",
             "#     preferred_posture_rad: {}          # {joint: rad}; {} = the pose at alignment",
             "#     posture_cost: null",
             "#     joint_motion_cost: null            # scalar or {joint: cost}; torso > arms",
@@ -726,9 +726,23 @@ def _parse_ik(data: dict[str, Any]) -> Any:
             out[name] = str(value)
     axis = data.get("approach_axis_tcp")
     if axis is not None:
-        if not isinstance(axis, list) or len(axis) != 3:
-            raise ValueError("control.ik.approach_axis_tcp must be [x, y, z] in TCP coordinates.")
-        out["approach_axis_tcp"] = tuple(float(v) for v in axis)
+        message = (
+            "control.ik.approach_axis_tcp must be [x, y, z] in TCP coordinates, or "
+            "{left: [x, y, z], right: [x, y, z]}."
+        )
+        if isinstance(axis, dict):
+            if set(axis) != {"left", "right"}:
+                raise ValueError(message)
+            sides = {}
+            for side, value in axis.items():
+                if not isinstance(value, list) or len(value) != 3:
+                    raise ValueError(message)
+                sides[str(side)] = tuple(float(v) for v in value)
+            out["approach_axis_tcp"] = sides
+        else:
+            if not isinstance(axis, list) or len(axis) != 3:
+                raise ValueError(message)
+            out["approach_axis_tcp"] = tuple(float(v) for v in axis)
     posture = data.get("preferred_posture_rad")
     if posture is not None:
         out["preferred_posture_rad"] = {str(j): float(v) for j, v in _as_dict(posture).items()}

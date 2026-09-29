@@ -36,6 +36,11 @@
   実機は `gain_time_constant_s=None`（参照ガバナ `control.trajectory` が加減速を担うので二重の遅れを作らない）。
 - `robopy-vr --orientation-mode / --orientation-weight` はシミュレーションと `--hardware` の両方に渡る
   （実機側は `cfg.control.ik` に書き込んでからシステムを組む）。position_only では重みは無意味。
+- 既定の向きモードは `axis_aligned`（位置＋グリッパの接近軸、軸まわりのロールは自由）。接近軸は左右で違う
+  （TCP フレームの向きが左右で別）ので `approach_axis_tcp` は `{left:, right:}` の形も取れる。未設定なら
+  `approach_axes_from_model`（手首ピッチ関節→TCP 原点、ゼロ姿勢）で読む。TCP はまだ placeholder
+  （validated false）なので、接近軸も「モデルの手の長軸」であって実測ではない。
+- グリッパはその腕のクラッチ中だけトリガ（指の握り）に追従し、離すと最後の値を保持する（`ArmTeleop._last_gripper`）。
 - Rakuda の腕は 6 軸で、`elbow_yaw_*`（上腕ロール、軸は 20° 傾斜）と `wrist_yaw_*`（前腕ロール）が
   ロール軸。position_only では 3 自由度の零空間にこの 2 軸が入り、姿勢コストが無いと左右対称に外向きへ
   ±30〜70° 流れる。pose モードでは向きを保つためにこの 2 軸を 45〜65° 回し、位置誤差が数 cm 残る。

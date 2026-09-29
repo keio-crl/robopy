@@ -81,6 +81,8 @@ class ArmTeleopConfig:
         gripper_motor: Follower motor name of this arm's gripper, or ``None``.
         gripper_open_rad: Measured gripper angle at trigger 0, or ``None``.
         gripper_closed_rad: Measured gripper angle at trigger 1, or ``None``.
+            The trigger drives the gripper only while the clutch is engaged;
+            released, the gripper keeps its last commanded angle.
         engage_radius_m: Absolute mapping only: the clutch engages only once
             the mapped target is within this distance (robot metres) of the
             current hand pose; ``None`` engages at once and lets the hand be
@@ -212,6 +214,9 @@ class ArmTeleop:
         self._last_time: float | None = None
         self._robot_anchor: NDArray[np.float64] | None = None
         self._operator_anchor: NDArray[np.float64] | None = None
+        # The gripper follows the trigger only while the clutch is engaged;
+        # otherwise the last value stays (None until the first engaged step).
+        self._last_gripper: float | None = None
 
     @property
     def clutched(self) -> bool:
@@ -284,7 +289,11 @@ class ArmTeleop:
             raise RuntimeError(
                 f"{self.side} arm: absolute mapping needs set_anchor() before update()."
             )
-        gripper = None if sample is None else c.gripper_target(sample.trigger)
+        # The gripper is driven only while this arm is being operated (the
+        # clutch engaged): a hand curling while it is not holding the arm, or
+        # while it is out of view, leaves the gripper where it was.
+        trigger_gripper = None if sample is None else c.gripper_target(sample.trigger)
+        gripper = self._last_gripper
         if sample is None or sample.pose is None:
             released = self._clutched
             self.release()
@@ -344,6 +353,9 @@ class ArmTeleop:
 
         assert self._controller0 is not None and self._hand0 is not None
         assert self._target is not None
+        if trigger_gripper is not None:
+            gripper = trigger_gripper
+            self._last_gripper = gripper
         desired = np.eye(4)
         if c.mapping == "absolute":
             # The correspondence puts the hand where the controller was at the

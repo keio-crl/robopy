@@ -10,7 +10,10 @@ import numpy as np
 import pytest
 
 from robopy.kinematics.dual_arm_ik import (
+    APPROACH_AXIS_COST,
     ROLL_POSTURE_COST,
+    approach_axes_from_model,
+    approach_axis_for,
     arm_roll_joints,
     teleop_solver_settings,
 )
@@ -50,6 +53,32 @@ def test_profile_is_position_only_with_a_roll_posture() -> None:
     assert "posture_cost" not in teleop_solver_settings("torso_yaw_dof")
 
 
+def test_profile_with_approach_axes_aligns_them() -> None:
+    axes = {"left": (0.0, 0.3, 0.95), "right": (0.0, -0.3, 0.95)}
+    settings = teleop_solver_settings("torso_yaw_dof", approach_axes=axes)
+    assert settings["orientation_mode"] == "axis_aligned"
+    assert settings["orientation_cost"] == APPROACH_AXIS_COST
+    assert settings["approach_axis_tcp"] == axes
+    assert approach_axis_for(settings["approach_axis_tcp"], "right") == (0.0, -0.3, 0.95)
+    assert approach_axis_for((0.0, 0.0, 1.0), "left") == (0.0, 0.0, 1.0)
+    with pytest.raises(ValueError, match="names no 'left'"):
+        approach_axis_for({"right": (0.0, 0.0, 1.0)}, "left")
+
+
+def test_approach_axes_are_read_off_the_model(synthetic_urdf: Path) -> None:
+    from robopy.kinematics.synthetic_dual_arm import SYNTHETIC_ARM_JOINTS
+    from robopy.viewer.model_bundle import ModelBundle
+
+    bundle = ModelBundle.load(synthetic_urdf, soft_limits=SOFT_LIMITS)
+    axes = approach_axes_from_model(
+        bundle.model,
+        bundle.tcp_frames,
+        {side: SYNTHETIC_ARM_JOINTS[side][-1] for side in ("left", "right")},
+    )
+    for side in ("left", "right"):
+        assert np.linalg.norm(axes[side]) == pytest.approx(1.0)
+
+
 def test_viewer_and_machine_build_the_same_profile(synthetic_urdf: Path) -> None:
     """The viewer's IKSetup and the control system's builder agree on the profile."""
     from robopy.kinematics.synthetic_dual_arm import SYNTHETIC_ARM_JOINTS
@@ -59,13 +88,21 @@ def test_viewer_and_machine_build_the_same_profile(synthetic_urdf: Path) -> None
 
     bundle = ModelBundle.load(synthetic_urdf, soft_limits=SOFT_LIMITS)
     described = IKSetup(bundle).describe_config()
+    axes = approach_axes_from_model(
+        bundle.model,
+        bundle.tcp_frames,
+        {side: SYNTHETIC_ARM_JOINTS[side][-1] for side in ("left", "right")},
+    )
     expected = teleop_solver_settings(
         "torso_yaw_dof",
         arm_joints=[*SYNTHETIC_ARM_JOINTS["left"], *SYNTHETIC_ARM_JOINTS["right"]],
+        approach_axes=axes,
     )
     for key in ("task_priority_mode", "orientation_mode", "limit_avoidance_enabled"):
         assert described[key] == expected[key]
+    assert described["orientation_mode"] == "axis_aligned"
     assert described["posture_cost"] == expected["posture_cost"]
+    assert described["approach_axis_tcp"] == expected["approach_axis_tcp"]
     # The machine's builder starts from the same dictionary; control.ik is
     # applied on top by both.
     assert "teleop_solver_settings(" in inspect.getsource(rakuda_control.build_model_and_ik)

@@ -180,13 +180,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--orientation-mode",
         choices=["position_only", "pose", "axis_aligned"],
         default=None,
-        help="what of the hand's pose the solver follows: position_only (the default of the "
-        "shared solver profile; the arms' roll joints are held at neutral by a posture cost), "
-        "pose (position and full orientation; with the two-axis wrist a held orientation "
-        "costs centimetres of position and rolls the arm), or axis_aligned (position and the "
-        "gripper's approach axis; needs control.ik.approach_axis_tcp). Default: "
-        "control.ik.orientation_mode from the config, else position_only. Applies to the "
-        "simulation and, with --hardware, to the machine's solver",
+        help="what of the hand's pose the solver follows: axis_aligned (the default of the "
+        "shared solver profile: position and the direction the gripper points, read off the "
+        "model or control.ik.approach_axis_tcp; the roll about it is free and the arms' roll "
+        "joints are held at neutral by a posture cost), position_only, or pose (full "
+        "orientation; with the two-axis wrist a held orientation costs centimetres of position "
+        "and rolls the arm). Default: control.ik.orientation_mode from the config, else "
+        "axis_aligned. Applies to the simulation and, with --hardware, to the machine's solver",
     )
     arms.add_argument(
         "--orientation-weight",
@@ -931,8 +931,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         if mode == "position_only":
             print(
                 "Hand orientation: not followed (solver mode position_only; the arms' roll "
-                "joints are held at neutral by a posture cost). --orientation-mode pose or "
-                "control.ik.orientation_mode to follow it"
+                "joints are held at neutral by a posture cost). --orientation-mode axis_aligned "
+                "or pose, or control.ik.orientation_mode, to follow it"
+            )
+        elif mode == "axis_aligned":
+            print(
+                f"Hand orientation: the gripper points where the hand points (axis_aligned, weight "
+                f"{loaded.ik.solver.orientation_cost:.2f} against position 1.0; the roll about the "
+                f"gripper's axis is free). Approach axis in the TCP frame: "
+                f"{loaded.ik.solver.config.approach_axis_tcp}"
             )
         else:
             print(

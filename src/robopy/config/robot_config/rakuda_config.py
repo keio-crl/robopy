@@ -232,8 +232,10 @@ class RakudaIKConfig:
             two-axis wrist the two cannot both be met in general; this says
             which gives way.  The roll about the gripper's axis is the first
             orientation component to be given up when it is low.
-        approach_axis_tcp: The gripper's approach axis in TCP coordinates,
-            needed by ``axis_aligned``.  Not assumed: state it.
+        approach_axis_tcp: The gripper's approach axis in TCP coordinates
+            for ``axis_aligned``: ``[x, y, z]`` for both grippers or
+            ``{left: [x, y, z], right: [x, y, z]}``.  Unset, it is read off
+            the model (the hand's long axis, wrist pitch to TCP at zero).
         preferred_posture_rad: ``{joint: rad}`` the posture objective pulls
             towards.  ``None`` uses the configuration at alignment.
         posture_cost: Weight of the posture objective (scalar or per joint).
@@ -265,7 +267,9 @@ class RakudaIKConfig:
     orientation_mode: str | None = None
     position_cost: float | None = None
     orientation_cost: float | None = None
-    approach_axis_tcp: Tuple[float, float, float] | None = None
+    approach_axis_tcp: Tuple[float, float, float] | Dict[str, Tuple[float, float, float]] | None = (
+        None
+    )
     preferred_posture_rad: Dict[str, float] | None = None
     posture_cost: Dict[str, float] | float | None = None
     joint_motion_cost: Dict[str, float] | float | None = None
