@@ -247,6 +247,7 @@ def teleop_solver_settings(
         damping=1e-3,
         task_priority_mode="hierarchical",
         orientation_priority="secondary",
+        orientation_joints="wrist",
         orientation_mode="position_only",
         gain_time_constant_s=0.08,
         joint_motion_cost={torso_joint: 2.0},
@@ -269,6 +270,7 @@ def teleop_solver_settings(
 ORIENTATION_MODES: Tuple[str, ...] = ("position_only", "pose", "axis_aligned")
 PRIORITY_MODES: Tuple[str, ...] = ("weighted", "hierarchical")
 ORIENTATION_PRIORITIES: Tuple[str, ...] = ("primary", "secondary")
+ORIENTATION_JOINTS: Tuple[str, ...] = ("all", "wrist")
 
 
 class DualArmIKStatus(Enum):
@@ -368,6 +370,19 @@ class DualArmIKConfig:
             point the gripper almost the same way, and unwinding them turns
             the pointing a little, which the first stage forbids); secondary
             lets the roll posture undo that.  Ignored in the weighted mode.
+        orientation_joints: Which joints produce a hand's orientation (or
+            approach axis): ``"all"`` of the arm's, or ``"wrist"`` -- only the
+            last :attr:`wrist_joint_count` of it.  With ``"wrist"`` the
+            orientation rows see the wrist's columns only and sit in the first
+            stage: the wrist points the gripper, every other joint (the elbow
+            yaw among them) places the hand, and the two do not trade.  An arm
+            joint that turns the hand while placing it is followed by the
+            wrist one cycle later; nothing turns the arm to help the wrist, so
+            the upper-arm and forearm rolls cannot wind against each other.
+            The arm's leftover freedom (the elbow's swivel) is the posture's.
+        wrist_joint_count: How many joints at the end of each arm's list make
+            the wrist for ``orientation_joints="wrist"``: two on the Rakuda
+            (wrist yaw, wrist pitch).
         approach_axis_tcp: The gripper's approach axis in TCP coordinates,
             required by ``axis_aligned``.  Not assumed to be any particular
             axis: state it.
@@ -442,6 +457,8 @@ class DualArmIKConfig:
     limit_avoidance_cost: float = 1.0
     task_priority_mode: str = "weighted"
     orientation_priority: str = "primary"
+    orientation_joints: str = "all"
+    wrist_joint_count: int = 2
     orientation_mode: str = "pose"
     approach_axis_tcp: Tuple[float, float, float] | Mapping[str, Sequence[float]] | None = None
     torso_regularisation: float = 1e-2
@@ -473,6 +490,10 @@ class DualArmIKConfig:
             raise ValueError(f"task_priority_mode must be one of {PRIORITY_MODES}.")
         if self.orientation_priority not in ORIENTATION_PRIORITIES:
             raise ValueError(f"orientation_priority must be one of {ORIENTATION_PRIORITIES}.")
+        if self.orientation_joints not in ORIENTATION_JOINTS:
+            raise ValueError(f"orientation_joints must be one of {ORIENTATION_JOINTS}.")
+        if not isinstance(self.wrist_joint_count, int) or not 1 <= self.wrist_joint_count <= 3:
+            raise ValueError("wrist_joint_count must be an integer between 1 and 3.")
         if self.orientation_mode not in ORIENTATION_MODES:
             raise ValueError(f"orientation_mode must be one of {ORIENTATION_MODES}.")
         if self.orientation_mode == "axis_aligned" and self.approach_axis_tcp is None:
@@ -736,6 +757,13 @@ class DualArmIK:
         )
         self._active_v = model.v_indices(self._active_joints)
         self._torso_slot = 0
+        # The wrist's tangent columns per side, for orientation_joints="wrist".
+        k = self._config.wrist_joint_count
+        empty = np.zeros(0, dtype=int)
+        self._wrist_v: Dict[str, NDArray[np.int_]] = {
+            "left": model.v_indices(self._left_joints[-k:]) if self._left_joints else empty,
+            "right": model.v_indices(self._right_joints[-k:]) if self._right_joints else empty,
+        }
 
         if self._config.require_soft_limits:
             unbounded = model.unbounded_joints(self._active_joints)
@@ -1018,9 +1046,22 @@ class DualArmIK:
         # With a secondary orientation (hierarchical mode) the orientation
         # rows go to ``soft_A``/``soft_b`` instead, and join the second
         # stage's objective as a weighted least-squares term.
+        wrist_only = cfg.orientation_joints == "wrist"
         secondary_orientation = (
-            cfg.task_priority_mode == "hierarchical" and cfg.orientation_priority == "secondary"
+            cfg.task_priority_mode == "hierarchical"
+            and cfg.orientation_priority == "secondary"
+            and not wrist_only
         )
+
+        def wrist_columns(A_rows: NDArray[np.float64], side: str) -> NDArray[np.float64]:
+            """The rows with every column but this side's wrist zeroed."""
+            masked = np.zeros_like(A_rows)
+            cols = self._wrist_v[side]
+            masked[:, cols] = A_rows[:, cols]
+            return masked
+
+        axis_side = {id(task): side for side, task in self._axis_tasks.items()}
+        hand_side = {id(self._left_task): "left", id(self._right_task): "right"}
         rows_A: List[NDArray[np.float64]] = []
         rows_b: List[NDArray[np.float64]] = []
         soft_A: List[NDArray[np.float64]] = []
@@ -1032,6 +1073,11 @@ class DualArmIK:
             W = np.asarray(task.cost, dtype=np.float64)
             weighted_J = W[:, None] * J
             weighted_error = task.gain * W * e
+            if wrist_only and weighted_J.shape[0] == 6 and id(task) in hand_side:
+                # Position over every joint; the rotation over the wrist alone.
+                weighted_J = np.vstack(
+                    [weighted_J[:3], wrist_columns(weighted_J[3:], hand_side[id(task)])]
+                )
             if secondary_orientation and weighted_J.shape[0] == 6:
                 # Pinocchio's convention: linear rows first, then angular.
                 rows_A.append(weighted_J[:3])
@@ -1046,6 +1092,8 @@ class DualArmIK:
             lm += task.lm_damping * float(weighted_error @ weighted_error)
         for axis in axis_tasks:
             A_t, b_t = axis.weighted_rows(q)
+            if wrist_only and id(axis) in axis_side:
+                A_t = wrist_columns(np.asarray(A_t, dtype=np.float64), axis_side[id(axis)])
             if secondary_orientation:
                 soft_A.append(A_t)
                 soft_b.append(b_t)

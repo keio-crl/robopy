@@ -261,6 +261,7 @@ class IKSetup:
             for name in (
                 "task_priority_mode",
                 "orientation_priority",
+                "orientation_joints",
                 "orientation_mode",
                 "approach_axis_tcp",
                 "posture_cost",

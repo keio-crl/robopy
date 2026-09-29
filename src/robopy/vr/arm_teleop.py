@@ -400,7 +400,7 @@ class ArmTeleop:
             axis = np.asarray(c.approach_axis, dtype=np.float64)
             R0 = self._hand0[:3, :3]
             desired[:3, :3] = (
-                _rotation_between(R0 @ (axis / np.linalg.norm(axis)), sample.pointing) @ R0
+                rotation_between(R0 @ (axis / np.linalg.norm(axis)), sample.pointing) @ R0
             )
         elif c.orientation_enabled:
             desired[:3, :3] = pose[:3, :3] @ self._controller0[:3, :3].T @ self._hand0[:3, :3]
@@ -503,7 +503,7 @@ def _orthonormalize(R: NDArray[np.float64]) -> NDArray[np.float64]:
     return out
 
 
-def _rotation_between(a: NDArray[np.float64], b: NDArray[np.float64]) -> NDArray[np.float64]:
+def rotation_between(a: NDArray[np.float64], b: NDArray[np.float64]) -> NDArray[np.float64]:
     """The least rotation taking direction ``a`` onto direction ``b``."""
     a = np.asarray(a, dtype=np.float64) / np.linalg.norm(a)
     b = np.asarray(b, dtype=np.float64) / np.linalg.norm(b)

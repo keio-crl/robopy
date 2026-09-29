@@ -589,7 +589,34 @@ const markerMaterials = {
 };
 const markerRing = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, wireframe: true });
 
+// The TCP frame the robot's hand is asked to take, drawn at the operator's hand
+// with the twin's TCP colours (x red-orange, y green, z blue): once the robot
+// has turned, the twin's TCP axes lie parallel to these.
+const handAxes = {};
+function updateHandAxes(arms) {
+  for (const side of ['left', 'right']) {
+    const f = arms && arms[side] && arms[side].tracked !== false ? arms[side].hand_frame : null;
+    let axes = handAxes[side];
+    if (!f) { if (axes) axes.visible = false; continue; }
+    if (!axes) {
+      axes = new THREE.AxesHelper(0.10);
+      axes.matrixAutoUpdate = false;
+      scene.add(axes);
+      handAxes[side] = axes;
+    }
+    const pageFrame = new THREE.Matrix4().compose(
+      new THREE.Vector3(f.p[0], f.p[1], f.p[2]),
+      new THREE.Quaternion(f.q[0], f.q[1], f.q[2], f.q[3]),
+      new THREE.Vector3(1, 1, 1),
+    );
+    // Page coordinates are robot axes: turn them into WebXR's, as the twin is.
+    axes.matrix.copy(XR_FROM_ROBOT).multiply(pageFrame);
+    axes.visible = true;
+  }
+}
+
 function updateMarkers(arms) {
+  updateHandAxes(arms);
   for (const side of ['left', 'right']) {
     const a = arms && arms[side];
     const engage = a && a.engage;

@@ -49,6 +49,7 @@ def test_profile_is_position_only_with_a_roll_posture() -> None:
     assert settings["orientation_mode"] == "position_only"
     assert settings["task_priority_mode"] == "hierarchical"
     assert settings["orientation_priority"] == "secondary"
+    assert settings["orientation_joints"] == "wrist"
     assert settings["limit_avoidance_enabled"] is True
     assert settings["posture_cost"] == {"elbow_yaw_left_dof": ROLL_POSTURE_COST}
     assert settings["posture_reference"] == {"elbow_yaw_left_dof": 0.0}
@@ -191,3 +192,56 @@ def test_a_configured_neutral_moves_one_joint_and_keeps_the_others() -> None:
     assert merged["posture_reference"] == {"elbow_yaw_right_dof": 0.0, "wrist_yaw_right_dof": 1.55}
     assert merged["posture_cost"] == profile["posture_cost"]
     assert merged["damping"] == 0.5
+
+
+def test_with_wrist_orientation_a_turn_of_the_hand_moves_only_the_wrist(
+    synthetic_urdf: Path,
+) -> None:
+    """Pointing the gripper elsewhere, the hand staying put: the wrist does it, not the arm."""
+    from robopy.control.types import DualArmTarget, TorsoPolicy
+    from robopy.kinematics.synthetic_dual_arm import SYNTHETIC_ARM_JOINTS
+    from robopy.viewer.model_bundle import ModelBundle
+    from robopy.viewer.server import IKSetup
+    from robopy.vr.arm_teleop import rotation_between
+    from robopy.vr.backend import SimulationBackend, TeleopCommand
+
+    bundle = ModelBundle.load(synthetic_urdf, soft_limits=SOFT_LIMITS)
+    setup = IKSetup(bundle, config_overrides={"max_state_age_s": 10.0})
+    cfg = setup.solver.config
+    if cfg.orientation_mode != "axis_aligned":
+        pytest.skip("no approach axis could be read off the synthetic model")
+    assert cfg.orientation_joints == "wrist"
+    left = SYNTHETIC_ARM_JOINTS["left"]
+    start = {left[3]: 0.6, left[5]: 0.3}  # an elbow bend and a wrist pitch, away from singular
+    backend = SimulationBackend(bundle, setup, initial_positions=start)
+    hand = backend.hand_pose("left").copy()
+    from robopy.kinematics.dual_arm_ik import approach_axis_for
+
+    a = hand[:3, :3] @ np.asarray(approach_axis_for(cfg.approach_axis_tcp, "left"))
+    tilt = rotation_between(a, a + np.array([0.0, 0.15, 0.0]))  # about 8 degrees
+    goal = hand.copy()
+    goal[:3, :3] = tilt @ hand[:3, :3]
+    before = backend.joint_positions()
+    t = 0.0
+    for _ in range(100):
+        t += 1.0 / 50.0
+        target = DualArmTarget(
+            left_target=goal,
+            right_target=None,
+            left_enabled=True,
+            right_enabled=False,
+            torso_policy=TorsoPolicy.FIXED,
+            created_ns=time.monotonic_ns(),
+            expiry_ns=time.monotonic_ns() + 10**9,
+        )
+        report = backend.apply(TeleopCommand(arm_target=target, stamp_s=t))
+        assert report.ik_commandable, report.ik_message
+    after = backend.joint_positions()
+    wrist_moved = max(abs(after[j] - before[j]) for j in left[-2:])
+    assert wrist_moved > 0.05
+    got = backend.hand_pose("left")[:3, :3] @ np.asarray(
+        approach_axis_for(cfg.approach_axis_tcp, "left")
+    )
+    want = goal[:3, :3] @ np.asarray(approach_axis_for(cfg.approach_axis_tcp, "left"))
+    assert float(got @ want) / (np.linalg.norm(got) * np.linalg.norm(want)) > np.cos(0.05)
+    assert float(np.linalg.norm(backend.hand_pose("left")[:3, 3] - hand[:3, 3])) < 0.01

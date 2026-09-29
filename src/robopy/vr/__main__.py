@@ -190,6 +190,15 @@ def build_parser() -> argparse.ArgumentParser:
         "axis_aligned. Applies to the simulation and, with --hardware, to the machine's solver",
     )
     arms.add_argument(
+        "--orientation-joints",
+        choices=["wrist", "all"],
+        default=None,
+        help="which joints point the gripper: wrist (the default of the shared profile: the two "
+        "wrist joints alone, every other joint -- the elbow yaw too -- places the hand) or all "
+        "(every arm joint, orientation weighed against the roll posture). Default: "
+        "control.ik.orientation_joints, else wrist. Applies to --hardware too",
+    )
+    arms.add_argument(
         "--orientation-weight",
         type=float,
         default=None,
@@ -945,6 +954,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         ik_overrides["orientation_cost"] = float(args.orientation_weight)
     if args.orientation_mode is not None:
         ik_overrides["orientation_mode"] = args.orientation_mode
+    if args.orientation_joints is not None:
+        ik_overrides["orientation_joints"] = args.orientation_joints
     loaded = load_model(args, parser, ik_overrides=ik_overrides)
     bundle = loaded.bundle
     if loaded.ik is not None and not args.no_orientation:
@@ -999,6 +1010,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             # simulation's: the flags go into control.ik before the system is built.
             if args.orientation_mode is not None:
                 cfg.control.ik.orientation_mode = args.orientation_mode
+            if args.orientation_joints is not None:
+                cfg.control.ik.orientation_joints = args.orientation_joints
             if args.orientation_weight is not None:
                 cfg.control.ik.orientation_cost = float(args.orientation_weight)
             elif cfg.control.ik.orientation_cost is None and not args.no_orientation:

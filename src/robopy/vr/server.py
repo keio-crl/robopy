@@ -75,7 +75,7 @@ from numpy.typing import NDArray
 from robopy.viewer.model_bundle import ModelBundle, matrix_to_pose
 from robopy.viewer.server import IKSetup, ViewerServer, _Handler
 
-from .arm_teleop import ControllerSample, DualArmTeleop
+from .arm_teleop import ControllerSample, DualArmTeleop, rotation_between
 from .backend import TeleopBackend, TeleopCommand
 from .camera import FrameStreamer, SyntheticFrameSource
 from .hand_tracking import (
@@ -304,6 +304,8 @@ class TeleopSession:
         self._last_head: Dict[str, Any] = {}
         self._last_arms: Dict[str, Any] = {}
         self._last_controller_base: Dict[str, Any] = {}
+        # The hand's pose and pointing in the operator frame, for the hand's axes.
+        self._last_hand_op: Dict[str, Any] = {}
         self._last_report: Any = None
         self.hands: Dict[str, HandInput] | None = None
         self._hand_gestures: TwoHandGestures | None = None
@@ -652,6 +654,7 @@ class TeleopSession:
                     "hand": _describe_hand(readings.get(side)),
                     "waiting": cmd.waiting,
                     "engage": self._engage_marker(side, cmd, hand_poses[side]),
+                    "hand_frame": self._hand_frame(side, cmd, hand_poses[side]),
                 }
                 for side, cmd in output.commands.items()
             }
@@ -688,6 +691,36 @@ class TeleopSession:
         self.arms_enabled = False
         if self.arm_teleop is not None:
             self.arm_teleop.release_all()
+
+    def _hand_frame(
+        self, side: str, command: Any, robot_hand_pose: NDArray[np.float64]
+    ) -> Dict[str, Any] | None:
+        """The TCP frame the robot's hand is asked to take, drawn at the operator's hand.
+
+        Page coordinates, as the twin's TCP axes are sent, so the two sets of
+        axes can be compared: once the robot has turned, the twin's TCP axes
+        lie parallel to these.  While the arm is held it is the commanded
+        target's orientation; otherwise the one a grasp would ask for now --
+        the approach axis turned onto the hand's pointing.  ``None`` without a
+        tracked hand, a pointing or an approach axis.
+        """
+        if self.arm_teleop is None:
+            return None
+        hand = self._last_hand_op.get(side)
+        axis = self.arm_teleop.arms[side].config.approach_axis
+        if hand is None or axis is None:
+            return None
+        position_op, pointing = hand
+        if command.clutched and command.target is not None:
+            R = np.asarray(command.target, dtype=np.float64)[:3, :3]
+        else:
+            R_now = np.asarray(robot_hand_pose, dtype=np.float64)[:3, :3]
+            a = R_now @ (np.asarray(axis, dtype=np.float64) / np.linalg.norm(axis))
+            R = rotation_between(a, pointing) @ R_now
+        T = np.eye(4)
+        T[:3, :3] = R
+        T[:3, 3] = position_op
+        return matrix_to_pose(self.operator.from_operator(T))
 
     def _engage_marker(
         self, side: str, command: Any, robot_hand_pose: NDArray[np.float64]
@@ -784,6 +817,12 @@ class TeleopSession:
                         else {},
                         stamp_s=now_s,
                     )
+            sample = samples.get(side)
+            self._last_hand_op[side] = (
+                None
+                if pose_op is None or sample is None or sample.pointing is None
+                else (pose_op[:3, 3].copy(), np.asarray(sample.pointing, dtype=np.float64))
+            )
             if pose_op is None:
                 continue
             # Where the device is in the robot's frame under the absolute
