@@ -775,8 +775,8 @@ function renderStatus() {
     } else lines.push('arms      off (no teleop)');
     if (h.hands) {
       const g = h.hands;
-      const clutch = g.clutch_gesture === 'pinch' ? 'pinch (thumb+index)' : 'always while tracked';
-      const gripper = { curl: 'curl the other fingers', pinch: 'pinch strength', none: 'off' }[g.gripper_gesture] || g.gripper_gesture;
+      const clutch = { pinch: 'pinch (thumb+index)', grip: 'grip (middle+ring+little curled)', always: 'always while tracked' }[g.clutch_gesture] || g.clutch_gesture;
+      const gripper = { curl: 'curl the other fingers', pinch: 'thumb-index distance', none: 'off' }[g.gripper_gesture] || g.gripper_gesture;
       const gate = g.engage_radius_m ? `  engage within ${(g.engage_radius_m * 100).toFixed(0)}cm of the marker` : '';
       lines.push(`hands     clutch ${clutch}  gripper ${gripper}  at ${g.reference}${gate}`);
       const opened = g.open_recenter_hold_s ? `   re-centre: both hands open (palms away) ${g.open_recenter_hold_s}s` : '';
@@ -818,7 +818,7 @@ function renderStatus() {
         hint = 'pinch thumb+index';
         lost = a.hand && a.hand.problem ? `hand: ${a.hand.problem}` : (state.hello && state.hello.hands ? 'hand not tracked' : 'hand ignored (server started without hands)');
         if (a.hand && a.hand.tracked) {
-          extra = `  pinch ${a.hand.pinch_m != null ? (a.hand.pinch_m * 1000).toFixed(0) + 'mm' : '—'}${a.hand.curl != null ? `  curl ${(a.hand.curl * 100).toFixed(0)}%` : ''}${a.hand.middle_pinch ? '  MIDDLE PINCH' : ''}`;
+          extra = `  pinch ${a.hand.pinch_m != null ? (a.hand.pinch_m * 1000).toFixed(0) + 'mm' : '—'}${a.hand.curl != null ? `  curl ${(a.hand.curl * 100).toFixed(0)}%` : ''}${a.hand.grip ? '  GRIP' : ''}${a.hand.middle_pinch ? '  MIDDLE PINCH' : ''}`;
         }
       }
       let status;

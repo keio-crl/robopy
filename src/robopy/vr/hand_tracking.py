@@ -11,12 +11,16 @@ interprets the hand: every gesture is decided here, where it can be tested.
 What stands in for the controller's buttons:
 
 * **clutch** -- a *pinch* of the thumb and index fingertips (with hysteresis:
-  engaged below ``pinch_on_m``, released above ``pinch_off_m``), or, with
-  ``clutch_gesture="always"``, the mere fact that the hand is tracked;
+  engaged below ``pinch_on_m``, released above ``pinch_off_m``); or a *grip*:
+  the middle, ring and little fingers curled into the palm (``"grip"``,
+  engaged at ``grip_on`` curl, released below ``grip_off``), holding the arm
+  the way one holds a handle; or, with ``clutch_gesture="always"``, the mere
+  fact that the hand is tracked;
 * **gripper (the trigger)** -- how far the middle, ring and little fingers are
-  *curled* into the palm (``"curl"``, the default: pinch to hold the arm, close
-  the rest of the hand to close the gripper), or the index pinch itself
-  (``"pinch"``, for the always-on clutch), or nothing;
+  *curled* into the palm (``"curl"``: pinch to hold the arm, close the rest of
+  the hand to close the gripper), or how close the thumb and index tips are
+  (``"pinch"``: with the grip clutch, hold the arm with the last three fingers
+  and pinch to close the gripper; or with the always-on clutch), or nothing;
 * **re-centre (both thumbstick clicks)** -- a pinch of the thumb and *middle*
   fingertips on both hands at once, or both hands held open -- all fingers
   straight, no pinch, palms turned *away* from the headset (the stop sign
@@ -146,9 +150,14 @@ class HandTrackingConfig:
 
     Attributes:
         clutch_gesture: ``"pinch"`` (thumb and index tips together drive the
-            arm; the default) or ``"always"`` (the arm follows whenever the
-            hand is tracked -- with the absolute mapping the hand then goes
-            to the operator's the moment it is seen).
+            arm; the default), ``"grip"`` (the middle, ring and little fingers
+            curled into the palm drive it; the thumb and index are left for
+            the gripper) or ``"always"`` (the arm follows whenever the hand is
+            tracked -- with the absolute mapping the hand then goes to the
+            operator's the moment it is seen).  While a grip is held the
+            middle-finger pinch (re-centre, record) is not read -- a curled
+            middle finger meets the thumb by accident -- and the two-fist end
+            sign is off, a fist being the grip itself.
         gripper_gesture: ``"curl"`` (middle, ring and little fingers closed
             into the palm = closed gripper), ``"pinch"`` (the index pinch, fully
             open at ``pinch_open_m``) or ``"none"``.  As with the trigger the
@@ -166,6 +175,11 @@ class HandTrackingConfig:
         curl_open_ratio: Tip-to-knuckle distance over the finger's length at
             which a finger counts as straight (gripper open).
         curl_closed_ratio: The ratio at which it counts as fully curled.
+        grip_on: For ``clutch_gesture="grip"``: the mean curl of the middle,
+            ring and little fingers (0 straight, 1 fully curled) at which the
+            grip engages.
+        grip_off: The curl below which an engaged grip releases; the gap to
+            ``grip_on`` is the hysteresis.
         record_hold_s: How long a one-handed middle pinch is held to toggle
             the recording.
         engage_radius_m: How close (robot metres) the mapped hand must come to
@@ -186,7 +200,7 @@ class HandTrackingConfig:
             ends; ``None`` turns that sign off (the long stop sign still ends).
     """
 
-    clutch_gesture: Literal["pinch", "always"] = "pinch"
+    clutch_gesture: Literal["pinch", "grip", "always"] = "pinch"
     gripper_gesture: Literal["curl", "pinch", "none"] = "curl"
     reference: Literal["palm", "wrist", "pinch"] = "palm"
     pinch_on_m: float = 0.02
@@ -194,6 +208,8 @@ class HandTrackingConfig:
     pinch_open_m: float = 0.08
     curl_open_ratio: float = 0.9
     curl_closed_ratio: float = 0.45
+    grip_on: float = 0.6
+    grip_off: float = 0.35
     record_hold_s: float = 1.0
     engage_radius_m: float | None = 0.05
     pause_hold_s: float = 0.5
@@ -204,8 +220,8 @@ class HandTrackingConfig:
     end_fist_hold_s: float | None = 1.5
 
     def __post_init__(self) -> None:
-        if self.clutch_gesture not in ("pinch", "always"):
-            raise ValueError("clutch_gesture must be 'pinch' or 'always'.")
+        if self.clutch_gesture not in ("pinch", "grip", "always"):
+            raise ValueError("clutch_gesture must be 'pinch', 'grip' or 'always'.")
         if self.gripper_gesture not in ("curl", "pinch", "none"):
             raise ValueError("gripper_gesture must be 'curl', 'pinch' or 'none'.")
         if self.reference not in ("palm", "wrist", "pinch"):
@@ -215,6 +231,13 @@ class HandTrackingConfig:
                 "the index pinch cannot be both the clutch and the gripper; use "
                 "gripper_gesture='curl' (or 'none'), or clutch_gesture='always'."
             )
+        if self.clutch_gesture == "grip" and self.gripper_gesture == "curl":
+            raise ValueError(
+                "the curled fingers cannot be both the clutch and the gripper; use "
+                "gripper_gesture='pinch' (or 'none') with clutch_gesture='grip'."
+            )
+        if not 0.0 < self.grip_off < self.grip_on <= 1.0:
+            raise ValueError("Need 0 < grip_off < grip_on <= 1.")
         if not 0.0 < self.pinch_on_m < self.pinch_off_m:
             raise ValueError("Need 0 < pinch_on_m < pinch_off_m.")
         if self.pinch_open_m <= self.pinch_off_m:
@@ -237,7 +260,12 @@ class HandTrackingConfig:
     @property
     def open_recenter(self) -> bool:
         """Whether holding both hands open re-centres."""
-        return self.open_recenter_hold_s is not None and self.clutch_gesture == "pinch"
+        return self.open_recenter_hold_s is not None and self.clutch_gesture != "always"
+
+    @property
+    def end_fist(self) -> bool:
+        """Whether two held fists end the session (not with the grip clutch)."""
+        return self.end_fist_hold_s is not None and self.clutch_gesture != "grip"
 
     @property
     def required_joints(self) -> Tuple[str, ...]:
@@ -245,7 +273,7 @@ class HandTrackingConfig:
         joints = ["wrist", "thumb-tip", "index-finger-tip", "middle-finger-tip"]
         if self.reference == "palm":
             joints.append("middle-finger-phalanx-proximal")
-        if self.gripper_gesture == "curl":
+        if self.gripper_gesture == "curl" or self.clutch_gesture == "grip":
             for finger in CURL_FINGERS:
                 joints.extend(FINGERS[finger])
         return tuple(dict.fromkeys(joints))
@@ -261,12 +289,14 @@ class HandTrackingConfig:
             "pinch_open_m": self.pinch_open_m,
             "curl_open_ratio": self.curl_open_ratio,
             "curl_closed_ratio": self.curl_closed_ratio,
+            "grip_on": self.grip_on,
+            "grip_off": self.grip_off,
             "record_hold_s": self.record_hold_s,
             "engage_radius_m": self.engage_radius_m,
             "pause_hold_s": self.pause_hold_s,
             "end_hold_s": self.end_hold_s,
             "open_recenter_hold_s": self.open_recenter_hold_s if self.open_recenter else None,
-            "end_fist_hold_s": self.end_fist_hold_s,
+            "end_fist_hold_s": self.end_fist_hold_s if self.end_fist else None,
         }
 
 
@@ -409,6 +439,7 @@ class HandReading:
         pinch_m: Thumb-to-index tip distance, if measured.
         middle_pinch: Whether the middle pinch is engaged.
         middle_pinch_m: Thumb-to-middle tip distance, if measured.
+        grip: Whether the grip clutch is engaged (``clutch_gesture="grip"``).
         curl: Mean curl of the free fingers in ``[0, 1]``, if measured.
         gripper: The trigger-equivalent in ``[0, 1]`` (1 = closed).
         stop_sign: The open palm is turned towards the headset (fingers
@@ -427,6 +458,7 @@ class HandReading:
     pinch_m: float | None = None
     middle_pinch: bool = False
     middle_pinch_m: float | None = None
+    grip: bool = False
     curl: float | None = None
     gripper: float = 0.0
     stop_sign: bool = False
@@ -442,6 +474,7 @@ class HandReading:
             "pinch_m": self.pinch_m,
             "middle_pinch": self.middle_pinch,
             "middle_pinch_m": self.middle_pinch_m,
+            "grip": self.grip,
             "curl": self.curl,
             "gripper": self.gripper,
             "stop_sign": self.stop_sign,
@@ -484,12 +517,14 @@ class HandInput:
         self.config = config or HandTrackingConfig()
         self._pinch = _Pinch(self.config.pinch_on_m, self.config.pinch_off_m)
         self._middle = _Pinch(self.config.pinch_on_m, self.config.pinch_off_m)
+        self._grip = False
         self.last = HandReading(sample=None, tracked=False)
 
     def reset(self) -> None:
         """Forget any engaged gesture (the hand was lost, or the operator re-centred)."""
         self._pinch.engaged = False
         self._middle.engaged = False
+        self._grip = False
         self.last = HandReading(sample=None, tracked=False)
 
     def update(
@@ -526,24 +561,37 @@ class HandInput:
         middle = self._middle.update(middle_m)
         curl: float | None = None
         gripper = 0.0
-        if c.gripper_gesture == "curl":
+        if c.gripper_gesture == "curl" or c.clutch_gesture == "grip":
             span = c.curl_open_ratio - c.curl_closed_ratio
             curls = [
                 min(1.0, max(0.0, (c.curl_open_ratio - frame.curl_ratio(f)) / span))
                 for f in CURL_FINGERS
             ]
             curl = float(np.mean(curls))
+        if c.gripper_gesture == "curl" and curl is not None:
             gripper = curl
         elif c.gripper_gesture == "pinch":
             span = c.pinch_open_m - c.pinch_on_m
             gripper = min(1.0, max(0.0, (c.pinch_open_m - pinch_m) / span))
-        clutch = pinch if c.clutch_gesture == "pinch" else True
+        if c.clutch_gesture == "grip" and curl is not None:
+            self._grip = curl >= c.grip_off if self._grip else curl >= c.grip_on
+            if self._grip:
+                # A curled middle finger meets the thumb by accident while the
+                # index pinches: no re-centre or recording from a held grip.
+                middle = False
+                self._middle.engaged = False
+        clutch = {"pinch": pinch, "grip": self._grip}.get(c.clutch_gesture, True)
         stop_sign = False
         straight = not (pinch or middle) and all(
             frame.has(*FINGERS[f]) and frame.curl_ratio(f) >= c.straight_ratio for f in FINGERS
         )
-        fist = not (pinch or middle) and all(
-            frame.has(*FINGERS[f]) and frame.curl_ratio(f) <= c.curl_closed_ratio for f in FINGERS
+        fist = (
+            c.end_fist
+            and not (pinch or middle)
+            and all(
+                frame.has(*FINGERS[f]) and frame.curl_ratio(f) <= c.curl_closed_ratio
+                for f in FINGERS
+            )
         )
         if head_position_m is not None and straight:
             normal = frame.palm_normal(self.side)
@@ -558,6 +606,7 @@ class HandInput:
             trigger=gripper,
             buttons={
                 "pinch": pinch,
+                "grip": self._grip,
                 "middle_pinch": middle,
                 "stop_sign": stop_sign,
                 "open_hand": straight and not stop_sign,
@@ -573,6 +622,7 @@ class HandInput:
             pinch_m=pinch_m,
             middle_pinch=middle,
             middle_pinch_m=middle_m,
+            grip=self._grip,
             curl=curl,
             gripper=gripper,
             stop_sign=stop_sign,
@@ -707,7 +757,7 @@ class TwoHandGestures:
             if hold_s is not None and now_s - self._open.started_s >= hold_s:
                 self._open.fired = True
                 recenter = resume = True
-        fists = self.config.end_fist_hold_s is not None and all(
+        fists = self.config.end_fist and all(
             r is not None and r.tracked and r.fist
             for r in (readings.get("left"), readings.get("right"))
         )

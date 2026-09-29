@@ -40,7 +40,10 @@
   （TCP フレームの向きが左右で別）ので `approach_axis_tcp` は `{left:, right:}` の形も取れる。未設定なら
   `approach_axes_from_model`（手首ピッチ関節→TCP 原点、ゼロ姿勢）で読む。TCP はまだ placeholder
   （validated false）なので、接近軸も「モデルの手の長軸」であって実測ではない。
-- グリッパはその腕のクラッチ中だけトリガ（指の握り）に追従し、離すと最後の値を保持する（`ArmTeleop._last_gripper`）。
+- グリッパはその腕のクラッチ中だけトリガに追従し、離すと最後の値を保持する（`ArmTeleop._last_gripper`）。
+- 素手の既定（robopy-vr の CLI 既定）はクラッチ＝中指・薬指・小指の握り込み（`grip`）、グリッパ＝親指と人差し指の
+  距離（`pinch`）。`HandTrackingConfig` 自体の既定は旧方式（pinch / curl）のままで、既存テストはそれを前提にしている。
+  グリップ中は中指ピンチ（リセンター・録画）を読まず、両拳の終了サインも無効（拳＝グリップ）。
 - Rakuda の腕は 6 軸で、`elbow_yaw_*`（上腕ロール、軸は 20° 傾斜）と `wrist_yaw_*`（前腕ロール）が
   ロール軸。position_only では 3 自由度の零空間にこの 2 軸が入り、姿勢コストが無いと左右対称に外向きへ
   ±30〜70° 流れる。pose モードでは向きを保つためにこの 2 軸を 45〜65° 回し、位置誤差が数 cm 残る。
@@ -64,7 +67,8 @@
 
 ## 実機の運用メモ
 
-- FTDI の `latency_timer` が 16 ms のままだと 17 モータの一括読み出しが 50 ms 予算を超えて
-  サーボがフォールトする。起動前に
+- FTDI の `latency_timer` が 16 ms のままだと 17 モータの一括読み出しが時々 50 ms 予算を超える。
+  超えた読み取り（タイムアウト・通信エラー・サンプル時刻の広がり過多）は 1 回ならその周期を指令なしで
+  飛ばし、`max_slow_reads`（既定 5）回連続で初めてフォールトする。根本対策は起動前に
   `echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer`。
 - 変更後の確認は `robopy-vr --hardware --hardware-check`（トルクを入れずに構成だけ検証）。

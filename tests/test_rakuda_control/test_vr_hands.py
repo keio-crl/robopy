@@ -236,6 +236,7 @@ class TestHandInput:
         assert pinched.pinch and pinched.sample is not None and pinched.sample.clutch
         assert pinched.sample.buttons == {
             "pinch": True,
+            "grip": False,
             "middle_pinch": False,
             "stop_sign": False,
             "open_hand": False,
@@ -512,6 +513,45 @@ def pose(t: float = 0.0, **sides: Any) -> Dict[str, Any]:
     msg: Dict[str, Any] = {"type": "pose", "t": t, "head": HEAD0, "left": None, "right": None}
     msg.update(sides)
     return msg
+
+
+class TestGripClutch:
+    """The grip clutch: the last three fingers hold the arm, thumb and index work the gripper."""
+
+    CFG = HandTrackingConfig(clutch_gesture="grip", gripper_gesture="pinch")
+
+    def test_a_curled_hand_holds_the_arm_and_the_pinch_is_the_gripper(self) -> None:
+        hand = HandInput("left", self.CFG)
+        open_ = hand.update(HandFrame.from_message(hand_entry(curl=0.0)["hand"]), 0.0)
+        assert open_.sample is not None and not open_.sample.clutch and not open_.grip
+        gripped = hand.update(HandFrame.from_message(hand_entry(curl=1.0)["hand"]), 0.1)
+        assert gripped.sample is not None and gripped.sample.clutch and gripped.grip
+        assert gripped.gripper == pytest.approx(0.0)  # thumb far from the index: open
+        closed = hand.update(
+            HandFrame.from_message(hand_entry(curl=1.0, pinch=True)["hand"]), 0.2
+        )
+        assert closed.sample is not None and closed.sample.clutch
+        assert closed.gripper > 0.9  # thumb on the index: closed
+        # Hysteresis: a slightly relaxed grip still holds; opened, it lets go.
+        half = hand.update(HandFrame.from_message(hand_entry(curl=0.6)["hand"]), 0.3)
+        assert half.curl is not None and self.CFG.grip_off <= half.curl < self.CFG.grip_on
+        assert half.sample is not None and half.sample.clutch
+        released = hand.update(HandFrame.from_message(hand_entry(curl=0.0)["hand"]), 0.4)
+        assert released.sample is not None and not released.sample.clutch
+
+    def test_a_held_grip_reads_no_middle_pinch_and_no_fist(self) -> None:
+        hand = HandInput("right", self.CFG)
+        reading = hand.update(
+            HandFrame.from_message(hand_entry(curl=1.0, middle_pinch=True)["hand"]), 0.0
+        )
+        assert reading.grip and not reading.middle_pinch and not reading.fist
+        assert self.CFG.describe()["end_fist_hold_s"] is None
+
+    def test_curl_cannot_be_both(self) -> None:
+        with pytest.raises(ValueError, match="both the clutch and the gripper"):
+            HandTrackingConfig(clutch_gesture="grip", gripper_gesture="curl")
+        with pytest.raises(ValueError, match="grip_off"):
+            HandTrackingConfig(clutch_gesture="grip", gripper_gesture="pinch", grip_on=0.3)
 
 
 class TestHandSession:

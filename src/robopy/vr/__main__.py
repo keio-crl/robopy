@@ -19,7 +19,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Sequence, Tuple
+from typing import Any, Dict, Literal, Sequence, Tuple
 
 #: Solver settings for stepping once per pose sample (rather than jogging to
 #: convergence as the viewer does).  A bounded step per sample, a short
@@ -233,18 +233,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hands.add_argument(
         "--hand-clutch",
-        choices=["pinch", "always"],
-        default="pinch",
-        help="what drives an arm from a hand: pinch (thumb and index fingertips together; "
-        "default) or always (the arm follows whenever the hand is tracked)",
+        choices=["grip", "pinch", "always"],
+        default="grip",
+        help="what drives an arm from a hand: grip (middle, ring and little fingers curled into "
+        "the palm, as round a handle; default -- the thumb and index then work the gripper), "
+        "pinch (thumb and index fingertips together; the curled fingers work the gripper) or "
+        "always (the arm follows whenever the hand is tracked)",
     )
     hands.add_argument(
         "--hand-gripper",
         choices=["curl", "pinch", "none"],
-        default="curl",
-        help="the gripper signal from a hand: curl (middle, ring and little fingers closed "
-        "into the palm; default), pinch (the index pinch; only with --hand-clutch always) "
-        "or none. As with the trigger, nothing moves without --gripper",
+        default=None,
+        help="the gripper signal from a hand: pinch (how close the thumb and index tips are; "
+        "the default with --hand-clutch grip or always), curl (middle, ring and little fingers "
+        "closed into the palm; the default with --hand-clutch pinch) or none. It acts only while "
+        "that hand holds its arm; released, the gripper keeps its angle. As with the trigger, "
+        "nothing moves without the gripper's measured travel",
     )
     hands.add_argument(
         "--hand-reference",
@@ -1307,9 +1311,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 except ValueError:
                     parser.error("--hand-open-recenter takes seconds or 'off'")
             try:
+                gripper_gesture: Literal["curl", "pinch", "none"] = args.hand_gripper or (
+                    "curl" if args.hand_clutch == "pinch" else "pinch"
+                )
                 hands_config = HandTrackingConfig(
                     clutch_gesture=args.hand_clutch,
-                    gripper_gesture=args.hand_gripper,
+                    gripper_gesture=gripper_gesture,
                     reference=args.hand_reference,
                     pinch_on_m=args.pinch_on,
                     pinch_off_m=args.pinch_off,
@@ -1323,14 +1330,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             except ValueError as exc:
                 parser.error(str(exc))
-            drive = (
-                "pinch thumb and index to drive an arm"
-                if hands_config.clutch_gesture == "pinch"
-                else "an arm follows its hand whenever the hand is tracked"
-            )
+            drive = {
+                "grip": "curl the middle, ring and little fingers (grip) to drive an arm",
+                "pinch": "pinch thumb and index to drive an arm",
+                "always": "an arm follows its hand whenever the hand is tracked",
+            }[hands_config.clutch_gesture]
             gripper_hint = {
                 "curl": "curl the other fingers for the gripper",
-                "pinch": "the pinch is the gripper",
+                "pinch": "bring thumb and index together to close the gripper",
                 "none": "no gripper from the hands",
             }[hands_config.gripper_gesture]
             print(
