@@ -86,6 +86,12 @@
   （`elbow_pitch_right_dof`, `wrist_yaw_right_dof`, `elbow_yaw_right_dof` …）は**名前で対応しない**。
   対応は config の `urdf_joint` が唯一の正。ログ・報告では必ず両方を併記する。
 
+## カメラ画像と手の位置合わせ
+
+- ヘッドセットのカメラ画像は、RealSense が報告する内部パラメータ（焦点距離・光学中心）で大きさと中心を決める
+  （`camera_view`、回転ラッパー越しに `rotate_intrinsics`）。D435 カラーの 69° はデータシートの 16:9 の値で、
+  640×480 では約 55°。69° で描くと腕が 25% 外側に見えていた。`--camera-fov` を明示するとそれが優先される。
+
 ## 実機の運用メモ
 
 - FTDI の `latency_timer` が 16 ms のままだと 17 モータの一括読み出しが時々 50 ms 予算を超える。

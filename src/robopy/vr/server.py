@@ -140,8 +140,10 @@ class VRServerConfig:
         teleop_timeout_s: A teleop socket silent this long is treated as gone
             (clutches released, backend told to hold).
         camera_fov_deg: Horizontal field of view the page uses to size the
-            camera image.  The default is the Intel RealSense D435 colour
-            sensor's data-sheet value; it is *not* a calibration of this camera.
+            camera image when the camera does not report its intrinsics (a
+            RealSense does; see :func:`~robopy.vr.camera.camera_view`), or
+            ``None`` for 69 degrees, the D435 colour sensor's 16:9 data-sheet
+            value.  Given, it overrides the camera's own.
         twin_offset_m: Where the page draws the robot's base, in robot axes
             (x forward, y left, z up) from the WebXR floor origin, or ``None``
             to place the twin so that the robot's head anchor sits where the
@@ -168,7 +170,7 @@ class VRServerConfig:
 
     state_hz: float = 30.0
     teleop_timeout_s: float = 5.0
-    camera_fov_deg: float = 69.0
+    camera_fov_deg: float | None = None
     twin_offset_m: Tuple[float, float, float] | None = None
     arm_anchor_frame: str = "auto"
     clutch_button: str = "a"
@@ -181,7 +183,7 @@ class VRServerConfig:
     def __post_init__(self) -> None:
         if self.state_hz <= 0.0 or self.teleop_timeout_s <= 0.0:
             raise ValueError("state_hz and teleop_timeout_s must be positive.")
-        if not 10.0 <= self.camera_fov_deg <= 170.0:
+        if self.camera_fov_deg is not None and not 10.0 <= self.camera_fov_deg <= 170.0:
             raise ValueError("camera_fov_deg must be within [10, 170].")
         if self.clutch_button not in ("a", "grip", "stick"):
             raise ValueError("clutch_button must be 'a', 'grip' or 'stick'.")
@@ -348,7 +350,7 @@ class TeleopSession:
             "arms": None if self.arm_teleop is None else self.arm_teleop.describe(),
             "head_enabled": self.head_enabled,
             "arms_enabled": self.arms_enabled,
-            "camera_fov_deg": self.config.camera_fov_deg,
+            "camera_fov_deg": self.config.camera_fov_deg or 69.0,
             "twin_offset_m": None
             if self.config.twin_offset_m is None
             else list(self.config.twin_offset_m),
@@ -915,6 +917,15 @@ class _VRHandler(_Handler):
             self.close_connection = True
 
 
+def _camera_intrinsics(source: Any) -> Dict[str, float] | None:
+    """The camera's pinhole model through any wrappers, or ``None`` when it has none."""
+    try:
+        k = getattr(source, "intrinsics", None)
+    except Exception:  # noqa: BLE001 - a property that could not read the device
+        return None
+    return k if isinstance(k, dict) else None
+
+
 def _unwrapped(source: Any) -> Any:
     """The camera behind any source wrappers (rotation and the like)."""
     while hasattr(source, "source"):
@@ -939,6 +950,16 @@ class VRServer(ViewerServer):
             tunnel to ``localhost``, which browsers treat as secure).
         config: Session settings.
     """
+
+    def _camera_view(self) -> Dict[str, Any] | None:
+        """How the page should size and centre the picture (see :func:`camera_view`)."""
+        from .camera import camera_view  # noqa: PLC0415
+
+        if self.camera is None:
+            return None
+        explicit = self.vr_config.camera_fov_deg
+        k = None if explicit is not None else _camera_intrinsics(self.camera.source)
+        return camera_view(k, explicit if explicit is not None else 69.0)
 
     def __init__(
         self,
@@ -1036,6 +1057,7 @@ class VRServer(ViewerServer):
                     "state_hz": self.vr_config.state_hz,
                     "teleop_timeout_s": self.vr_config.teleop_timeout_s,
                     "camera_fov_deg": self.vr_config.camera_fov_deg,
+                    "camera_view": self._camera_view(),
                     "twin_offset_m": None
                     if self.vr_config.twin_offset_m is None
                     else list(self.vr_config.twin_offset_m),
@@ -1157,7 +1179,7 @@ class VRServer(ViewerServer):
                 _dumps(
                     {
                         "type": "camera",
-                        "fov_deg": self.vr_config.camera_fov_deg,
+                        **(self._camera_view() or {}),
                         "source": type(self.camera.source).__name__,
                     }
                 )

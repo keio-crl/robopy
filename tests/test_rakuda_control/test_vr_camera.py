@@ -173,3 +173,47 @@ class TestCameraSocket:
         sock = ws.WebSocket(io.BytesIO(ping), sent)
         assert sock.recv(control_only=True) is None
         assert sent.getvalue()[:1] == bytes([0x80 | ws.OP_PONG])
+
+
+class TestIntrinsics:
+    """The picture is drawn at the camera's own field of view and optical centre."""
+
+    K = {"width": 640.0, "height": 480.0, "fx": 615.0, "fy": 615.0, "ppx": 330.0, "ppy": 236.0}
+
+    def test_a_640x480_d435_sees_about_55_degrees(self) -> None:
+        from robopy.vr.camera import camera_view
+
+        view = camera_view(self.K, 69.0)
+        assert view["from"] == "intrinsics"
+        assert view["fov_deg"] == pytest.approx(54.97, abs=0.05)
+        assert view["cx_n"] == pytest.approx(330.0 / 640.0)
+        assert camera_view(None, 69.0) == {"fov_deg": 69.0, "from": "configured"}
+
+    def test_rotation_turns_the_pinhole_with_the_picture(self) -> None:
+        from robopy.vr.camera import rotate_intrinsics
+
+        assert rotate_intrinsics(self.K, 0) == self.K
+        half = rotate_intrinsics(self.K, 180)
+        assert half is not None and (half["ppx"], half["ppy"]) == (310.0, 244.0)
+        quarter = rotate_intrinsics(self.K, 90)
+        assert quarter is not None
+        assert (quarter["width"], quarter["height"]) == (480.0, 640.0)
+        # clockwise: the old top edge (v = 0) becomes the right edge
+        assert (quarter["ppx"], quarter["ppy"]) == (480.0 - 236.0, 330.0)
+        assert rotate_intrinsics(quarter, 270) == self.K
+        mirrored = rotate_intrinsics(self.K, 0, mirror=True)
+        assert mirrored is not None and mirrored["ppx"] == 310.0
+        assert rotate_intrinsics(None, 90) is None
+
+    def test_a_rotated_source_reports_turned_intrinsics(self) -> None:
+        class Fake:
+            intrinsics = TestIntrinsics.K
+
+            def read(self):  # type: ignore[no-untyped-def]
+                return None
+
+            def close(self) -> None:
+                pass
+
+        rotated = RotatedFrameSource(Fake(), 180)  # type: ignore[arg-type]
+        assert rotated.intrinsics is not None and rotated.intrinsics["ppx"] == 310.0

@@ -119,8 +119,9 @@ def build_parser() -> argparse.ArgumentParser:
     cam.add_argument(
         "--camera-fov",
         type=float,
-        default=69.0,
-        help="horizontal field of view in degrees used to size the image (D435 colour: 69)",
+        default=None,
+        help="horizontal field of view in degrees used to size the image. Default: the "
+        "camera's own intrinsics (a RealSense reports them: about 55 degrees at 640x480), else 69",
     )
 
     head = parser.add_argument_group("head")

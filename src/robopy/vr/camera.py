@@ -14,7 +14,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Protocol
+from typing import Any, Callable, Dict, Mapping, Protocol
 
 import cv2
 import numpy as np
@@ -255,6 +255,34 @@ class RealsenseFrameSource:
         self.reconnects = 0
         self._last_frame_s = time.monotonic()
 
+    @property
+    def intrinsics(self) -> Dict[str, float] | None:
+        """The colour stream's pinhole model, read from the device, or ``None``.
+
+        ``{"width", "height", "fx", "fy", "ppx", "ppy"}`` in pixels.  The page
+        sizes and centres the picture from these, so a direction in the
+        headset is the same direction from the robot's camera: a D435 colour
+        stream at 640x480 sees about 55 degrees across, not the 69 of its
+        16:9 data sheet, and a picture drawn at 69 put the robot's arms a
+        quarter further out than they are.
+        """
+        try:
+            profile = self._camera.rs_profile
+            import pyrealsense2 as rs  # noqa: PLC0415
+
+            stream = profile.get_stream(rs.stream.color).as_video_stream_profile()
+            k = stream.get_intrinsics()
+        except Exception:  # noqa: BLE001 - no device, no profile, no pyrealsense2
+            return None
+        return {
+            "width": float(k.width),
+            "height": float(k.height),
+            "fx": float(k.fx),
+            "fy": float(k.fy),
+            "ppx": float(k.ppx),
+            "ppy": float(k.ppy),
+        }
+
     def read(self) -> NDArray[np.uint8] | None:
         """The newest colour frame as BGR ``uint8``, or ``None`` if none is new.
 
@@ -399,6 +427,13 @@ class RotatedFrameSource:
         self.degrees = degrees % 360
         self.mirror = bool(mirror)
 
+    @property
+    def intrinsics(self) -> Dict[str, float] | None:
+        """The source's pinhole model, turned and mirrored as the picture is."""
+        return rotate_intrinsics(
+            getattr(self.source, "intrinsics", None), self.degrees, mirror=self.mirror
+        )
+
     def read(self) -> NDArray[np.uint8] | None:
         """The source's frame, upright and the right way round."""
         frame = self.source.read()
@@ -412,6 +447,48 @@ class RotatedFrameSource:
     def close(self) -> None:
         """Release the source."""
         self.source.close()
+
+
+def rotate_intrinsics(
+    k: Mapping[str, float] | None, degrees: int, *, mirror: bool = False
+) -> Dict[str, float] | None:
+    """A pinhole model for the picture turned clockwise by ``degrees`` (then mirrored)."""
+    if k is None:
+        return None
+    w, h = k["width"], k["height"]
+    fx, fy, cx, cy = k["fx"], k["fy"], k["ppx"], k["ppy"]
+    turns = (degrees % 360) // 90
+    if turns == 1:  # clockwise: (u, v) -> (h - v, u)
+        w, h, fx, fy, cx, cy = h, w, fy, fx, h - cy, cx
+    elif turns == 2:
+        cx, cy = w - cx, h - cy
+    elif turns == 3:  # (u, v) -> (v, w - u)
+        w, h, fx, fy, cx, cy = h, w, fy, fx, cy, w - cx
+    if mirror:
+        cx = w - cx
+    return {"width": w, "height": h, "fx": fx, "fy": fy, "ppx": cx, "ppy": cy}
+
+
+def camera_view(intrinsics: Mapping[str, float] | None, fallback_fov_deg: float) -> Dict[str, Any]:
+    """What the page needs to draw the picture where the camera sees: FOV and optical centre.
+
+    ``fx_n``/``fy_n`` are the focal lengths over the image size and
+    ``cx_n``/``cy_n`` the optical centre as a fraction of it, so they hold
+    for any downscaled JPEG.  Without intrinsics, a centred picture of the
+    fallback horizontal field of view.
+    """
+    if intrinsics is None:
+        return {"fov_deg": float(fallback_fov_deg), "from": "configured"}
+    w, h = intrinsics["width"], intrinsics["height"]
+    return {
+        "fov_deg": float(np.degrees(2.0 * np.arctan(w / (2.0 * intrinsics["fx"])))),
+        "vfov_deg": float(np.degrees(2.0 * np.arctan(h / (2.0 * intrinsics["fy"])))),
+        "fx_n": intrinsics["fx"] / w,
+        "fy_n": intrinsics["fy"] / h,
+        "cx_n": intrinsics["ppx"] / w,
+        "cy_n": intrinsics["ppy"] / h,
+        "from": "intrinsics",
+    }
 
 
 def rotate_frame(frame: NDArray[np.uint8], degrees: int) -> NDArray[np.uint8]:

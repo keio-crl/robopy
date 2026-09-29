@@ -53,7 +53,7 @@ const state = {
   hands: { left: null, right: null },   // drawn joints per tracked hand
   markers: { left: null, right: null }, // engagement markers (where to bring the hand)
   buttonsPrev: { left: {}, right: {} },
-  cameraLocked: true,
+  cameraLocked: true, cameraView: null,
   clutchButton: 'a',     // 'a' (A/X), 'grip' or 'stick'; from hello
   mirrorOn: true, mirrorDistance: 1.5,
   recording: null,       // server's recorder state (from hello / state)
@@ -130,11 +130,28 @@ const hudPlane = new THREE.Mesh(
 hudPlane.position.set(0, -0.62, -IMAGE_DISTANCE);
 camera.add(hudPlane);
 
+// The picture is drawn so each pixel lies in the direction the robot's camera
+// saw it from, relative to the operator's eyes: sized by the focal lengths and
+// shifted by the optical centre when the camera reports its intrinsics
+// (state.cameraView from the camera socket), else centred at a horizontal FOV.
+// With the arms mapped about the head, the robot's arm in the picture then
+// sits where the operator's hand is.
 function sizeImagePlane(fovDeg) {
-  const width = 2 * IMAGE_DISTANCE * Math.tan((fovDeg / 2) / DEG);
+  const view = state.cameraView;
+  let width; let height; let cx = 0; let cy = 0;
+  if (view && view.fx_n) {
+    width = IMAGE_DISTANCE / view.fx_n;
+    height = IMAGE_DISTANCE / view.fy_n;
+    cx = (0.5 - view.cx_n) * width;          // optical centre left of the middle: picture moves right
+    cy = -(0.5 - view.cy_n) * height;        // image v grows downwards
+  } else {
+    width = 2 * IMAGE_DISTANCE * Math.tan(((view && view.fov_deg) || fovDeg) / 2 / DEG);
+    height = width / imageAspect;
+  }
   imagePlane.geometry.dispose();
-  imagePlane.geometry = new THREE.PlaneGeometry(width, width / imageAspect);
-  hudPlane.position.y = -(width / imageAspect) / 2 - 0.2;
+  imagePlane.geometry = new THREE.PlaneGeometry(width, height);
+  if (imagePlane.parent === camera) imagePlane.position.set(cx, cy, -IMAGE_DISTANCE);
+  hudPlane.position.y = cy - height / 2 - 0.2;
 }
 
 function setImageLocked(locked) {
@@ -144,6 +161,7 @@ function setImageLocked(locked) {
     if (imagePlane.parent !== camera) {
       scene.remove(imagePlane); scene.remove(hudPlane);
       imagePlane.position.set(0, 0, -IMAGE_DISTANCE); imagePlane.quaternion.identity();
+      sizeImagePlane((state.hello && state.hello.camera_fov_deg) || 69);   // the optical-centre offset
       hudPlane.position.set(0, hudPlane.position.y, -IMAGE_DISTANCE); hudPlane.quaternion.identity();
       camera.add(imagePlane); camera.add(hudPlane);
     }
@@ -416,7 +434,10 @@ function connectCamera() {
   ws.onopen = () => { state.camConnected = true; };
   ws.onmessage = async (ev) => {
     if (typeof ev.data === 'string') {
-      try { const m = JSON.parse(ev.data); if (m.type === 'camera' && m.fov_deg) sizeImagePlane(m.fov_deg); } catch (e) { /* ignore */ }
+      try {
+        const m = JSON.parse(ev.data);
+        if (m.type === 'camera' && m.fov_deg) { state.cameraView = m; sizeImagePlane(m.fov_deg); }
+      } catch (e) { /* ignore */ }
       return;
     }
     try {
