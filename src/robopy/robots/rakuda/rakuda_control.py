@@ -145,7 +145,13 @@ def build_model_and_ik(config: RakudaControlConfig) -> Tuple[Any, Any]:
         ValueError: If the model configuration is incomplete.
         MissingKinematicsExtra: If the optional extra is not installed.
     """
-    from robopy.kinematics.dual_arm_ik import DualArmIK, DualArmIKConfig  # noqa: PLC0415
+    from robopy.kinematics.dual_arm_ik import (  # noqa: PLC0415
+        DualArmIK,
+        DualArmIKConfig,
+        approach_axes_from_model,
+        merge_solver_settings,
+        teleop_solver_settings,
+    )
     from robopy.kinematics.urdf_model import WholeBodyModel  # noqa: PLC0415
 
     spec = config.model
@@ -178,8 +184,24 @@ def build_model_and_ik(config: RakudaControlConfig) -> Tuple[Any, Any]:
     )
     model.add_fixed_frame("left_tcp", spec.left_tcp.parent_frame, _tcp_transform(spec.left_tcp))
     model.add_fixed_frame("right_tcp", spec.right_tcp.parent_frame, _tcp_transform(spec.right_tcp))
+    # The same resolver the viewer uses: overrides replace a wrong URDF range,
+    # soft limits narrow, and each value keeps its provenance.
+    if spec.joint_limit_overrides_rad:
+        model.set_joint_limit_overrides(spec.override_entries())
     if spec.soft_limits_rad:
-        model.set_soft_limits(spec.soft_limits_rad)
+        model.set_soft_limits(spec.soft_limit_entries())
+    profile = model.limit_profile(display_range_rad=None)
+    active = [spec.torso_joint, *spec.left_arm_joints, *spec.right_arm_joints]
+    unvalidated = profile.unvalidated([j for j in active if j in profile])
+    if unvalidated:
+        logger.warning(
+            "Joint limit(s) of %s are not validated for the machine (URDF placeholders or "
+            "provisional soft limits). The solver obeys them; whether the machine does is "
+            "unmeasured.",
+            unvalidated,
+        )
+    for line in profile.summary_lines():
+        logger.info("limit %s", line)
 
     if spec.build_collision:
         excluded = [(a, b) for a, b, _reason in spec.collision_exclusions]
@@ -203,6 +225,15 @@ def build_model_and_ik(config: RakudaControlConfig) -> Tuple[Any, Any]:
             unvalidated,
         )
 
+    approach_axes = None
+    if config.ik.approach_axis_tcp is None:
+        # The direction each gripper points, read off the model (a measured
+        # control.ik.approach_axis_tcp replaces it).
+        approach_axes = approach_axes_from_model(
+            model,
+            {"left": "left_tcp", "right": "right_tcp"},
+            {"left": spec.left_arm_joints[-1], "right": spec.right_arm_joints[-1]},
+        )
     ik = DualArmIK(
         model,
         left_frame="left_tcp",
@@ -211,12 +242,82 @@ def build_model_and_ik(config: RakudaControlConfig) -> Tuple[Any, Any]:
         left_arm_joints=spec.left_arm_joints,
         right_arm_joints=spec.right_arm_joints,
         head_joints=spec.head_joints,
+        # The same natural-motion profile the viewer and the VR simulation
+        # start from, then control.ik on top (the viewer applies the same
+        # section); the loop's timing comes from the control section.
         config=DualArmIKConfig(
-            compute_budget_s=config.ik_period_s,
-            max_state_age_s=config.max_state_age_s,
+            **{
+                **merge_solver_settings(
+                    {
+                        **teleop_solver_settings(
+                            spec.torso_joint,
+                            arm_joints=[*spec.left_arm_joints, *spec.right_arm_joints],
+                            approach_axes=approach_axes,
+                        ),
+                        # The one deliberate difference from the simulation: the
+                        # machine's Cartesian reference governor (control.trajectory)
+                        # already ramps the target's velocity and acceleration, so
+                        # the solver follows the reference at full gain.  A second
+                        # lag here would only add to the delay the operator feels.
+                        "gain_time_constant_s": None,
+                    },
+                    config.ik.solver_overrides(),
+                ),
+                "compute_budget_s": config.ik_period_s,
+                "max_state_age_s": config.max_state_age_s,
+            }
         ),
     )
+    logger.info(
+        "IK: %s priority, %s hands (orientation weight %.2f, approach axis %s), posture %s",
+        ik.config.task_priority_mode,
+        ik.config.orientation_mode,
+        ik.config.orientation_cost,
+        ik.config.approach_axis_tcp,
+        f"cost {ik.config.posture_cost} towards {ik.config.posture_reference}"
+        if ik.config.posture_reference
+        else "the pose at alignment",
+    )
     return model, ik
+
+
+def build_trajectory_limits(config: RakudaControlConfig) -> Any:
+    """The Cartesian reference ceilings for the machine, from ``control.trajectory``.
+
+    The machine never guesses a speed: every ceiling must be set.  The sample
+    period is the loop's measured period, so it is not required here.
+
+    Returns:
+        A :class:`~robopy.kinematics.cartesian_trajectory.TrajectoryLimits`.
+
+    Raises:
+        ValueError: If a ceiling is unset.
+    """
+    from robopy.kinematics.cartesian_trajectory import TrajectoryLimits  # noqa: PLC0415
+
+    trajectory = config.trajectory
+    missing = [name for name in trajectory.missing() if name != "sample_period_s"]
+    if missing:
+        raise ValueError(
+            "cartesian_teleop needs every ceiling of control.trajectory; unset: "
+            f"{missing}. The machine does not fall back to the viewer's simulation profile: "
+            "set them in .robopy/rakuda/config.yaml."
+        )
+    ceilings = {
+        name: float(getattr(trajectory, name))
+        for name in (
+            "max_linear_velocity_m_s",
+            "max_linear_acceleration_m_s2",
+            "max_angular_velocity_rad_s",
+            "max_angular_acceleration_rad_s2",
+        )
+    }
+    limits = TrajectoryLimits(**ceilings, lag_tolerance_m=trajectory.lag_tolerance_m)
+    logger.info(
+        "Cartesian reference ceilings: %s (sample period: the loop's measured period)",
+        limits.describe(),
+    )
+    return limits
 
 
 def build_arm_servo(
@@ -229,12 +330,20 @@ def build_arm_servo(
     motor_names: Sequence[str] | None = None,
 ) -> ArmServo:
     """Create the servo that owns ``bus``, using the periods from ``config``."""
+    extra: Dict[str, Any] = {}
+    if config.max_acquisition_span_s is not None:
+        extra["max_acquisition_span_s"] = config.max_acquisition_span_s
+    if config.range_tolerance_rad is not None:
+        extra["range_tolerance_rad"] = config.range_tolerance_rad
+    if config.max_slow_reads is not None:
+        extra["max_slow_reads"] = config.max_slow_reads
     return ArmServo(
         name=name,
         bus=bus,
         joint_map=joint_map,
         manager=manager,
         config=ServoLoopConfig(
+            **extra,
             control_period_s=config.control_period_s,
             read_timeout_s=config.read_timeout_s,
             write_timeout_s=config.write_timeout_s,
@@ -288,6 +397,12 @@ class RakudaControlSystem:
         self._target: DualArmTarget | None = None
         self._last_ik_result: Any = None
         self._ik_targets: Dict[str, float] = {}
+        # The Cartesian reference governor: one PoseReference per driven hand,
+        # created at the measured TCP and moved towards the operator's target
+        # under the configured ceilings.  ``None`` limits means no governor.
+        self._trajectory_limits: Any = None
+        self._references: Dict[str, Any] = {}
+        self._last_reference: Dict[str, Dict[str, Any]] = {}
         self._direct_targets: Dict[str, float] = {}
         self._direct_expiry_ns: int | None = None
         self._direct_counts: Dict[str, int] = {}
@@ -314,11 +429,17 @@ class RakudaControlSystem:
                 allow_uncompensated=config.bilateral.allow_uncompensated,
             )
 
+        loop_extra: Dict[str, Any] = {}
+        if config.max_acquisition_span_s is not None:
+            loop_extra["max_acquisition_span_s"] = config.max_acquisition_span_s
+        if config.max_slow_reads is not None:
+            loop_extra["max_slow_reads"] = config.max_slow_reads
         self._loop = ServoLoop(
             (self._leader, self._follower),
             manager,
             self._step,
             ServoLoopConfig(
+                **loop_extra,
                 control_period_s=config.control_period_s,
                 max_cross_bus_skew_s=config.max_cross_bus_skew_s,
                 stop_policy=config.stop_policy,
@@ -366,9 +487,11 @@ class RakudaControlSystem:
         model = None
         ik = None
         known_joints: Sequence[str] | None = None
+        trajectory_limits = None
         if mode is ControlMode.CARTESIAN_TELEOP:
             model, ik = build_model_and_ik(config)
             known_joints = model.movable_joint_names
+            trajectory_limits = build_trajectory_limits(config)
 
         leader_map = build_joint_map(
             leader_bus.motors,
@@ -406,8 +529,13 @@ class RakudaControlSystem:
                     "follow a separate hold/disable policy."
                 )
 
-        leader_motors = cls._motors_for_mode(mode, config, list(leader_bus.motors))
-        follower_motors = cls._motors_for_mode(mode, config, list(follower_bus.motors))
+        leader_motors = cls._motors_for_mode(mode, config, leader_map)
+        follower_motors = cls._motors_for_mode(mode, config, follower_map)
+        if mode is ControlMode.CARTESIAN_TELEOP and not follower_motors:
+            raise JointMapError(
+                "cartesian_teleop: no follower motor has a zero and both travel limits; "
+                "calibrate the follower first (robopy-rakuda-calibrate --side follower)."
+            )
 
         system = cls(
             config,
@@ -428,18 +556,33 @@ class RakudaControlSystem:
         )
         system._model = model
         system._ik = ik
+        system._trajectory_limits = trajectory_limits
         return system
 
     @staticmethod
     def _motors_for_mode(
         mode: ControlMode,
         config: RakudaControlConfig,
-        all_motors: Sequence[str],
+        joint_map: JointMap,
     ) -> List[str]:
-        """Motors the servo reads and commands in ``mode``."""
+        """Motors the servo reads and commands in ``mode``.
+
+        Cartesian teleoperation drives the motors with a geometry-level
+        calibration (zero and both travel limits): the model's joints through
+        the solver, and a calibrated gripper or head through direct targets.
+        The others -- an uncalibrated head or gripper, or a leader that is not
+        part of the mode -- are left exactly as they are, neither read nor
+        commanded, rather than converted with a zero that was never measured.
+        """
         if mode is ControlMode.BILATERAL_JOINT:
             return list(config.bilateral.coupled_motors)
-        return list(all_motors)
+        if mode is ControlMode.CARTESIAN_TELEOP:
+            return [
+                name
+                for name in joint_map.motor_names
+                if joint_map[name].is_complete(ValidationLevel.GEOMETRY)
+            ]
+        return list(joint_map.motor_names)
 
     # -- properties ---------------------------------------------------------
 
@@ -482,6 +625,16 @@ class RakudaControlSystem:
     def bilateral(self) -> BilateralController | None:
         """The coupling controller, or ``None`` outside bilateral mode."""
         return self._bilateral
+
+    @property
+    def last_reference(self) -> Dict[str, Dict[str, Any]]:
+        """Per driven hand, where the reference stands relative to the goal and the hand.
+
+        ``{side: {"lag_m", "remaining_m", "remaining_rad", "braking", "arrived"}}``
+        from the last Cartesian cycle; empty outside Cartesian mode or before
+        the first target.
+        """
+        return {side: dict(info) for side, info in self._last_reference.items()}
 
     @property
     def last_ik_result(self) -> Any:
@@ -566,6 +719,9 @@ class RakudaControlSystem:
             state = self._state_in_urdf_joints(self._follower.read_state())
             self._ik.reset()
             self._ik.set_posture_reference(state.positions_dict())
+            # The references restart at the measured hands on the next target.
+            self._references.clear()
+            self._last_reference = {}
             report["posture_reference_set"] = True
         return report
 
@@ -743,7 +899,9 @@ class RakudaControlSystem:
         generation = states["follower"].mode_generation
         target = self._target
         if target is not None and not target.is_expired():
-            result = self._ik.solve_step(self._state_in_urdf_joints(states["follower"]), target, dt)
+            state = self._state_in_urdf_joints(states["follower"])
+            tracked = self._reference_target(target, state, dt)
+            result = self._ik.solve_step(state, tracked, dt)
             self._last_ik_result = result
             self._loop.publish_log(
                 {
@@ -751,6 +909,7 @@ class RakudaControlSystem:
                     "ik_status": result.status.value,
                     "compute_time_s": result.compute_time_s,
                     "min_collision_distance_m": result.min_collision_distance_m,
+                    "reference": self._last_reference,
                 }
             )
             if result.is_commandable:
@@ -763,9 +922,13 @@ class RakudaControlSystem:
                 logger.warning(
                     "IK produced no command: %s (%s)", result.status.value, result.message
                 )
-        # No fresh Cartesian target: the arms hold their last valid joint
-        # targets rather than moving on a stale one.  The head and grippers
-        # are independent of that and follow their own (also expiring) targets.
+        else:
+            # No fresh Cartesian target: the arms hold their last valid joint
+            # targets rather than moving on a stale one, and the references
+            # are dropped so the next target starts from the measured hands.
+            self._references.clear()
+        # The head and grippers are independent of that and follow their own
+        # (also expiring) targets.
         if self._direct_targets and self._direct_expiry_ns is not None:
             if monotonic_ns() <= self._direct_expiry_ns:
                 motor_targets.update(self._direct_targets)
@@ -773,6 +936,55 @@ class RakudaControlSystem:
             self._follower.command_positions_rad(
                 motor_targets, generation=generation, issued_ns=monotonic_ns()
             )
+
+    def _reference_target(
+        self, target: DualArmTarget, state: JointState, dt: float
+    ) -> DualArmTarget:
+        """The operator's target, replaced by the governed reference the hands track this cycle.
+
+        The operator's goal is never jumped to.  Each driven hand has a
+        reference that starts at the *measured* TCP, moves towards the goal
+        under the configured velocity and acceleration ceilings, and brakes
+        when the measured hand lags it by more than the tolerance -- so a
+        hand the machine cannot move fast enough is waited for, and the goal
+        is never overwritten with where the hand happens to be.
+        """
+        limits = self._trajectory_limits
+        if limits is None:
+            return target
+        import dataclasses  # noqa: PLC0415
+
+        from robopy.kinematics.cartesian_trajectory import PoseReference  # noqa: PLC0415
+
+        q = self._model.q_from_positions(state.positions_dict(), require_all=False)
+        replacements: Dict[str, Any] = {}
+        info: Dict[str, Dict[str, Any]] = {}
+        for side, frame in (("left", self._ik.left_frame), ("right", self._ik.right_frame)):
+            enabled = getattr(target, f"{side}_enabled")
+            goal = getattr(target, f"{side}_target")
+            if not enabled or goal is None:
+                self._references.pop(side, None)
+                continue
+            measured = self._model.frame_pose(q, frame)
+            reference = self._references.get(side)
+            if reference is None:
+                reference = PoseReference(measured, limits)
+                self._references[side] = reference
+            reference.set_goal(goal)
+            lag = float(np.linalg.norm(measured[:3, 3] - reference.pose[:3, 3]))
+            brake = limits.lag_tolerance_m is not None and lag > limits.lag_tolerance_m
+            sample = reference.advance(dt, brake=brake)
+            remaining_m, remaining_rad = reference.remaining()
+            replacements[f"{side}_target"] = sample.pose
+            info[side] = {
+                "lag_m": lag,
+                "remaining_m": remaining_m,
+                "remaining_rad": remaining_rad,
+                "braking": brake,
+                "arrived": sample.arrived,
+            }
+        self._last_reference = info
+        return dataclasses.replace(target, **replacements)
 
     def _state_in_urdf_joints(self, state: JointState) -> JointState:
         """Re-key a measured snapshot from motor names to URDF joint names.
@@ -877,6 +1089,7 @@ class RakudaControlSystem:
             "last_ik_status": (
                 None if self._last_ik_result is None else self._last_ik_result.status.value
             ),
+            "reference": self.last_reference,
             "direct_goal_counts": {
                 "goals": dict(self._direct_counts),
                 "writes": self._direct_count_writes,

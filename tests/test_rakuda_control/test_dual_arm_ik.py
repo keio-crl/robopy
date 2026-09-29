@@ -367,9 +367,12 @@ class TestConstraints:
         margin = dual_arm_ik.config.position_limit_margin_rad
         assert current["shoulder_roll_left_dof"] <= 2.6 - margin + 1e-9
 
-    def test_a_configuration_already_outside_its_limits_is_infeasible(
+    def test_a_configuration_already_outside_its_limits_only_moves_inward(
         self, whole_body_model, dual_arm_ik
     ) -> None:
+        # A joint read past its limit (a machine resting on its stop, or a
+        # limit recorded narrower than the machine) does not stop the solve:
+        # the step may only bring it back inside.
         start = _zero(whole_body_model)
         start["shoulder_roll_left_dof"] = 3.0  # beyond the 2.6 rad URDF limit
         result = dual_arm_ik.solve_step(
@@ -377,8 +380,9 @@ class TestConstraints:
             DualArmTarget(left_target=np.eye(4), right_target=np.eye(4)),
             DT,
         )
-        assert result.status is DualArmIKStatus.INFEASIBLE
-        assert result.joint_targets_rad == {}
+        assert result.is_commandable, result.message
+        assert result.joint_targets_rad["shoulder_roll_left_dof"] <= 3.0 + 1e-9
+        assert result.joint_velocities_rad_s["shoulder_roll_left_dof"] <= 1e-9
 
     def test_a_continuous_joint_without_a_soft_limit_is_refused_at_construction(
         self, synthetic_urdf

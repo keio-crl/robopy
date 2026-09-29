@@ -204,9 +204,12 @@ class TestCommittedModelKinematics:
             assert len(model.frame_ids(name)) == 2
             model.frame_pose(model.neutral_q(), name)  # must not raise
 
-    def test_right_elbow_zero_sits_on_its_upper_limit(self, model) -> None:
+    def test_right_elbow_bends_one_way_with_a_little_room_past_zero(self, model) -> None:
+        # The CAD export put the zero exactly on the upper limit; the machine
+        # was measured to travel 0.227 rad past it, and the URDF was widened to
+        # that (model(rakuda): widen three joint ranges).  The lower end is CAD's.
         lower, upper = model.position_limits(["elbow_pitch_right_dof"])
-        assert upper[0] == pytest.approx(0.0)
+        assert upper[0] == pytest.approx(0.227, abs=1e-3)
         assert lower[0] == pytest.approx(-2.7925, abs=1e-3)
 
     def test_jogs_from_a_bent_pose_converge_in_both_orientation_modes(self, model) -> None:

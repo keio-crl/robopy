@@ -41,6 +41,20 @@
         - ArmTeleop
         - DualArmTeleop
 
+## ハンドトラッキング
+
+::: robopy.vr.hand_tracking
+    options:
+      show_root_heading: true
+      show_source: false
+      members:
+        - HandTrackingConfig
+        - HandFrame
+        - HandReading
+        - HandInput
+        - HandEvents
+        - TwoHandGestures
+
 ## バックエンド
 
 ::: robopy.vr.backend

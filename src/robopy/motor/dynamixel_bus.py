@@ -126,6 +126,7 @@ class DynamixelBus:
         if not self.port_handler.setBaudRate(baudrate):
             raise ConnectionError(f"Failed to set baudrate to {baudrate}.")
         logger.info(f"Opened port {self.port_handler.port_name} (Baudrate: {baudrate})")
+        _warn_usb_latency(self.port_handler.port_name)
 
     def close(self) -> None:
         """Closes the communication port."""
@@ -732,3 +733,29 @@ class DynamixelBus:
 
     def __len__(self) -> int:
         return len(self.motors)
+
+
+def _warn_usb_latency(port_name: str) -> None:
+    """Say so when an FTDI adapter still has its 16 ms latency timer.
+
+    Every response then waits for that timer: one SyncRead of thirteen motors
+    takes ~16 ms instead of a few, and the whole control cycle with it.  The
+    fix is a root-only sysfs write (or a udev rule); it is reported, not done.
+    """
+    import os
+
+    name = os.path.basename(port_name)
+    path = f"/sys/bus/usb-serial/devices/{name}/latency_timer"
+    try:
+        with open(path, encoding="ascii") as handle:
+            latency_ms = int(handle.read().strip())
+    except (OSError, ValueError):
+        return
+    if latency_ms > 1:
+        logger.warning(
+            "%s: USB latency timer is %d ms (every reply waits that long). For a faster bus: "
+            "echo 1 | sudo tee %s   (or a udev rule setting it at plug-in)",
+            port_name,
+            latency_ms,
+            path,
+        )

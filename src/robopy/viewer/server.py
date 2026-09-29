@@ -13,14 +13,36 @@ Endpoints
                             from the network ever reaches the filesystem)
 ``GET  /api/model``         static model description
 ``POST /api/fk``            ``{"joints": {name: rad}}`` -> poses
-``POST /api/ik``            targets -> solved joints and poses (needs the solver)
+``POST /api/ik``            targets -> a timed joint trajectory (``mode: trajectory``,
+                            the page's mode) or the end-point solve of the
+                            legacy ``mode: endpoint``; needs the solver
+``POST /api/ik/reset``      forget the session's velocity history and posture
+                            reference (a manual pose change, a mode switch)
 ``GET  /api/health``        liveness
+``GET  /api/machine``       the real follower's joint angles, read-only
+                           (``--mirror-follower``; ``{"available": false}`` otherwise)
+``POST /api/machine/zero``  ``{"joints": {name: rad}}``: the machine is in this model pose
+                           now -> new zero_count per motor, written to the config file
+``POST /api/machine/travel`` ``{"action": "start"|"stop"|"reset"}`` records the least and
+                           greatest angle of every mirrored joint while the machine is moved
+                           by hand; ``{"action": "write", "motors": [...], "margin_deg": 2}``
+                           writes them as the motors' limits and the joints' soft limits
+
+Two modes of ``/api/ik`` are kept deliberately apart.  ``trajectory`` is the
+continuous-operation mode: the server keeps the solver's velocity history and
+posture reference between requests, walks a reference pose towards the goal
+under Cartesian velocity and acceleration ceilings and returns every sample
+with its time, which the page plays back at that timing.  ``endpoint`` is the
+analysis mode the page used before: iterate from the given configuration to
+convergence and return only the final joints; it resets the solver first and
+keeps nothing.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import math
 import mimetypes
 import threading
 import time
@@ -41,15 +63,33 @@ from robopy.control.types import (
     monotonic_ns,
     se3_from_quat_xyzw,
 )
+from robopy.kinematics.cartesian_trajectory import (
+    JointTrajectory,
+    PoseReference,
+    TrajectoryLimits,
+    run_trajectory,
+)
 
-from .model_bundle import ModelBundle
+from .model_bundle import ModelBundle, matrix_to_pose
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["IKSetup", "ViewerServer", "serve"]
+__all__ = ["SIMULATION_TRAJECTORY_LIMITS", "IKSetup", "ViewerServer", "serve"]
 
 _STATIC_DIR = Path(__file__).parent / "static"
 _MAX_BODY_BYTES = 1 << 20
+
+#: Reference ceilings of the viewer's simulation profile.  These are numbers
+#: for evaluating the software on a model; the machine's ceilings are a
+#: configuration (control.trajectory) and are not filled in from here.
+SIMULATION_TRAJECTORY_LIMITS = TrajectoryLimits(
+    max_linear_velocity_m_s=0.25,
+    max_linear_acceleration_m_s2=1.0,
+    max_angular_velocity_rad_s=1.5,
+    max_angular_acceleration_rad_s2=6.0,
+    lag_tolerance_m=0.02,
+)
+SIMULATION_SAMPLE_PERIOD_S = 0.02
 
 
 def _reach_bound(
@@ -76,8 +116,19 @@ def _reach_bound(
     return {"center": [float(v) for v in points[0]], "radius": radius}
 
 
+def _jsonable(value: Any) -> Any:
+    """Turn mappings, tuples and numpy scalars into JSON-friendly values."""
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
 class IKSetup:
-    """The dual-arm solver bound to a bundle, plus how its joints were grouped."""
+    """The dual-arm solver bound to a bundle, plus the operation session around it."""
 
     def __init__(
         self,
@@ -88,6 +139,9 @@ class IKSetup:
         right_arm_joints: Sequence[str] | None = None,
         head_joints: Sequence[str] | None = None,
         config_overrides: Mapping[str, Any] | None = None,
+        trajectory_limits: TrajectoryLimits | None = None,
+        sample_period_s: float | None = None,
+        trajectory_profile: str = "simulation",
     ) -> None:
         """Build the solver, inferring joint groups from names when not given.
 
@@ -100,8 +154,18 @@ class IKSetup:
         ``config_overrides`` replaces fields of the solver configuration; the
         VR server uses it to run the solver as a streaming controller (one step
         per pose sample) instead of iterating a jog to convergence.
+        ``trajectory_limits`` and ``sample_period_s`` are the reference
+        ceilings of the trajectory mode; the simulation profile is used when
+        they are not given, and ``trajectory_profile`` names where they came
+        from so the page can say so.
         """
-        from robopy.kinematics.dual_arm_ik import DualArmIK, DualArmIKConfig  # noqa: PLC0415
+        from robopy.kinematics.dual_arm_ik import (  # noqa: PLC0415
+            DualArmIK,
+            DualArmIKConfig,
+            approach_axes_from_model,
+            merge_solver_settings,
+            teleop_solver_settings,
+        )
 
         names = bundle.joint_order
         torso = torso_joint or next((n for n in names if "torso" in n), None)
@@ -119,24 +183,42 @@ class IKSetup:
 
         unbounded = bundle.model.unbounded_joints([torso, *left, *right])
         self.geometric_study_only = bool(unbounded)
-        settings: Dict[str, Any] = dict(
-            # The page iterates to convergence in one request; per-step
-            # bounds stay in place so the path is one the machine could take.
+        # The natural-motion profile shared with the machine's control system
+        # (robopy.robots.rakuda.rakuda_control.build_model_and_ik): what is
+        # tuned here is what the machine runs.
+        approach_axes = None
+        if not (config_overrides or {}).get("approach_axis_tcp"):
+            try:
+                approach_axes = approach_axes_from_model(
+                    bundle.model, bundle.tcp_frames, {"left": left[-1], "right": right[-1]}
+                )
+            except (ValueError, KeyError):
+                approach_axes = None
+        settings: Dict[str, Any] = teleop_solver_settings(
+            torso,
+            arm_joints=[*left, *right],
+            require_soft_limits=not unbounded,
+            approach_axes=approach_axes,
+        )
+        settings.update(
+            # Per-step bounds stay in place so every path is one the machine
+            # could take; the trajectory mode plays them back at their timing.
             max_joint_step_rad=0.05,
             compute_budget_s=5.0,
             max_state_age_s=5.0,
-            # The viewer iterates to convergence in one request; there is no
-            # machine integrating these steps, so an acceleration window is
-            # meaningless here and only slows the approach to the answer.
-            max_joint_acceleration_rad_s2=None,
-            # A little more Tikhonov damping than the controller default: it
-            # penalises step size without biasing the equilibrium, which
-            # keeps a straight (singular) arm from wandering along its
-            # null space while a jog converges.
-            damping=1e-3,
-            require_soft_limits=not unbounded,
+            # The trajectory mode integrates these steps at a fixed sample
+            # period, so the acceleration bound means something here (the
+            # legacy end-point mode still switches it off per request).
+            max_joint_acceleration_rad_s2=8.0,
         )
-        settings.update(config_overrides or {})
+        settings = merge_solver_settings(settings, config_overrides)
+        if settings.get("orientation_mode") == "axis_aligned" and not settings.get(
+            "approach_axis_tcp"
+        ):
+            raise ValueError(
+                "orientation_mode axis_aligned needs approach_axis_tcp (control.ik): the "
+                "gripper's approach axis is stated, not assumed."
+            )
         self.solver = DualArmIK(
             bundle.model,
             left_frame=bundle.tcp_frames["left"],
@@ -159,6 +241,251 @@ class IKSetup:
             for side in ("left", "right")
         }
         self._bundle = bundle
+        self.trajectory_limits = trajectory_limits or SIMULATION_TRAJECTORY_LIMITS
+        self.sample_period_s = float(sample_period_s or SIMULATION_SAMPLE_PERIOD_S)
+        self.trajectory_profile = trajectory_profile
+        self.collision_modelled = bundle.model.collision_model is not None and bool(
+            len(bundle.model.collision_model.collisionPairs)
+        )
+        # The operation session: the last trajectory (to resume a re-target
+        # from the reference's state at playback time) and its sequence.
+        self._last_trajectory: JointTrajectory | None = None
+        self._last_seq: int | None = None
+        self._resets = 0
+
+    def describe_config(self) -> Dict[str, Any]:
+        """The solver settings that shape motion, for logs and the page."""
+        cfg = self.solver.config
+        out = {
+            name: getattr(cfg, name)
+            for name in (
+                "task_priority_mode",
+                "orientation_priority",
+                "orientation_mode",
+                "approach_axis_tcp",
+                "posture_cost",
+                "joint_motion_cost",
+                "velocity_smoothing_cost",
+                "limit_avoidance_enabled",
+                "gain_time_constant_s",
+                "damping",
+                "max_joint_velocity_rad_s",
+                "max_joint_acceleration_rad_s2",
+                "max_joint_step_rad",
+                "position_limit_margin_rad",
+                "solver",
+            )
+            if hasattr(cfg, name)
+        }
+        out["orientation_mode"] = self.solver.orientation_mode
+        return out
+
+    def describe(self) -> Dict[str, Any]:
+        """What the page needs to know about the solver session."""
+        cfg = self.solver.config
+        return {
+            "available": True,
+            "groups": self.groups,
+            "workspace": self.workspace,
+            "geometric_study_only": self.geometric_study_only,
+            "priority_mode": cfg.task_priority_mode,
+            "orientation_mode": self.solver.orientation_mode,
+            "orientation_modes": ["position_only", "pose"]
+            + (["axis_aligned"] if cfg.approach_axis_tcp is not None else []),
+            "approach_axis_tcp": _jsonable(cfg.approach_axis_tcp),
+            "orientation_weight": self.solver.orientation_cost,
+            "collision_modelled": self.collision_modelled,
+            "trajectory": {
+                "profile": self.trajectory_profile,
+                "sample_period_s": self.sample_period_s,
+                **self.trajectory_limits.describe(),
+            },
+            "config": _jsonable(self.describe_config()),
+            "resets": self._resets,
+        }
+
+    def reset(self, positions: Mapping[str, float] | None = None) -> Dict[str, Any]:
+        """Forget the session's velocity history; re-anchor the posture reference.
+
+        This is the explicit reset the plan allows: start-up, a mode switch, a
+        manual pose change, resuming after a stop.  A configured preferred
+        posture stays; otherwise the given configuration becomes the posture
+        the secondary objective settles towards.
+        """
+        q = None
+        if positions is not None:
+            current = {name: 0.0 for name in self._bundle.joint_order}
+            current.update({k: float(v) for k, v in positions.items()})
+            q = self._bundle.positions_to_q(current)
+        # A configured preferred posture is kept; otherwise the pose given here
+        # becomes the posture the secondary objective settles towards.
+        self.solver.reset(q if self.solver.config.posture_reference is None else None)
+        self._last_trajectory = None
+        self._last_seq = None
+        self._resets += 1
+        return {"ok": True, "resets": self._resets}
+
+    def _apply_mode(self, orientation_mode: str | None, orientation_weight: float | None) -> None:
+        if orientation_mode is not None:
+            self.solver.set_orientation_mode(str(orientation_mode))
+        if orientation_weight is not None:
+            if not 0.0 <= float(orientation_weight) <= 10.0:
+                raise ValueError("orientation_weight must be within [0, 10].")
+            self.solver.set_task_costs(orientation_cost=float(orientation_weight))
+
+    def solve_trajectory(
+        self,
+        positions: Mapping[str, float],
+        targets: Mapping[str, Any],
+        *,
+        seq: int | None = None,
+        resume: Mapping[str, Any] | None = None,
+        torso_policy: str = "optimize",
+        torso_velocity_rad_s: float = 0.0,
+        inactive_arm_policy: str = "hold_joints",
+        orientation_mode: str | None = None,
+        orientation_weight: float | None = None,
+        max_duration_s: float = 4.0,
+        include_samples: bool = True,
+    ) -> Dict[str, Any]:
+        """Walk a reference from the hands to ``targets`` and return the timed trajectory.
+
+        Args:
+            positions: Where the model is now (the page's displayed joints).
+            targets: ``{"left"|"right": {"p": [3], "q": [4]}}`` goals.
+            seq: The page's request sequence, echoed so a late reply can be
+                told from a current one.
+            resume: ``{"seq": n, "t": seconds}``: the request arrived while
+                the trajectory ``n`` was playing, ``t`` seconds in.  The
+                reference resumes from its pose and velocity at that instant
+                and the solver from the joint velocity there, so the new goal
+                bends the motion instead of restarting it.
+            torso_policy: ``fixed`` / ``manual`` / ``optimize``.
+            torso_velocity_rad_s: For the manual policy.
+            inactive_arm_policy: ``hold_joints`` or ``hold_world``.
+            orientation_mode: Switch the hands' mode first (``None`` keeps it).
+            orientation_weight: Orientation (or axis) weight (``None`` keeps it).
+            max_duration_s: Duration budget of this request; a run still
+                moving at the end comes back ``truncated`` and the page asks
+                for the continuation.
+            include_samples: Whether to return every sample.
+        """
+        goals: Dict[str, np.ndarray] = {}
+        for side in ("left", "right"):
+            entry = targets.get(side)
+            if entry:
+                goals[side] = se3_from_quat_xyzw(entry["p"], entry["q"])
+        if not goals:
+            raise ValueError(
+                "At least one of targets.left / targets.right is required; with both hands "
+                "disabled there is nothing to solve."
+            )
+        policy = TorsoPolicy(torso_policy)
+        inactive = InactiveArmPolicy(inactive_arm_policy)
+        self._apply_mode(orientation_mode, orientation_weight)
+        if not 0.0 < float(max_duration_s) <= 60.0:
+            raise ValueError("max_duration_s must be within (0, 60].")
+
+        current = {name: 0.0 for name in self._bundle.joint_order}
+        current.update({k: float(v) for k, v in positions.items()})
+        references: Dict[str, PoseReference] = {}
+        resumed_from = None
+        if (
+            resume
+            and self._last_trajectory is not None
+            and self._last_seq is not None
+            and int(resume.get("seq", -1)) == self._last_seq
+        ):
+            t = max(0.0, float(resume.get("t", 0.0)))
+            last = self._last_trajectory
+            for side in goals:
+                try:
+                    pose, velocity = last.reference_at(t, side)
+                except KeyError:
+                    continue
+                references[side] = PoseReference(
+                    pose, self.trajectory_limits, linear_velocity=[float(v) for v in velocity]
+                )
+            # The joint velocity at that instant, for the acceleration bound.
+            index = 0
+            for i, sample in enumerate(last.samples):
+                if sample.time_from_start_s <= t:
+                    index = i
+            if 0 < index < len(last.samples):
+                a, b = last.samples[index - 1], last.samples[index]
+                dt = b.time_from_start_s - a.time_from_start_s
+                if dt > 0.0:
+                    self.solver.seed_velocity(
+                        {k: (b.joints[k] - a.joints[k]) / dt for k in b.joints}, dt
+                    )
+            resumed_from = {"seq": self._last_seq, "t": t}
+        elif resume:
+            # A resume for a trajectory this session no longer holds (or a
+            # different one): start the reference at rest where the hands are.
+            self.solver.reset()
+
+        trajectory = run_trajectory(
+            self.solver,
+            current,
+            goals,
+            self.trajectory_limits,
+            dt=self.sample_period_s,
+            max_duration_s=float(max_duration_s),
+            frames=self._bundle.tcp_frames,
+            torso_policy=policy,
+            torso_velocity_rad_s=torso_velocity_rad_s if policy is TorsoPolicy.MANUAL else 0.0,
+            inactive_arm_policy=inactive,
+            references=references or None,
+        )
+        self._last_trajectory = trajectory
+        self._last_seq = None if seq is None else int(seq)
+        last_result = trajectory.last_result
+        final = trajectory.final_joints or dict(current)
+        commandable = bool(trajectory.samples) and len(trajectory.samples) > 1
+        errors = (
+            last_result.errors()
+            if last_result is not None
+            else {k: None for k in ("left_position_m", "right_position_m")}
+        )
+        goal_errors = trajectory.samples[-1].goal_error_m if trajectory.samples else {}
+        goal_angles = (
+            trajectory.samples[-1].goal_orientation_error_rad if trajectory.samples else {}
+        )
+        return {
+            "mode": "trajectory",
+            "seq": seq,
+            "resumed_from": resumed_from,
+            "status": trajectory.status.value,
+            "commandable": commandable,
+            "stalled": trajectory.status.is_stall,
+            "truncated": trajectory.truncated,
+            "message": trajectory.message,
+            "duration_s": trajectory.duration_s,
+            "dt_s": trajectory.dt_s,
+            "n_samples": len(trajectory.samples),
+            "samples": [s.describe() for s in trajectory.samples] if include_samples else [],
+            "joints": final,
+            "errors": errors,
+            "goal_error_m": goal_errors,
+            "goal_orientation_error_rad": goal_angles,
+            "active_limits": list(last_result.active_limits) if last_result else [],
+            "min_singular_value": None if last_result is None else last_result.min_singular_value,
+            "torso_velocity_rad_s": 0.0
+            if last_result is None
+            else last_result.torso_velocity_rad_s,
+            "orientation_mode": self.solver.orientation_mode,
+            "orientation_weight": self.solver.orientation_cost,
+            "priority_mode": self.solver.config.task_priority_mode,
+            "inactive_arm_policy": inactive.value,
+            "torso_policy": policy.value,
+            "enabled": sorted(goals),
+            "limits": self.trajectory_limits.describe(),
+            "collision_modelled": self.collision_modelled,
+            "goals": {side: matrix_to_pose(T) for side, T in goals.items()},
+            "reference": {
+                side: matrix_to_pose(ref.pose) for side, ref in trajectory.references.items()
+            },
+        }
 
     def solve(
         self,
@@ -170,9 +497,10 @@ class IKSetup:
         iterations: int = 200,
         dt: float = 0.02,
         orientation_weight: float | None = None,
+        orientation_mode: str | None = None,
         inactive_arm_policy: str = "hold_joints",
     ) -> Dict[str, Any]:
-        """Iterate the differential solver from ``positions`` until it converges.
+        """Iterate the differential solver from ``positions`` until it converges (end-point mode).
 
         Args:
             positions: Starting joint configuration.
@@ -184,9 +512,10 @@ class IKSetup:
             iterations: Iteration budget.
             dt: Per-iteration step time; with the step bounds this sets the
                 largest joint move per iteration.
-            orientation_weight: Orientation task weight.  ``0`` makes the jog
-                position-only, which is what a two-axis wrist usually needs;
-                ``None`` keeps the solver's current weight.
+            orientation_weight: Orientation task weight; ``None`` keeps the
+                solver's current weight.
+            orientation_mode: ``position_only`` / ``pose`` / ``axis_aligned``;
+                ``None`` keeps the current mode.
 
         Returns:
             Status, message, final joints, per-hand errors, the iteration count
@@ -221,17 +550,17 @@ class IKSetup:
             inactive_arm_policy=InactiveArmPolicy(inactive_arm_policy),
         )
 
-        if orientation_weight is not None:
-            if not 0.0 <= float(orientation_weight) <= 10.0:
-                raise ValueError("orientation_weight must be within [0, 10].")
-            self.solver.set_task_costs(orientation_cost=float(orientation_weight))
+        self._apply_mode(orientation_mode, orientation_weight)
 
         current = {name: 0.0 for name in self._bundle.joint_order}
         current.update({k: float(v) for k, v in positions.items()})
-        # Regularise towards where the arm *is*, not towards wherever the solver
-        # first saw it: a jog should be the smallest motion that reaches the
-        # target, and a stale reference would drag the arm back on every request.
+        # The end-point mode is stateless by design: regularise towards where
+        # the arm *is*, iterate to convergence, keep nothing.  (The trajectory
+        # mode is the one that keeps a session.)  No acceleration window
+        # either: nothing integrates these steps in time.
         self.solver.reset(self._bundle.positions_to_q(current))
+        acceleration = self.solver.config.max_joint_acceleration_rad_s2
+        self.solver.config.max_joint_acceleration_rad_s2 = None
         result = None
         steps = 0
         history: list[float] = []
@@ -258,6 +587,8 @@ class IKSetup:
             if len(history) > 40 and abs(history[-1] - history[-41]) < 1e-6:
                 stalled = True
                 break
+        self.solver.config.max_joint_acceleration_rad_s2 = acceleration
+        self.solver.reset()
         assert result is not None
         final = (
             current
@@ -266,24 +597,23 @@ class IKSetup:
             | {k: float(v) for k, v in positions.items()}
         )
         return {
+            "mode": "endpoint",
             "status": result.status.value,
             "commandable": result.is_commandable,
             "message": result.message,
             "iterations": steps,
             "joints": final,
-            "errors": {
-                "left_position_m": result.left_position_error_m,
-                "left_orientation_rad": result.left_orientation_error_rad,
-                "right_position_m": result.right_position_error_m,
-                "right_orientation_rad": result.right_orientation_error_rad,
-                "left_hold_m": result.left_hold_residual_m,
-                "right_hold_m": result.right_hold_residual_m,
-            },
+            "errors": result.errors(),
             "active_limits": list(result.active_limits),
             "torso_velocity_rad_s": result.torso_velocity_rad_s,
             "stalled": stalled,
             "orientation_weight": self.solver.orientation_cost,
+            "orientation_mode": self.solver.orientation_mode,
+            "priority_mode": self.solver.config.task_priority_mode,
             "inactive_arm_policy": target.inactive_arm_policy.value,
+            "torso_policy": policy.value,
+            "min_singular_value": result.min_singular_value,
+            "collision_modelled": self.collision_modelled,
         }
 
     def _state(self, positions: Mapping[str, float]) -> JointState:
@@ -326,6 +656,9 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(self.server.describe())
         elif path == "/api/health":
             self._send_json({"ok": True, "ik": self.server.ik is not None})
+        elif path == "/api/machine":
+            machine = self.server.machine
+            self._send_json({"available": False} if machine is None else machine.snapshot())
         else:
             self._send_error(HTTPStatus.NOT_FOUND, f"No route for {path}")
 
@@ -340,6 +673,12 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_json(self.server.fk(body))
             elif path == "/api/ik":
                 self._send_json(self.server.ik_solve(body))
+            elif path == "/api/ik/reset":
+                self._send_json(self.server.ik_reset(body))
+            elif path == "/api/machine/zero":
+                self._send_json(self.server.machine_zero(body))
+            elif path == "/api/machine/travel":
+                self._send_json(self.server.machine_travel(body))
             else:
                 self._send_error(HTTPStatus.NOT_FOUND, f"No route for {path}")
         except (KeyError, ValueError, TypeError) as exc:
@@ -427,10 +766,13 @@ class ViewerServer(ThreadingHTTPServer):
         host: str = "127.0.0.1",
         port: int = 8765,
         ik: IKSetup | None = None,
+        machine: Any = None,
     ) -> None:
         super().__init__((host, port), _Handler)
         self.bundle = bundle
         self.ik = ik
+        #: A read-only :class:`~robopy.viewer.machine_mirror.MachineMirror`, or None.
+        self.machine = machine
         self._lock = threading.Lock()
         self._fk_calls = 0
         self._fk_seconds = 0.0
@@ -447,17 +789,9 @@ class ViewerServer(ThreadingHTTPServer):
         """Static model description plus the solver setup."""
         with self._lock:
             payload = self.bundle.describe()
-        payload["ik"] = (
-            None
-            if self.ik is None
-            else {
-                "available": True,
-                "groups": self.ik.groups,
-                "workspace": self.ik.workspace,
-                "geometric_study_only": self.ik.geometric_study_only,
-            }
-        )
+        payload["ik"] = None if self.ik is None else self.ik.describe()
         payload["simulation_only"] = True
+        payload["machine_mirror"] = self.machine is not None
         return payload
 
     def fk(self, body: Mapping[str, Any]) -> Dict[str, Any]:
@@ -476,6 +810,40 @@ class ViewerServer(ThreadingHTTPServer):
         poses["timing_ms"] = (time.perf_counter() - started) * 1e3
         return poses
 
+    def machine_zero(self, body: Mapping[str, Any]) -> Dict[str, Any]:
+        """Re-zero the mirrored follower: the machine is in ``body["joints"]`` now."""
+        if self.machine is None:
+            raise RuntimeError("no machine is mirrored (start with --mirror-follower)")
+        joints = body.get("joints")
+        if not isinstance(joints, dict):
+            raise ValueError("'joints' must be an object of {joint: radians}.")
+        from .machine_mirror import set_zero_from_pose
+
+        with self._lock:
+            return set_zero_from_pose(self.machine, joints, bundle=self.bundle)
+
+    def machine_travel(self, body: Mapping[str, Any]) -> Dict[str, Any]:
+        """Record, or write, the travel of the mirrored follower's joints."""
+        if self.machine is None:
+            raise RuntimeError("no machine is mirrored (start with --mirror-follower)")
+        action = str(body.get("action", ""))
+        if action != "write":
+            self.machine.travel(action)
+            return self.machine.snapshot()
+        from .machine_mirror import write_travel
+
+        motors = body.get("motors")
+        if motors is not None and not isinstance(motors, list):
+            raise ValueError("'motors' must be a list of motor names")
+        margin_deg = float(body.get("margin_deg", 2.0))
+        with self._lock:
+            return write_travel(
+                self.machine,
+                motors=None if motors is None else [str(m) for m in motors],
+                margin_rad=math.radians(margin_deg),
+                bundle=self.bundle,
+            )
+
     def ik_solve(self, body: Mapping[str, Any]) -> Dict[str, Any]:
         """Solve for ``body["targets"]`` from ``body["joints"]`` and return poses."""
         if self.ik is None:
@@ -487,25 +855,56 @@ class ViewerServer(ThreadingHTTPServer):
         targets = body.get("targets")
         if not isinstance(joints, dict) or not isinstance(targets, dict):
             raise ValueError("'joints' and 'targets' must be objects.")
+        mode = str(body.get("mode", "endpoint"))
+        if mode not in ("endpoint", "trajectory"):
+            raise ValueError("mode must be 'endpoint' or 'trajectory'.")
+        orientation_weight = (
+            None if body.get("orientation_weight") is None else float(body["orientation_weight"])
+        )
+        orientation_mode = (
+            None if body.get("orientation_mode") is None else str(body["orientation_mode"])
+        )
         started = time.perf_counter()
         with self._lock:
-            result = self.ik.solve(
-                joints,
-                targets,
-                torso_policy=str(body.get("torso_policy", "fixed")),
-                inactive_arm_policy=str(body.get("inactive_arm_policy", "hold_joints")),
-                torso_velocity_rad_s=float(body.get("torso_velocity_rad_s", 0.0)),
-                iterations=int(body.get("iterations", 200)),
-                dt=float(body.get("dt", 0.02)),
-                orientation_weight=(
-                    None
-                    if body.get("orientation_weight") is None
-                    else float(body["orientation_weight"])
-                ),
-            )
+            if mode == "trajectory":
+                result = self.ik.solve_trajectory(
+                    joints,
+                    targets,
+                    seq=None if body.get("seq") is None else int(body["seq"]),
+                    resume=body.get("resume") if isinstance(body.get("resume"), dict) else None,
+                    torso_policy=str(body.get("torso_policy", "optimize")),
+                    inactive_arm_policy=str(body.get("inactive_arm_policy", "hold_joints")),
+                    torso_velocity_rad_s=float(body.get("torso_velocity_rad_s", 0.0)),
+                    orientation_mode=orientation_mode,
+                    orientation_weight=orientation_weight,
+                    max_duration_s=float(body.get("max_duration_s", 4.0)),
+                    include_samples=bool(body.get("include_samples", True)),
+                )
+            else:
+                result = self.ik.solve(
+                    joints,
+                    targets,
+                    torso_policy=str(body.get("torso_policy", "fixed")),
+                    inactive_arm_policy=str(body.get("inactive_arm_policy", "hold_joints")),
+                    torso_velocity_rad_s=float(body.get("torso_velocity_rad_s", 0.0)),
+                    iterations=int(body.get("iterations", 200)),
+                    dt=float(body.get("dt", 0.02)),
+                    orientation_weight=orientation_weight,
+                    orientation_mode=orientation_mode,
+                )
             result["poses"] = self.bundle.poses(result["joints"])
         result["timing_ms"] = (time.perf_counter() - started) * 1e3
         return result
+
+    def ik_reset(self, body: Mapping[str, Any]) -> Dict[str, Any]:
+        """Forget the solver session's history (see :meth:`IKSetup.reset`)."""
+        if self.ik is None:
+            raise RuntimeError("The solver is not available.")
+        joints = body.get("joints")
+        if joints is not None and not isinstance(joints, dict):
+            raise ValueError("'joints' must be an object when given.")
+        with self._lock:
+            return self.ik.reset(joints)
 
 
 def serve(
@@ -516,9 +915,10 @@ def serve(
     open_browser: bool = True,
     ik: IKSetup | None = None,
     on_ready: Callable[[ViewerServer], None] | None = None,
+    machine: Any = None,
 ) -> None:
     """Run the viewer until interrupted."""
-    server = ViewerServer(bundle, host=host, port=port, ik=ik)
+    server = ViewerServer(bundle, host=host, port=port, ik=ik, machine=machine)
     print(f"robopy viewer: {server.url}")
     print(f"  model : {bundle.urdf_path}")
     print(
@@ -526,7 +926,15 @@ def serve(
         f"<{bundle.geometry_source}>)   joints: {len(bundle.joint_order)}"
     )
     print(f"  IK    : {'available' if ik is not None else 'not available'}")
-    print("  SIMULATION ONLY -- nothing here talks to a motor. Ctrl+C to stop.")
+    if machine is None:
+        print("  SIMULATION ONLY -- nothing here talks to a motor. Ctrl+C to stop.")
+    else:
+        print(
+            f"  machine: mirroring {len(machine.motors)} follower motor(s), READ-ONLY -- "
+            "nothing is written to a motor (Joints tab: follow machine). Ctrl+C to stop."
+        )
+        if machine.unmapped:
+            print(f"  not mirrored (keep the page's value): {machine.unmapped}")
     if on_ready is not None:
         on_ready(server)
     if open_browser:

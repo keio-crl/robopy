@@ -176,6 +176,84 @@ control:
         # Unmeasured values stay None rather than being filled in.
         assert spec.torque_constant_nm_per_a is None
 
+    def test_limit_provenance_ik_and_trajectory_sections_are_parsed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        _write(
+            tmp_path,
+            """
+control:
+  mode: position_teleop
+  model:
+    soft_limits_rad:
+      torso_yaw_dof: [-1.5, 1.5]
+      shoulder_pitch_left_dof: {lower: -2.0, upper: 2.0, validated: true, note: measured}
+    joint_limit_overrides_rad:
+      elbow_pitch_right_dof: {lower: -2.79, upper: 0.1, reason: CAD zero on the stop}
+    home_positions_rad: {elbow_pitch_left_dof: 0.8}
+  ik:
+    task_priority_mode: hierarchical
+    orientation_mode: axis_aligned
+    approach_axis_tcp: [0, 0, -1]
+    preferred_posture_rad: {elbow_pitch_left_dof: 0.8}
+    joint_motion_cost: {torso_yaw_dof: 5.0}
+    gain_time_constant_s: 0.1
+    torso_policy: optimize
+  trajectory:
+    sample_period_s: 0.02
+    max_linear_velocity_m_s: 0.2
+""".lstrip(),
+        )
+        out = apply_rakuda_dotconfig(_config())
+        assert out.control is not None
+        model = out.control.model
+        assert model.soft_limits_rad["torso_yaw_dof"] == (-1.5, 1.5)
+        assert "torso_yaw_dof" not in model.soft_limit_specs  # short form: unvalidated
+        spec = model.soft_limit_specs["shoulder_pitch_left_dof"]
+        assert spec.validated and spec.note == "measured"
+        entries = model.soft_limit_entries()
+        assert entries["torso_yaw_dof"]["validated"] is False
+        assert entries["shoulder_pitch_left_dof"]["validated"] is True
+        override = model.joint_limit_overrides_rad["elbow_pitch_right_dof"]
+        assert (override.lower, override.upper) == (-2.79, 0.1)
+        assert model.override_entries()["elbow_pitch_right_dof"]["reason"] == "CAD zero on the stop"
+        assert model.home_positions_rad == {"elbow_pitch_left_dof": 0.8}
+        ik = out.control.ik
+        assert ik.task_priority_mode == "hierarchical" and ik.orientation_mode == "axis_aligned"
+        assert ik.approach_axis_tcp == (0.0, 0.0, -1.0)
+        overrides = ik.solver_overrides()
+        assert overrides["posture_reference"] == {"elbow_pitch_left_dof": 0.8}
+        assert overrides["joint_motion_cost"] == {"torso_yaw_dof": 5.0}
+        assert "torso_policy" not in overrides and overrides["gain_time_constant_s"] == 0.1
+        traj = out.control.trajectory
+        assert traj.sample_period_s == 0.02 and traj.max_linear_velocity_m_s == 0.2
+        assert set(traj.missing()) == {
+            "max_linear_acceleration_m_s2",
+            "max_angular_velocity_rad_s",
+            "max_angular_acceleration_rad_s2",
+        }
+
+    def test_an_override_without_a_reason_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="reason is required"):
+            parse_rakuda_control_yaml(
+                {"model": {"joint_limit_overrides_rad": {"x": {"lower": -1, "upper": 1}}}}
+            )
+        with pytest.raises(ValueError, match="mapping"):
+            parse_rakuda_control_yaml({"model": {"joint_limit_overrides_rad": {"x": [-1, 1]}}})
+
+    def test_bad_ik_and_trajectory_values_are_rejected(self) -> None:
+        with pytest.raises(ValueError, match="control.ik.orientation_mode"):
+            parse_rakuda_control_yaml({"ik": {"orientation_mode": "euler"}})
+        with pytest.raises(ValueError, match="unknown field"):
+            parse_rakuda_control_yaml({"ik": {"posture_gain": 1.0}})
+        with pytest.raises(ValueError, match="approach_axis_tcp"):
+            parse_rakuda_control_yaml({"ik": {"approach_axis_tcp": [0, 1]}})
+        with pytest.raises(ValueError, match="must be positive"):
+            parse_rakuda_control_yaml({"trajectory": {"sample_period_s": 0}})
+        with pytest.raises(ValueError, match="unknown field"):
+            parse_rakuda_control_yaml({"trajectory": {"speed": 1}})
+
     def test_an_unknown_mode_is_rejected(self) -> None:
         with pytest.raises(ValueError, match="control.mode must be one of"):
             parse_rakuda_control_yaml({"mode": "teleport"})

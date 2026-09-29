@@ -17,6 +17,15 @@ the target freezes and the solver holds the hand.  Two mappings exist:
   nothing.  Used when the operator's and the robot's reach differ so much that
   an absolute correspondence is not usable.
 
+In the absolute mapping the press can pull the hand a long way if the operator's
+hand is far from where the robot's is.  An **engagement gate** prevents that:
+with an engage radius set (see :attr:`ArmTeleopConfig.engage_radius_m`, or per
+sample for a device such as a tracked hand), the clutch is only *requested*
+by the press and engages once the mapped target lies within that distance of
+the current hand pose -- the operator brings their hand to the robot's, then
+the two move together.  Until then the command reports ``waiting`` and the
+distance still to go, so the page can show a marker.
+
 The trigger drives the gripper *only* when the gripper's open and closed
 angles have been measured on the machine and put in the configuration; with
 either missing no gripper command is produced.  The angles are not something
@@ -55,8 +64,10 @@ class ArmTeleopConfig:
         mapping: ``"absolute"`` (hand target = controller position about the
             head anchor) or ``"relative"`` (displacement since the press).
             See the module docstring.
-        position_scale: Robot metres per operator metre while clutched.  In
-            absolute mapping the scaling is about the head anchor.
+        position_scale: Robot metres per operator metre while clutched.  The
+            scaling is about the point where the clutch engaged, in both
+            mappings, so the engage marker of the absolute mapping stays on
+            the robot's hand whatever the scale.
         orientation_enabled: Whether the controller's rotation drives the
             hand's orientation.  With a two-axis wrist a translation-only
             mapping is often the usable one; see the orientation weight of
@@ -70,6 +81,25 @@ class ArmTeleopConfig:
         gripper_motor: Follower motor name of this arm's gripper, or ``None``.
         gripper_open_rad: Measured gripper angle at trigger 0, or ``None``.
         gripper_closed_rad: Measured gripper angle at trigger 1, or ``None``.
+            The trigger drives the gripper only while the clutch is engaged;
+            released, the gripper keeps its last commanded angle.
+        engage_radius_m: Absolute mapping only: the clutch engages only once
+            the mapped target is within this distance (robot metres) of the
+            current hand pose; ``None`` engages at once and lets the hand be
+            pulled over at the slew-limited speed.  A sample may carry its own
+            radius (:attr:`ControllerSample.engage_radius_m`), which wins.
+        pointing: How the orientation follows a sample that says where it
+            points (:attr:`ControllerSample.pointing`, the hands):
+            ``"absolute"`` turns the gripper's approach axis to that direction
+            -- the gripper points where the operator's hand points, whatever
+            the robot's hand was doing when the clutch engaged -- or
+            ``"relative"``, the rotation since the press added to the pose the
+            robot's hand had then.  The relative form carries any offset
+            present at the press for the whole grasp: a forearm roll wound up
+            before it stays wound, since unwinding it would turn the pointing.
+            Samples without a pointing (controllers) are always relative.
+        approach_axis: The gripper's approach axis in its TCP frame, which the
+            absolute pointing turns; ``None`` leaves every sample relative.
     """
 
     mapping: Literal["absolute", "relative"] = "absolute"
@@ -82,10 +112,19 @@ class ArmTeleopConfig:
     gripper_motor: str | None = None
     gripper_open_rad: float | None = None
     gripper_closed_rad: float | None = None
+    engage_radius_m: float | None = None
+    pointing: Literal["absolute", "relative"] = "absolute"
+    approach_axis: Tuple[float, float, float] | None = None
 
     def __post_init__(self) -> None:
         if self.mapping not in ("absolute", "relative"):
             raise ValueError("mapping must be 'absolute' or 'relative'.")
+        if self.pointing not in ("absolute", "relative"):
+            raise ValueError("pointing must be 'absolute' or 'relative'.")
+        if self.approach_axis is not None and not np.any(np.asarray(self.approach_axis)):
+            raise ValueError("approach_axis must be a non-zero 3-vector.")
+        if self.engage_radius_m is not None and self.engage_radius_m <= 0.0:
+            raise ValueError("engage_radius_m must be positive (or None to engage at once).")
         if not 0.0 < self.position_scale <= 5.0:
             raise ValueError("position_scale must be within (0, 5].")
         if self.max_speed_m_s <= 0.0 or self.max_angular_speed_rad_s <= 0.0:
@@ -125,6 +164,14 @@ class ControllerSample:
         trigger: Trigger value in ``[0, 1]``.
         buttons: Other named buttons (``"a"``, ``"b"``, ``"stick"`` ...).
         stamp_s: Monotonic time of the sample.
+        engage_radius_m: What this device requires before its clutch engages
+            in the absolute mapping (see :attr:`ArmTeleopConfig.engage_radius_m`),
+            or ``None`` to use the arm's setting.
+        pointing: Unit vector, operator frame, of the direction the device
+            points -- for a hand, its long axis (wrist to middle knuckle) --
+            or ``None`` when it has none.  With
+            :attr:`ArmTeleopConfig.pointing` ``"absolute"`` the gripper is
+            turned to point the same way.
     """
 
     pose: NDArray[np.float64] | None
@@ -132,6 +179,8 @@ class ControllerSample:
     trigger: float = 0.0
     buttons: Mapping[str, bool] = field(default_factory=dict)
     stamp_s: float = 0.0
+    engage_radius_m: float | None = None
+    pointing: NDArray[np.float64] | None = None
 
 
 @dataclass(frozen=True)
@@ -148,6 +197,12 @@ class ArmCommand:
         engaged_now: The clutch was engaged on this step.
         released_now: The clutch was released on this step.
         tracked: Whether the controller was tracked this step.
+        engage_distance_m: Absolute mapping, controller tracked and clutch not
+            engaged: how far the mapped target is from the current hand, i.e.
+            how far the operator's hand is from the robot's.  ``None`` otherwise.
+        engage_radius_m: The gate radius in force this step, if any.
+        waiting: The clutch is requested but the hand is not yet within the
+            engage radius; nothing moves until it is.
     """
 
     target: NDArray[np.float64] | None
@@ -157,6 +212,9 @@ class ArmCommand:
     engaged_now: bool = False
     released_now: bool = False
     tracked: bool = True
+    engage_distance_m: float | None = None
+    engage_radius_m: float | None = None
+    waiting: bool = False
 
 
 class ArmTeleop:
@@ -180,6 +238,9 @@ class ArmTeleop:
         self._last_time: float | None = None
         self._robot_anchor: NDArray[np.float64] | None = None
         self._operator_anchor: NDArray[np.float64] | None = None
+        # The gripper follows the trigger only while the clutch is engaged;
+        # otherwise the last value stays (None until the first engaged step).
+        self._last_gripper: float | None = None
 
     @property
     def clutched(self) -> bool:
@@ -252,7 +313,11 @@ class ArmTeleop:
             raise RuntimeError(
                 f"{self.side} arm: absolute mapping needs set_anchor() before update()."
             )
-        gripper = None if sample is None else c.gripper_target(sample.trigger)
+        # The gripper is driven only while this arm is being operated (the
+        # clutch engaged): a hand curling while it is not holding the arm, or
+        # while it is out of view, leaves the gripper where it was.
+        trigger_gripper = None if sample is None else c.gripper_target(sample.trigger)
+        gripper = self._last_gripper
         if sample is None or sample.pose is None:
             released = self._clutched
             self.release()
@@ -267,6 +332,25 @@ class ArmTeleop:
 
         pose = np.asarray(sample.pose, dtype=np.float64)
         engaged_now = released_now = False
+        # The gate: where the absolute mapping would send the hand, and how
+        # far that is from where the hand is, while the clutch is not engaged.
+        radius = sample.engage_radius_m if sample.engage_radius_m is not None else c.engage_radius_m
+        distance: float | None = None
+        if c.mapping == "absolute" and not self._clutched:
+            distance = self._engage_distance(pose, current_hand_pose)
+        if radius is not None and c.mapping != "absolute":
+            radius = None  # the relative mapping never jumps; nothing to gate
+        if sample.clutch and not self._clutched and radius is not None and distance is not None:
+            if distance > radius:
+                return ArmCommand(
+                    target=self.target,
+                    enabled=False,
+                    clutched=False,
+                    gripper_rad=gripper,
+                    engage_distance_m=distance,
+                    engage_radius_m=radius,
+                    waiting=True,
+                )
         if sample.clutch and not self._clutched:
             self._clutched = True
             self._controller0 = pose.copy()
@@ -277,6 +361,8 @@ class ArmTeleop:
         elif not sample.clutch and self._clutched:
             self.release()
             released_now = True
+            if c.mapping == "absolute":
+                distance = self._engage_distance(pose, current_hand_pose)
 
         if not self._clutched:
             return ArmCommand(
@@ -285,21 +371,38 @@ class ArmTeleop:
                 clutched=False,
                 gripper_rad=gripper,
                 released_now=released_now,
+                engage_distance_m=distance,
+                engage_radius_m=radius,
             )
 
         assert self._controller0 is not None and self._hand0 is not None
         assert self._target is not None
+        if trigger_gripper is not None:
+            gripper = trigger_gripper
+            self._last_gripper = gripper
         desired = np.eye(4)
         if c.mapping == "absolute":
-            assert self._robot_anchor is not None and self._operator_anchor is not None
-            desired[:3, 3] = self._robot_anchor + c.position_scale * (
-                pose[:3, 3] - self._operator_anchor
+            # The correspondence puts the hand where the controller was at the
+            # press; the scale then applies to the motion since, so the point
+            # of engagement -- the marker on the twin's hand -- is unscaled.
+            desired[:3, 3] = self._mapped(self._controller0) + c.position_scale * (
+                pose[:3, 3] - self._controller0[:3, 3]
             )
         else:
             desired[:3, 3] = self._hand0[:3, 3] + c.position_scale * (
                 pose[:3, 3] - self._controller0[:3, 3]
             )
-        if c.orientation_enabled:
+        if c.orientation_enabled and self._points_absolutely(sample):
+            # The gripper points where the operator's hand points: the least
+            # rotation taking the approach axis, as the hand was at the press,
+            # onto that direction.  The roll about it is the solver's to choose.
+            assert sample.pointing is not None and c.approach_axis is not None
+            axis = np.asarray(c.approach_axis, dtype=np.float64)
+            R0 = self._hand0[:3, :3]
+            desired[:3, :3] = (
+                _rotation_between(R0 @ (axis / np.linalg.norm(axis)), sample.pointing) @ R0
+            )
+        elif c.orientation_enabled:
             desired[:3, :3] = pose[:3, :3] @ self._controller0[:3, :3].T @ self._hand0[:3, :3]
         else:
             desired[:3, :3] = self._hand0[:3, :3]
@@ -342,6 +445,28 @@ class ArmTeleop:
             engaged_now=engaged_now,
         )
 
+    def _points_absolutely(self, sample: ControllerSample) -> bool:
+        c = self.config
+        if c.pointing != "absolute" or c.approach_axis is None or sample.pointing is None:
+            return False
+        return bool(np.all(np.isfinite(sample.pointing)) and np.linalg.norm(sample.pointing) > 1e-6)
+
+    def _mapped(self, pose: NDArray[np.float64]) -> NDArray[np.float64]:
+        """The absolute correspondence: the controller's position in the robot's frame.
+
+        Unscaled -- one operator metre from the head is one robot metre from
+        the anchor -- so the engage marker (its inverse) sits on the robot's hand.
+        """
+        assert self._robot_anchor is not None and self._operator_anchor is not None
+        return self._robot_anchor + (pose[:3, 3] - self._operator_anchor)
+
+    def _engage_distance(
+        self, pose: NDArray[np.float64], current_hand_pose: NDArray[np.float64]
+    ) -> float:
+        """How far the absolute mapping would move the hand if the clutch engaged now."""
+        current = np.asarray(current_hand_pose, dtype=np.float64)[:3, 3]
+        return float(np.linalg.norm(self._mapped(pose) - current))
+
     def describe(self) -> Dict[str, Any]:
         """JSON-friendly state."""
         target = None
@@ -364,6 +489,7 @@ class ArmTeleop:
             "position_scale": self.config.position_scale,
             "orientation_enabled": self.config.orientation_enabled,
             "gripper_available": self.config.gripper_available,
+            "engage_radius_m": self.config.engage_radius_m,
         }
 
 
@@ -375,6 +501,23 @@ def _orthonormalize(R: NDArray[np.float64]) -> NDArray[np.float64]:
         U[:, -1] *= -1.0
         out = U @ Vt
     return out
+
+
+def _rotation_between(a: NDArray[np.float64], b: NDArray[np.float64]) -> NDArray[np.float64]:
+    """The least rotation taking direction ``a`` onto direction ``b``."""
+    a = np.asarray(a, dtype=np.float64) / np.linalg.norm(a)
+    b = np.asarray(b, dtype=np.float64) / np.linalg.norm(b)
+    v = np.cross(a, b)
+    s = float(np.linalg.norm(v))
+    c = float(a @ b)
+    if s < 1e-9:
+        if c > 0.0:
+            return np.eye(3)
+        # Opposite: half a turn about any axis perpendicular to a.
+        other = np.array([1.0, 0.0, 0.0]) if abs(a[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+        perpendicular = np.cross(a, other)
+        return _rotation_about(perpendicular / np.linalg.norm(perpendicular), math.pi)
+    return _rotation_about(v / s, math.atan2(s, c))
 
 
 def _rotation_about(axis: NDArray[np.float64], angle: float) -> NDArray[np.float64]:

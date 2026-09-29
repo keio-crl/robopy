@@ -14,6 +14,14 @@ the hand where it got to.
 
     uv run --extra kinematics python examples/robot/rakuda_vr_teleop.py
     uv run --extra kinematics python examples/robot/rakuda_vr_teleop.py --synthetic
+    uv run --extra kinematics python examples/robot/rakuda_vr_teleop.py --hands
+
+With ``--hands`` the operator uses a bare hand instead of the controller:
+the page then sends the hand's joints (WebXR Hand Input) and the server reads
+the pinch of thumb and index as the clutch.  A pinch made away from where the
+robot's hand is does not move the arm: the operator first brings the palm to
+the marker the server places there (the engagement gate), pinches, and only
+then does the hand follow.
 
 To operate for real::
 
@@ -30,7 +38,7 @@ import math
 from typing import Any, Dict, List
 
 from robopy.viewer.cli import add_model_arguments, load_model
-from robopy.vr.__main__ import STREAMING_IK_OVERRIDES, DEFAULT_START_POSE
+from robopy.vr.__main__ import DEFAULT_START_POSE, STREAMING_IK_OVERRIDES
 from robopy.vr.arm_teleop import ArmTeleopConfig, DualArmTeleop
 from robopy.vr.backend import SimulationBackend
 from robopy.vr.head_tracking import HeadJointMapping, HeadTracker, HeadTrackingConfig
@@ -55,10 +63,42 @@ def controller(z: float, *, clutch: bool) -> Dict[str, Any]:
     return {"p": [-0.15, 1.3, z], "q": [0, 0, 0, 1], "clutch": clutch, "trigger": 0.0}
 
 
+def tracked_hand(z: float, *, pinch: bool, palm: List[float] | None = None) -> Dict[str, Any]:
+    """A tracked left hand in place of the controller: what the page sends per frame.
+
+    Only the joints the default gestures need are laid out here (the real page
+    sends all 25): the wrist with its orientation, the thumb and index tips
+    (5 mm apart when pinching, 8 cm otherwise), the middle knuckle for the
+    palm reference point, and the middle, ring and little fingers straight,
+    i.e. the gripper open.  The palm centre lands where the controller was,
+    or at ``palm`` (WebXR coordinates) when given.
+    """
+    p = palm if palm is not None else [-0.15, 1.3, z]
+    w = [p[0], p[1], p[2] + 0.045]  # palm = midpoint(wrist, middle knuckle)
+    joints: Dict[str, Any] = {"wrist": {"p": w, "q": [0, 0, 0, 1]}}
+    for finger, x in (("index", -0.03), ("middle", 0.0), ("ring", 0.03), ("pinky", 0.06)):
+        knuckle = [w[0] + x, w[1], w[2] - 0.09]
+        for name, dz in (
+            ("phalanx-proximal", 0.0),
+            ("phalanx-intermediate", -0.04),
+            ("phalanx-distal", -0.07),
+            ("tip", -0.10),
+        ):
+            joints[f"{finger}-finger-{name}"] = {"p": [knuckle[0], knuckle[1], knuckle[2] + dz]}
+    index_tip = joints["index-finger-tip"]["p"]
+    joints["thumb-tip"] = {
+        "p": [index_tip[0] - (0.005 if pinch else 0.08), index_tip[1], index_tip[2]]
+    }
+    return {"hand": {"joints": joints}}
+
+
 def main(argv: List[str] | None = None) -> int:
     """Run the scripted session."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     add_model_arguments(parser)
+    parser.add_argument(
+        "--hands", action="store_true", help="drive the arm with a tracked hand (a pinch)"
+    )
     args = parser.parse_args(argv)
 
     loaded = load_model(args, parser, ik_overrides=STREAMING_IK_OVERRIDES)
@@ -122,50 +162,108 @@ def main(argv: List[str] | None = None) -> int:
             assert state is not None
             joints = state["joints"]
             print(
-                f"headset yaw {math.degrees(target_yaw):+5.1f} pitch {math.degrees(target_pitch):+5.1f} deg"
-                f"  ->  {yaw_joint}={joints[yaw_joint]:+.3f} {pitch_joint}={joints[pitch_joint]:+.3f} rad"
+                f"headset yaw {math.degrees(target_yaw):+5.1f} "
+                f"pitch {math.degrees(target_pitch):+5.1f} deg  ->  "
+                f"{yaw_joint}={joints[yaw_joint]:+.3f} {pitch_joint}={joints[pitch_joint]:+.3f} rad"
             )
 
-        # 2. Hold X with the controller 20 cm ahead of, 15 cm left of and 30 cm
-        #    below the headset (which is 1.6 m up).  The hand target is the same
-        #    offset from the robot's head anchor; the hand slews there.
+        # 2. Hold X (or pinch) with the controller (or palm) 20 cm ahead of,
+        #    15 cm left of and 30 cm below the headset (which is 1.6 m up).
+        #    The hand target is the same offset from the robot's head anchor;
+        #    the hand slews there.
         hand0 = backend.hand_pose("left")[:3, 3].copy()
+        if args.hands:
+            # 2a. A pinch far from the robot's hand engages nothing: the server
+            #     reports the marker where the palm has to go, in page
+            #     coordinates (robot axes: x forward, y left, z up).
+            state = session.handle(
+                {"type": "pose", "head": headset(0.0), "left": tracked_hand(-0.2, pinch=True)},
+                t + 1 / 60,
+            )
+            assert state is not None
+            left = state["arms"]["left"]
+            marker = left["engage"]
+            print(
+                f"pinch away from the robot's hand: waiting={left['waiting']} "
+                f"clutched={left['clutched']}; marker {marker['distance_m'] * 100:.0f} cm away at "
+                f"({marker['p'][0]:+.3f}, {marker['p'][1]:+.3f}, {marker['p'][2]:+.3f}) m, "
+                f"radius {marker['radius_m'] * 100:.0f} cm"
+            )
+            # 2b. Bring the palm to the marker (page -> WebXR: x=-y, y=z, z=-x),
+            #     pinch there: the clutch engages with the hand where it is.
+            mx, my, mz = marker["p"]
+            at_marker = [-my, mz, -mx]
+            for _ in range(5):
+                t += 1 / 60
+                state = session.handle(
+                    {
+                        "type": "pose",
+                        "head": headset(0.0),
+                        "left": tracked_hand(0.0, pinch=True, palm=at_marker),
+                    },
+                    t,
+                )
+            assert state is not None
+            print(f"pinch at the marker: clutched={state['arms']['left']['clutched']}")
+            # 2c. Move the pinched hand from the marker to the intended spot
+            #     over a second; the robot's hand comes along.
+            goal = [-0.15, 1.3, -0.2]
+            for i in range(60):
+                t += 1 / 60
+                a = (i + 1) / 60
+                palm = [m + a * (g - m) for m, g in zip(at_marker, goal)]
+                session.handle(
+                    {
+                        "type": "pose",
+                        "head": headset(0.0),
+                        "left": tracked_hand(0.0, pinch=True, palm=palm),
+                    },
+                    t,
+                )
         for _ in range(180):
             t += 1 / 60
             state = session.handle(
                 {
                     "type": "pose",
                     "head": headset(0.0),
-                    "left": controller(-0.2, clutch=True),
+                    "left": tracked_hand(-0.2, pinch=True)
+                    if args.hands
+                    else controller(-0.2, clutch=True),
                     "right": None,
                 },
                 t,
             )
         assert state is not None
+        if args.hands:
+            left = state["arms"]["left"]
+            print(f"input: {left['input']}  gesture: {left['hand']}")
         hand = backend.hand_pose("left")[:3, 3]
         target = state["arms"]["left"]["target"]["p"]
         ik = state["ik"]
         print(
             f"target = anchor + (+0.20, +0.15, -0.30) = ({target[0]:+.3f}, {target[1]:+.3f}, "
-            f"{target[2]:+.3f}) m; hand went from ({hand0[0]:+.3f}, {hand0[1]:+.3f}, {hand0[2]:+.3f}) "
+            f"{target[2]:+.3f}) m; hand went from "
+            f"({hand0[0]:+.3f}, {hand0[1]:+.3f}, {hand0[2]:+.3f}) "
             f"to ({hand[0]:+.3f}, {hand[1]:+.3f}, {hand[2]:+.3f})  (IK {ik['status']}, residual "
             f"{(ik['errors']['left_position_m'] or 0) * 1e3:.1f} mm)"
         )
 
-        # 3. Release X: the hand holds where it is, wherever the controller goes.
+        # 3. Release X (open the pinch): the hand holds where it is, wherever
+        #    the controller goes.
         state = session.handle(
             {
                 "type": "pose",
                 "head": headset(0.0),
-                "left": controller(-0.9, clutch=False),
+                "left": tracked_hand(-0.9, pinch=False)
+                if args.hands
+                else controller(-0.9, clutch=False),
                 "right": None,
             },
             t + 0.02,
         )
         assert state is not None
-        print(
-            f"released: clutched={state['arms']['left']['clutched']} enabled={state['arms']['left']['enabled']}"
-        )
+        left = state["arms"]["left"]
+        print(f"released: clutched={left['clutched']} enabled={left['enabled']}")
         session.close()
     finally:
         loaded.cleanup()

@@ -40,12 +40,15 @@
 
 <div id="vr-bar">
   <button id="enter-vr" class="primary" disabled title="Start an immersive WebXR session (needs a headset and a secure context)">Enter VR</button>
+  <label title="immersive-ar: the room is seen through the headset's cameras behind the twin, the camera image and the HUD (Quest Browser supports it)"><input type="checkbox" id="passthrough" checked> passthrough (AR)</label>
   <button id="preview" title="Drive the head from this window's camera; no headset needed">Desktop preview</button>
-  <button id="recenter" title="Take the current headset direction as the robot's front (also: click both thumbsticks)">Re-centre</button>
+  <button id="recenter" title="Take the current headset direction as the robot's front (also: click both thumbsticks, pinch thumb and middle finger on both hands, or hold both hands open with the palms away)">Re-centre</button>
   <label><input type="checkbox" id="head-on" checked> head</label>
   <label><input type="checkbox" id="arms-on" checked> arms</label>
-  <button id="record" class="rec" title="Record the session on the server; videos are rendered when you stop (also: B / Y in VR)">&#9679; Record</button>
+  <button id="record" class="rec" title="Record the session on the server; videos are rendered when you stop (also: B / Y in VR, or hold a thumb-and-middle-finger pinch on one hand)">&#9679; Record</button>
   <label><input type="checkbox" id="twin-on" checked> robot twin</label>
+  <label title="Keep the twin where it was first placed. The hand markers sit on the twin's hands: reach for them and pinch, as if taking hold of a master robot. Gesture re-centres then only resume; the Re-centre button, both thumbsticks or 'place twin' move twin and mapping together"><input type="checkbox" id="twin-fixed" checked> twin fixed</label>
+  <button id="twin-place" title="Place the twin again at the next re-centre (or state update)">place twin</button>
   <label><input type="checkbox" id="mirror-on" checked> mirror</label>
   <label>at <input id="mirror-dist" type="number" class="num short" value="1.5" step="0.1" min="0.5" max="5"> m</label>
   <label><input type="checkbox" id="cam-lock" checked> image follows head</label>

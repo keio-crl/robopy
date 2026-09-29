@@ -171,6 +171,16 @@ class ServoLoopConfig:
         stop_policy: See :class:`StopPolicy`.
         bus_watchdog_counts: Value written to ``BUS_WATCHDOG`` (20 ms per count),
             or ``None`` to leave the register alone.
+        max_slow_reads: A snapshot whose samples span more than
+            ``max_acquisition_span_s`` (a retried transaction, a USB hiccup), or
+            a bulk read that timed out or failed to decode, is not acted on:
+            that cycle issues no command and the motors hold their last goal.
+            Only this many such reads *in a row* fault the loop.
+        range_tolerance_rad: How far outside its calibrated range a measured
+            position may be before the cycle faults.  The calibrated ends are
+            the hard stops the joint was pushed against, so a joint resting on
+            a stop reads a few counts past them; that is warned about, not
+            faulted.
     """
 
     control_period_s: float = 0.005
@@ -186,8 +196,12 @@ class ServoLoopConfig:
     max_cross_bus_skew_s: float = 0.01
     stop_policy: str = StopPolicy.ZERO_CURRENT
     bus_watchdog_counts: int | None = None
+    range_tolerance_rad: float = 0.05
+    max_slow_reads: int = 5
 
     def __post_init__(self) -> None:
+        if self.range_tolerance_rad < 0.0:
+            raise ValueError("range_tolerance_rad must not be negative.")
         if self.stop_policy not in StopPolicy.ALL:
             raise ValueError(
                 f"stop_policy must be one of {StopPolicy.ALL}, got '{self.stop_policy}'."
@@ -321,13 +335,11 @@ class ArmServo:
         self._map = joint_map
         self._manager = manager
         self._config = config or ServoLoopConfig()
-        # `motor_names or joint_map.motor_names` would quietly turn an explicit
-        # empty list into "every motor".  None and [] mean different things.
-        self._motor_names: Tuple[str, ...] = tuple(
-            joint_map.motor_names if motor_names is None else motor_names
+        # An explicit empty list is respected: such a servo owns its bus but
+        # reads and commands nothing (a leader that is not part of the mode).
+        self._motor_names: Tuple[str, ...] = (
+            tuple(motor_names) if motor_names is not None else tuple(joint_map.motor_names)
         )
-        if not self._motor_names:
-            raise ValueError(f"{name}: a servo must read at least one motor.")
 
         unknown = [n for n in self._motor_names if n not in joint_map]
         if unknown:
@@ -350,10 +362,7 @@ class ArmServo:
         self._write_stats = TimingStats(f"{name}.write")
         self._lease: CommandLease | None = None
         self._operating_modes: Dict[str, int] = {}
-        self._current_limits_a: Dict[str, float] = {}
-        self._last_current_a: Dict[str, float] = {}
-        self._last_current_write_s: float | None = None
-        self._last_current: CurrentCommand | None = None
+        self._range_warned: set[str] = set()
 
     # -- properties ---------------------------------------------------------
 
@@ -439,9 +448,12 @@ class ArmServo:
                 failure.  The caller decides whether that is a fault.
         """
         started = time.perf_counter()
-        readings, start_ns, end_ns = self._bus.read_state_block(
-            self._motor_names, timeout_s=self._config.read_timeout_s
-        )
+        if self._motor_names:
+            readings, start_ns, end_ns = self._bus.read_state_block(
+                self._motor_names, timeout_s=self._config.read_timeout_s
+            )
+        else:
+            readings, start_ns, end_ns = {}, monotonic_ns(), monotonic_ns()
         self._read_stats.record(time.perf_counter() - started, budget_s=self._config.read_timeout_s)
 
         n = len(self._motor_names)
@@ -494,7 +506,7 @@ class ArmServo:
             )
             if not due:
                 return dict(self._snapshot.diagnostics)
-        values = self._bus.read_diagnostics(self._motor_names)
+        values = self._bus.read_diagnostics(self._motor_names) if self._motor_names else {}
         with self._lock:
             self._snapshot.diagnostics = values
             self._snapshot.diagnostics_ns = now
@@ -509,6 +521,8 @@ class ArmServo:
             as unknown rather than assumed healthy.
         """
         cfg = self._config
+        if not self._motor_names:
+            return []
         with self._lock:
             values = dict(self._snapshot.diagnostics)
             age_ns = monotonic_ns() - self._snapshot.diagnostics_ns
@@ -546,6 +560,8 @@ class ArmServo:
         """Problems visible in one snapshot: validity, age, spread, range, finiteness."""
         cfg = self._config
         problems: List[str] = []
+        if not self._motor_names:
+            return problems
         invalid = [n for i, n in enumerate(state.joint_names) if not state.valid[i]]
         if invalid:
             problems.append(f"{self._name}: no valid reading for {invalid}.")
@@ -554,13 +570,6 @@ class ArmServo:
             problems.append(
                 f"{self._name}: state is {age * 1e3:.1f} ms old, over the "
                 f"{cfg.max_state_age_s * 1e3:.1f} ms limit."
-            )
-        if state.acquisition_span_s > cfg.max_acquisition_span_s:
-            problems.append(
-                f"{self._name}: the samples in this snapshot span "
-                f"{state.acquisition_span_s * 1e3:.1f} ms, over the "
-                f"{cfg.max_acquisition_span_s * 1e3:.1f} ms limit; they cannot be treated as "
-                "simultaneous."
             )
         for array, label in (
             (state.position_rad, "position"),
@@ -575,10 +584,26 @@ class ArmServo:
             calibration = self._map[motor]
             lower, upper = calibration.lower_limit_rad, calibration.upper_limit_rad
             if lower is not None and upper is not None:
-                if not lower <= state.position_rad[i] <= upper:
+                position = float(state.position_rad[i])
+                outside = max(lower - position, position - upper, 0.0)
+                if outside > cfg.range_tolerance_rad:
                     problems.append(
-                        f"{self._name}/{motor}: {state.position_rad[i]:.4f} rad is outside its "
-                        f"calibrated range [{lower:.4f}, {upper:.4f}]."
+                        f"{self._name}/{motor}: {position:.4f} rad is outside its calibrated "
+                        f"range [{lower:.4f}, {upper:.4f}] by {outside:.4f} rad (more than the "
+                        f"{cfg.range_tolerance_rad:.3f} rad tolerance)."
+                    )
+                elif outside > 0.0 and motor not in self._range_warned:
+                    self._range_warned.add(motor)
+                    logger.warning(
+                        "%s/%s: %.4f rad is %.4f rad past its calibrated range [%.4f, %.4f] "
+                        "(on the stop; within the %.3f rad tolerance, not a fault).",
+                        self._name,
+                        motor,
+                        position,
+                        outside,
+                        lower,
+                        upper,
+                        cfg.range_tolerance_rad,
                     )
         return problems
 
@@ -614,6 +639,8 @@ class ArmServo:
             ValueError: If the calibration is not complete enough for the mode,
                 or a motor's model does not support the required mode.
         """
+        if not self._motor_names:
+            return  # nothing to configure: this servo takes no part in the mode
         target_mode = {
             ControlMode.POSITION_TELEOP: OperatingMode.POSITION,
             ControlMode.CARTESIAN_TELEOP: OperatingMode.POSITION,
@@ -646,13 +673,21 @@ class ArmServo:
         if unknown:
             raise ValueError(f"{self._name}: cannot torque-enable unknown motor(s) {unknown}.")
 
+        modes: Dict[str, int] = {name: target_mode for name in self._motor_names}
+        if target_mode == OperatingMode.POSITION:
+            # A motor already in current-based position control (a gripper,
+            # whose current limit is its grip force) keeps that mode: GOAL_POSITION
+            # works the same there, and plain position control would let it
+            # stall at full torque on whatever it holds.
+            present = self._bus.sync_read(XControlTable.OPERATING_MODE, list(self._motor_names))
+            for name, value in present.items():
+                if int(value) == OperatingMode.CURRENT_BASED_POSITION:
+                    modes[name] = OperatingMode.CURRENT_BASED_POSITION
         configured = False
         try:
             self._bus.torque_disabled(list(self._motor_names))
-            self._bus.write_with_readback(
-                XControlTable.OPERATING_MODE,
-                {name: target_mode for name in self._motor_names},
-            )
+            self._bus.write_with_readback(XControlTable.OPERATING_MODE, dict(modes))
+            self._operating_modes = modes
             self._operating_modes = {name: target_mode for name in self._motor_names}
 
             self._current_limits_a = {}
@@ -986,14 +1021,30 @@ class ArmServo:
             motor's own ``BUS_WATCHDOG``, configured via
             :attr:`ServoLoopConfig.bus_watchdog_counts`.
         """
+        if not self._motor_names:
+            return f"{self._name}: owns no motor in this mode; nothing to stop."
         policy = self._config.stop_policy
         self._reset_current_history()
         if policy == StopPolicy.ZERO_CURRENT:
-            self._bus.write_goal_current_a(
-                {name: 0.0 for name in self._motor_names},
-                timeout_s=self._config.write_timeout_s,
+            # Zero current is a rest only in current control.  A motor in a
+            # position mode keeps its goal and holds (in current-based position
+            # control GOAL_CURRENT is the grip force: zeroing it would let go).
+            in_current = [
+                name
+                for name in self._motor_names
+                if self._operating_modes.get(name, OperatingMode.CURRENT) == OperatingMode.CURRENT
+            ]
+            if in_current:
+                self._bus.write_goal_current_a(
+                    {name: 0.0 for name in in_current},
+                    timeout_s=self._config.write_timeout_s,
+                )
+            held = len(self._motor_names) - len(in_current)
+            return (
+                f"{self._name}: commanded zero current on {len(in_current)} motor(s), torque left "
+                f"enabled"
+                + (f"; {held} in position control keep holding their goal." if held else ".")
             )
-            return f"{self._name}: commanded zero current, torque left enabled."
         if policy == StopPolicy.TORQUE_OFF:
             self._bus.torque_disabled(list(self._motor_names))
             return f"{self._name}: torque disabled."
@@ -1059,6 +1110,9 @@ class ServoLoop:
         self._stop_event = threading.Event()
         self._log_queue: queue.Queue[Dict[str, Any]] = queue.Queue(maxsize=1024)
         self._dropped_logs = 0
+        self._slow_streak = 0
+        self._slow_reads = 0
+        self._slow_logged_ns = 0
 
     @property
     def servos(self) -> Tuple[ArmServo, ...]:
@@ -1113,17 +1167,56 @@ class ServoLoop:
                 -- or :meth:`start` -- converts that into a fault.
         """
         states: Dict[str, JointState] = {}
+        slow: List[str] = []
         for servo in self._servos:
-            state = servo.read_state()
+            try:
+                state = servo.read_state()
+            except (TimeoutError, ConnectionError) as exc:
+                # One late or garbled bulk read (a USB frame lost, the FTDI
+                # latency timer flushing late) is a missed cycle, not a dead
+                # bus: the motors hold their last goal, as for a slow read.
+                # A run of them is still a fault, below.
+                slow.append(f"{servo.name}: {exc}")
+                continue
             problems = servo.check_state(state)
             servo.poll_diagnostics()
             problems.extend(servo.check_diagnostics())
             if problems:
                 raise RuntimeError("; ".join(problems))
+            if state.acquisition_span_s > self._config.max_acquisition_span_s:
+                slow.append(
+                    f"{servo.name}: the samples in this snapshot span "
+                    f"{state.acquisition_span_s * 1e3:.1f} ms, over the "
+                    f"{self._config.max_acquisition_span_s * 1e3:.1f} ms limit"
+                )
             states[servo.name] = state
+        if slow:
+            # Not simultaneous enough to act on: hold this cycle.  A run of them
+            # means the bus is not delivering, and that is a fault.
+            self._slow_streak += 1
+            self._slow_reads += 1
+            now = monotonic_ns()
+            if now - self._slow_logged_ns > 1_000_000_000:
+                self._slow_logged_ns = now
+                logger.warning(
+                    "slow read, no command this cycle (%d in a row, %d in total): %s",
+                    self._slow_streak,
+                    self._slow_reads,
+                    "; ".join(slow),
+                )
+            if self._slow_streak >= self._config.max_slow_reads:
+                raise RuntimeError(
+                    f"{self._slow_streak} slow or failed reads in a row "
+                    f"(limit {self._config.max_slow_reads}): "
+                    + "; ".join(slow)
+                    + ". The bus is not delivering snapshots that can be treated as simultaneous."
+                )
+            return states
+        self._slow_streak = 0
 
-        if len(states) > 1:
-            times = [s.read_end_ns for s in states.values()]
+        # A servo that owns no motor did not read a bus: it has no snapshot to skew.
+        times = [s.read_end_ns for s in states.values() if len(s.joint_names)]
+        if len(times) > 1:
             skew = (max(times) - min(times)) * 1e-9
             if skew > self._config.max_cross_bus_skew_s:
                 raise RuntimeError(
@@ -1169,6 +1262,7 @@ class ServoLoop:
             try:
                 self.run_once(max(dt, 1e-6))
             except Exception as exc:  # noqa: BLE001 - any failure is a fault
+                logger.error("SERVO FAULT: %s", exc)
                 logger.exception("Servo cycle failed; faulting.")
                 self._manager.fault("cycle_failed", str(exc), source="servo_loop")
                 self._emergency_stop()

@@ -26,6 +26,7 @@ from robopy.config.robot_config.rakuda_config import (  # noqa: E402
     RakudaJointCalibrationSpec,
     RakudaModelConfig,
     RakudaTcpSpec,
+    RakudaTrajectoryConfig,
 )
 from robopy.kinematics.synthetic_dual_arm import (  # noqa: E402
     SYNTHETIC_ARM_JOINTS,
@@ -625,7 +626,8 @@ class TestVRServer:
             while time.monotonic() < deadline:
                 client.send_json({"type": "ping", "t": 1.0})
                 reply = client.recv_json()
-                assert reply == {"type": "pong", "t": 1.0}
+                # A ping is answered with the machine's state (joints, twin), t echoed.
+                assert reply["type"] == "state" and reply["t"] == 1.0 and "joints" in reply
                 time.sleep(server.vr_config.teleop_timeout_s / 3)
             client.send_json({"type": "pose", "head": HEAD0, "left": None, "right": None})
             assert client.recv_json()["type"] == "state"  # still driving
@@ -713,6 +715,15 @@ def _config(urdf: Path, mode: str = "cartesian_teleop") -> RakudaControlConfig:
             ),
             soft_limits_rad=dict(SOFT_LIMITS),
             geometry_only=True,
+        ),
+        # Cartesian mode refuses to start without every ceiling of the hand
+        # reference; these are the simulated plant's, not measurements.
+        trajectory=RakudaTrajectoryConfig(
+            max_linear_velocity_m_s=0.25,
+            max_linear_acceleration_m_s2=1.0,
+            max_angular_velocity_rad_s=1.5,
+            max_angular_acceleration_rad_s2=6.0,
+            lag_tolerance_m=0.02,
         ),
     )
 
@@ -831,3 +842,22 @@ class TestControlSystemBackend:
         _run(system, bus, 150)
         assert bus.joint("head_yaw").position_rad == pytest.approx(0.5, abs=0.03)
         assert np.isfinite(backend.hand_pose("right")).all()
+
+
+def test_every_message_is_strict_json() -> None:
+    """A hello carrying an empty timing statistic (p50: nan) must still parse in a browser."""
+    import json
+
+    from robopy.vr.server import _dumps
+
+    text = _dumps(
+        {"timing": {"p50": float("nan"), "max": float("inf")}, "ok": [1.5, float("-inf")]}
+    )
+    assert "NaN" not in text and "Infinity" not in text
+
+    # A browser's JSON.parse rejects NaN/Infinity: parse with the same strictness.
+    def strict(constant: str) -> None:
+        raise ValueError(f"{constant} is not JSON")
+
+    parsed = json.loads(text, parse_constant=strict)
+    assert parsed == {"timing": {"p50": None, "max": None}, "ok": [1.5, None]}

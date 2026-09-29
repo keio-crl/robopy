@@ -14,11 +14,16 @@ from robopy.robots.rakuda.calibrate import (
     ArmCalibrator,
     AutoConsole,
     JointResult,
+    _urdf_check,
     build_control_section,
+    compare_with_urdf,
     main,
+    model_soft_limits,
     proposed_urdf_joints,
+    rezero,
     self_check,
     simulated_buses,
+    urdf_joint_ranges,
     write_config,
 )
 
@@ -129,6 +134,158 @@ class TestArmCalibrator:
             ArmCalibrator(bus, "sideways", ["torso_yaw"], console)
 
 
+class TestRedo:
+    def test_a_joint_is_redone_right_away_and_from_the_review(self) -> None:
+        bus = simulated_buses(MOTORS)["follower"]
+        console = ScriptedConsole(
+            bus,
+            [
+                "",
+                "",
+                "",  # URDF joints
+                "",  # zero pose
+                "move:torso_yaw=0.1",  # the ends, pressed too early: almost no travel
+                "move:torso_yaw=0.12",
+                "l",  # redo the travel
+                "move:torso_yaw=-0.6",
+                "move:torso_yaw=0.6",
+                "",  # next joint
+                "move:r_arm_sh_pitch1=0.3",
+                "move:r_arm_sh_pitch1=-0.3",
+                "",
+                "move:l_arm_sh_pitch1=0.2",
+                "move:l_arm_sh_pitch1=-0.4",
+                "",
+                # review: 3 was moved the wrong way when the direction was taken
+                "3 d",
+                "zero",  # then the whole pose again: every joint 0.1 rad off before
+                "",  # write
+            ],
+        )
+        console.nudge = 0.01
+        bus.joint("torso_yaw").position_rad = 0.0
+        cal = ArmCalibrator(bus, "follower", MOTORS, console)
+        cal.read_registers()
+        cal.pose_description = "straight"
+        cal.torque_constants = False
+        cal.confirm_urdf_joints()
+        cal.measure_zero("straight")
+        zero = {m: cal.results[m].zero_count for m in MOTORS}
+        for motor in MOTORS:
+            cal.measure_direction(motor)
+            cal.measure_limits(motor)
+            while answer := console.ask("next?").strip():
+                cal.redo(motor, answer)
+        torso = cal.results["torso_yaw"]
+        assert torso.lower_limit_rad is not None and torso.upper_limit_rad is not None
+        assert torso.upper_limit_rad - torso.lower_limit_rad > 1.0  # the redone travel
+        left = cal.results["l_arm_sh_pitch1"]
+        assert left.direction == 1
+        console.nudge = -0.01  # the operator now turns it the other way
+        for m in MOTORS:  # and puts everything 0.1 rad further for the new zero
+            bus.joint(m).position_rad = 0.1
+        before = (left.lower_limit_rad, left.upper_limit_rad)
+        cal.review()
+        cal.finish()
+        assert left.direction == -1
+        assert left.lower_limit_rad is not None and left.upper_limit_rad is not None
+        assert (left.lower_limit_rad, left.upper_limit_rad) != before  # re-derived, not re-moved
+        assert all(cal.results[m].zero_count != zero[m] for m in MOTORS)
+        assert torso.notes.count("upper_limit_rad") == 1
+        assert "limits not measured" not in torso.notes
+        assert any("review before writing" in line for line in console.lines)
+
+    def test_mistyped_numbers_and_joint_names_are_asked_again(self) -> None:
+        bus = simulated_buses(MOTORS)["follower"]
+        console = ScriptedConsole(
+            bus,
+            ["shoulder_pitch_rigth_dof", "shoulder_pitch_right_dof", "y", "", "0,5", "-1", "0.5"],
+        )
+        cal = ArmCalibrator(
+            bus,
+            "follower",
+            ["r_arm_sh_pitch1"],
+            console,
+            current_reader=lambda m: 0.1,
+            urdf_ranges={"shoulder_pitch_right_dof": ("revolute", -1.0, 1.0)},
+        )
+        cal.confirm_urdf_joints()
+        assert cal.results["r_arm_sh_pitch1"].urdf_joint == "shoulder_pitch_right_dof"
+        assert any("not a movable joint" in line for line in console.lines)
+        # mass: '0,5' and -1 are refused, 0.5 taken; the lever arm is left empty: cancelled
+        assert cal.measure_torque_constant("r_arm_sh_pitch1", settle_s=0.0) is None
+        assert any("not a number" in line for line in console.lines)
+        assert any("must be positive" in line for line in console.lines)
+        assert any("cancelled" in line for line in console.lines)
+        assert bus.registers("r_arm_sh_pitch1").torque_enable == 0
+        # the same unknown name twice is taken as meant
+        console.answers = ["custom_dof", "custom_dof"]
+        cal.confirm_urdf_joints()
+        assert cal.results["r_arm_sh_pitch1"].urdf_joint == "custom_dof"
+        assert not cal.redo("r_arm_sh_pitch1", "x")
+
+
+class TestSuspiciousResults:
+    def test_too_little_travel_is_reported_and_other_motors_are_not_read(self) -> None:
+        bus = simulated_buses(MOTORS)["follower"]
+        console = ScriptedConsole(
+            bus,
+            [
+                "",  # zero pose
+                # while r_arm_sh_pitch1 is measured the operator also moves another
+                # joint (to get at it more easily): that is not a finding
+                "move:l_arm_sh_pitch1=0.8",
+                "move:r_arm_sh_pitch1=0.7",
+                # torso: ends barely apart
+                "move:torso_yaw=0.05",
+                "move:torso_yaw=-0.05",
+            ],
+        )
+        cal = ArmCalibrator(bus, "follower", MOTORS, console)
+        cal.measure_zero("straight")
+        cal.measure_limits("r_arm_sh_pitch1")
+        cal.measure_limits("torso_yaw")
+        table = "\n".join(cal.summary_lines())
+        assert "l_arm_sh_pitch1" not in "\n".join(cal._warnings["r_arm_sh_pitch1"].values())
+        assert "travel only 6 deg" in table
+        assert not any("moved" in line and "!!" in line for line in console.lines)
+        console.answers = ["move:torso_yaw=1.0", "move:torso_yaw=-1.0"]
+        cal.measure_limits("torso_yaw")  # measured again: the warning goes
+        assert "travel only" not in "\n".join(cal.summary_lines())
+
+    def test_reversed_direction_and_disjoint_travel(self) -> None:
+        ranges = {
+            "shoulder_roll_right_dof": ("revolute", -3.361, 0.478),
+            "elbow_pitch_right_dof": ("revolute", -2.793, 0.0),
+        }
+        roll = _result("r_arm_sh_roll", False)
+        roll.lower_limit_rad, roll.upper_limit_rad = -0.069, 1.842  # as measured on the machine
+        _, flags = _urdf_check(roll, ranges)
+        assert any("direction probably reversed" in f for f in flags)
+        elbow = _result("r_arm_sh_pitch2", False)
+        elbow.urdf_joint = "elbow_pitch_right_dof"
+        elbow.lower_limit_rad, elbow.upper_limit_rad = 0.045, 0.149
+        _, flags = _urdf_check(elbow, ranges)
+        assert any("does not overlap" in f for f in flags)
+        elbow.measured = ["urdf_joint", "zero_count", "direction", "lower_limit_rad"]
+        elbow.measured.append("upper_limit_rad")
+        stale = {
+            "soft_limits_rad": {
+                "elbow_pitch_right_dof": {
+                    "lower": 0.0104,
+                    "upper": 0.1139,
+                    "validated": True,
+                    "note": "follower r_arm_sh_pitch2 travel measured by robopy-rakuda-calibrate",
+                }
+            }
+        }
+        model, notes = model_soft_limits(
+            {"r_arm_sh_pitch2": elbow}, existing_model=stale, urdf_ranges=ranges
+        )
+        assert "elbow_pitch_right_dof" not in model["soft_limits_rad"]  # neither old nor new
+        assert any("does not overlap" in n for n in notes)
+
+
 def _result(motor: str, complete: bool) -> JointResult:
     r = JointResult(
         motor=motor,
@@ -194,6 +351,154 @@ class TestConfigFile:
         problems = self_check(path, models)
         assert any("coupled_motors is empty" in p for p in problems)
         assert any("allow_hardware_current_output is false" in p for p in problems)
+
+
+class TestFollowerOnly:
+    def test_section_keeps_the_leader_and_coupling_of_the_file(self) -> None:
+        leader = {m: _result(m, True) for m in MOTORS}
+        follower = {m: _result(m, True) for m in MOTORS}
+        existing, _ = build_control_section(leader, follower, allow_current=True)
+        remeasured = {"torso_yaw": _result("torso_yaw", True)}
+        remeasured["torso_yaw"].zero_count = 1000
+        control, notes = build_control_section(None, remeasured, existing=existing)
+        assert control["leader_joint_calibration"] == existing["leader_joint_calibration"]
+        assert control["follower_joint_calibration"]["torso_yaw"]["zero_count"] == 1000
+        assert control["follower_joint_calibration"]["r_arm_sh_pitch1"]["zero_count"] == 2048
+        assert control["bilateral"]["coupled_motors"] == list(MOTORS)
+        assert not any("allow_hardware_current_output" in n for n in notes)
+        fresh, _ = build_control_section(None, {m: _result(m, False) for m in MOTORS})
+        assert fresh["mode"] == "position_teleop"  # bilateral_joint would not load uncoupled
+        assert fresh["leader_joint_calibration"] == {}
+
+    def test_soft_limits_are_the_measured_travel_minus_the_margin(self) -> None:
+        results = {m: _result(m, False) for m in MOTORS}
+        for r in results.values():
+            r.measured = [
+                "urdf_joint",
+                "zero_count",
+                "direction",
+                "lower_limit_rad",
+                "upper_limit_rad",
+            ]
+        results["l_arm_sh_pitch1"].measured.remove("direction")
+        existing = {"urdf_path": None, "soft_limits_rad": {"head_yaw_dof": [-1.0, 1.0]}}
+        model, notes = model_soft_limits(results, existing_model=existing, margin_rad=0.1)
+        soft = model["soft_limits_rad"]
+        assert soft["torso_yaw_dof"]["lower"] == -0.9 and soft["torso_yaw_dof"]["upper"] == 0.9
+        assert soft["torso_yaw_dof"]["validated"] is True
+        assert soft["head_yaw_dof"] == [-1.0, 1.0] and "urdf_path" in model
+        assert "shoulder_pitch_left_dof" not in soft
+        assert any("l_arm_sh_pitch1" in n and "direction" in n for n in notes)
+        _, notes = model_soft_limits(results, margin_rad=1.5)
+        assert any("narrower than twice the margin" in n for n in notes)
+
+    def test_comparison_flags_each_kind_of_mismatch(self, tmp_path: Path) -> None:
+        urdf = tmp_path / "m.urdf"
+        urdf.write_text(
+            '<robot name="r">'
+            '<joint name="torso_yaw_dof" type="continuous"/>'
+            '<joint name="shoulder_pitch_right_dof" type="revolute">'
+            '<limit lower="-0.5" upper="0.5" effort="1" velocity="1"/></joint>'
+            '<joint name="shoulder_pitch_left_dof" type="revolute">'
+            '<limit lower="-2" upper="2" effort="1" velocity="1"/></joint>'
+            '<joint name="fixed_one" type="fixed"/>'
+            "</robot>"
+        )
+        ranges = urdf_joint_ranges(urdf)
+        assert ranges["torso_yaw_dof"] == ("continuous", None, None)
+        assert "fixed_one" not in ranges
+        results = {m: _result(m, False) for m in MOTORS}
+        results["l_arm_sh_pitch1"].lower_limit_rad = 0.3  # zero outside the travel
+        lines = compare_with_urdf(results, ranges)
+        by_motor = {line.split()[0]: line for line in lines[1:]}
+        assert "no range" in by_motor["torso_yaw"]
+        assert "beyond URDF" in by_motor["r_arm_sh_pitch1"]
+        assert "URDF wider" in by_motor["l_arm_sh_pitch1"]
+        assert "zero pose outside" in by_motor["l_arm_sh_pitch1"]
+
+    def test_simulated_follower_run_needs_no_leader(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        out = tmp_path / ".robopy" / "rakuda" / "config.yaml"
+        argv = ["--simulate", "--side", "follower", "--no-torque-constant", "--output", str(out)]
+        assert main([*argv, "--motors", ",".join(MOTORS)]) == 0
+        printed = capsys.readouterr().out
+        assert "require('geometry')" in printed and "URDF range" in printed
+        cfg = apply_rakuda_dotconfig(
+            RakudaConfig(leader_port="a", follower_port="b"), base_dir=tmp_path
+        )
+        assert cfg.control is not None and cfg.control.mode == "position_teleop"
+        assert cfg.control.leader_joint_calibration == {}
+        assert set(cfg.control.follower_joint_calibration) == set(MOTORS)
+        soft = cfg.control.model.soft_limit_entries()
+        assert set(soft) == {"torso_yaw_dof", "shoulder_pitch_right_dof", "shoulder_pitch_left_dof"}
+        assert all(entry["validated"] for entry in soft.values())
+        with pytest.raises(SystemExit):
+            main(["--side", "follower", "--leader-port", "/dev/x"])
+        assert "--follower-port needed" in capsys.readouterr().err
+
+
+class TestZeroOnly:
+    def test_rezero_shifts_travel_and_soft_limits_and_keeps_the_direction(self) -> None:
+        follower = {m: _result(m, False) for m in MOTORS}
+        follower["torso_yaw"].direction = -1
+        control, _ = build_control_section(None, follower)
+        for r in follower.values():
+            r.measured = ["urdf_joint", "zero_count", "direction", "lower_limit_rad"]
+            r.measured.append("upper_limit_rad")
+        control["model"], _ = model_soft_limits(follower, margin_rad=0.1)
+        k = 2 * 3.141592653589793 / 4096
+        # torso (direction -1): the machine's zero pose reads 2048 + 512 counts,
+        # i.e. the old model angle there was -512 k; every angle shifts by +512 k.
+        # r_arm (direction +1) reads 2048 - 256: old angle -256 k, shift +256 k.
+        new_control, lines, results = rezero(
+            control,
+            "follower",
+            {"torso_yaw": 2048 + 512, "r_arm_sh_pitch1": 2048 - 256, "l_arm_sh_pitch1": 2048},
+            {m: k for m in MOTORS},
+        )
+        table = new_control["follower_joint_calibration"]
+        torso = table["torso_yaw"]
+        assert torso["zero_count"] == 2560 and torso["direction"] == -1
+        assert torso["lower_limit_rad"] == pytest.approx(-1.0 + 512 * k, abs=1e-4)
+        assert torso["upper_limit_rad"] == pytest.approx(1.0 + 512 * k, abs=1e-4)
+        soft = new_control["model"]["soft_limits_rad"]["torso_yaw_dof"]
+        assert soft["lower"] == pytest.approx(-0.9 + 512 * k, abs=1e-4)
+        assert soft["upper"] == pytest.approx(0.9 + 512 * k, abs=1e-4)
+        right = table["r_arm_sh_pitch1"]
+        assert right["zero_count"] == 1792
+        assert right["lower_limit_rad"] == pytest.approx(-1.0 + 256 * k, abs=1e-4)
+        left = table["l_arm_sh_pitch1"]
+        assert left["zero_count"] == 2048 and left["lower_limit_rad"] == -1.0  # unchanged
+        assert "zero re-taken" in torso["notes"] and "shifted with the new zero" in soft["note"]
+        assert results["torso_yaw"].lower_limit_rad == torso["lower_limit_rad"]
+        assert any("torso_yaw" in line and "2048 ->  2560" in line for line in lines)
+        # the original is not modified
+        assert control["follower_joint_calibration"]["torso_yaw"]["zero_count"] == 2048
+        # a motor without a calibration is reported, not invented
+        _, lines, results = rezero(control, "follower", {"ghost": 5}, {"ghost": k})
+        assert "no calibration" in lines[0] and results == {}
+
+    def test_simulated_zero_only_rewrites_the_file(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        out = tmp_path / ".robopy" / "rakuda" / "config.yaml"
+        base = ["--simulate", "--side", "follower", "--output", str(out), "--motors"]
+        assert main([*base, ",".join(MOTORS), "--no-torque-constant"]) == 0
+        assert main([*base, ",".join(MOTORS), "--zero-only"]) == 0
+        printed = capsys.readouterr().out
+        assert "zero pose again" in printed and "written:" in printed
+        cfg = apply_rakuda_dotconfig(
+            RakudaConfig(leader_port="a", follower_port="b"), base_dir=tmp_path
+        )
+        assert cfg.control is not None
+        assert set(cfg.control.follower_joint_calibration) == set(MOTORS)
+        assert "zero re-taken" in cfg.control.follower_joint_calibration["torso_yaw"].notes
+        # Without an existing calibration there is nothing to re-zero.
+        assert (
+            main([*base, ",".join(MOTORS), "--zero-only", "--output", str(tmp_path / "none.yaml")])
+            == 1
+        )
 
 
 class TestCommand:

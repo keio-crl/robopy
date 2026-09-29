@@ -16,6 +16,16 @@
 //   B / Y                   start / stop recording on the server
 //   page checkboxes         robot twin, its mirror, "image follows head"
 //
+// Bare hands (WebXR Hand Input; put the controllers down and the Quest tracks
+// the hands): the page streams the 25 joint poses of each hand and draws them;
+// the server reads every gesture (by default: pinch thumb and index to drive
+// the arm, curl the other fingers for the gripper, pinch thumb and middle on
+// both hands to re-centre, hold that pinch on one hand to record, show both
+// palms to the headset to pause the arms and keep them up to end the session).
+// Before a pinch may drive an arm the hand has to be brought to the marker the
+// server places where the robot's hand is (the engagement gate); the marker
+// turns green when the hand is close enough.
+//
 // The mirror: the twin is drawn again, reflected in a vertical plane a
 // chosen distance in front of the robot's head, so the operator -- who stands
 // inside the twin -- sees the machine face them as in a mirror, left on the
@@ -40,26 +50,33 @@ const state = {
   sendHz: 60, lastSendMs: 0,
   sent: 0, received: 0, lastRttMs: null,
   controllers: {},       // index -> {handedness, grip, source}
+  hands: { left: null, right: null },   // drawn joints per tracked hand
+  markers: { left: null, right: null }, // engagement markers (where to bring the hand)
   buttonsPrev: { left: {}, right: {} },
-  cameraLocked: true,
+  cameraLocked: true, cameraView: null,
   clutchButton: 'a',     // 'a' (A/X), 'grip' or 'stick'; from hello
   mirrorOn: true, mirrorDistance: 1.5,
   recording: null,       // server's recorder state (from hello / state)
   frames: 0, lastFrameBytes: 0, lastFrameMs: null, camConnected: false,
+  vrSupported: false, arSupported: false, xrMode: null,
+  twinPlaced: false, twinPlaceRequested: false,
   connected: false,
 };
 window.__robopy_vr = state;
 
 // --------------------------------------------------------------- scene
 const viewport = $('#viewport');
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// alpha: with an immersive-ar session the headset composites the page over its
+// passthrough cameras, so the scene's background must be transparent.
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local-floor');
 viewport.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x14171c);
+const VR_BACKGROUND = new THREE.Color(0x14171c);
+scene.background = VR_BACKGROUND;
 const camera = new THREE.PerspectiveCamera(70, 1, 0.01, 60);
 camera.position.set(0.0, 1.5, 1.2);
 scene.add(camera);                            // so head-locked children render
@@ -113,11 +130,28 @@ const hudPlane = new THREE.Mesh(
 hudPlane.position.set(0, -0.62, -IMAGE_DISTANCE);
 camera.add(hudPlane);
 
+// The picture is drawn so each pixel lies in the direction the robot's camera
+// saw it from, relative to the operator's eyes: sized by the focal lengths and
+// shifted by the optical centre when the camera reports its intrinsics
+// (state.cameraView from the camera socket), else centred at a horizontal FOV.
+// With the arms mapped about the head, the robot's arm in the picture then
+// sits where the operator's hand is.
 function sizeImagePlane(fovDeg) {
-  const width = 2 * IMAGE_DISTANCE * Math.tan((fovDeg / 2) / DEG);
+  const view = state.cameraView;
+  let width; let height; let cx = 0; let cy = 0;
+  if (view && view.fx_n) {
+    width = IMAGE_DISTANCE / view.fx_n;
+    height = IMAGE_DISTANCE / view.fy_n;
+    cx = (0.5 - view.cx_n) * width;          // optical centre left of the middle: picture moves right
+    cy = -(0.5 - view.cy_n) * height;        // image v grows downwards
+  } else {
+    width = 2 * IMAGE_DISTANCE * Math.tan(((view && view.fov_deg) || fovDeg) / 2 / DEG);
+    height = width / imageAspect;
+  }
   imagePlane.geometry.dispose();
-  imagePlane.geometry = new THREE.PlaneGeometry(width, width / imageAspect);
-  hudPlane.position.y = -(width / imageAspect) / 2 - 0.2;
+  imagePlane.geometry = new THREE.PlaneGeometry(width, height);
+  if (imagePlane.parent === camera) imagePlane.position.set(cx, cy, -IMAGE_DISTANCE);
+  hudPlane.position.y = cy - height / 2 - 0.2;
 }
 
 function setImageLocked(locked) {
@@ -127,6 +161,7 @@ function setImageLocked(locked) {
     if (imagePlane.parent !== camera) {
       scene.remove(imagePlane); scene.remove(hudPlane);
       imagePlane.position.set(0, 0, -IMAGE_DISTANCE); imagePlane.quaternion.identity();
+      sizeImagePlane((state.hello && state.hello.camera_fov_deg) || 69);   // the optical-centre offset
       hudPlane.position.set(0, hudPlane.position.y, -IMAGE_DISTANCE); hudPlane.quaternion.identity();
       camera.add(imagePlane); camera.add(hudPlane);
     }
@@ -181,6 +216,27 @@ function setTwinOffset(offset) {
   robotGroup.matrix.copy(XR_FROM_ROBOT).multiply(t);
   updateMirror();
 }
+
+// The twin stays where it was first placed ("twin fixed", the default): every
+// re-centre moves the operator's mapping, but a robot that jumps to the head
+// each time the hands happen to open is unusable to look at.  "place twin"
+// accepts the next placement; unticking the box follows every re-centre.
+function placeTwin(twin) {
+  const fixed = $('#twin-fixed').checked;
+  if (fixed && state.twinPlaced && !state.twinPlaceRequested) return;
+  setTwinPose(twin);
+  state.twinPlaced = true;
+  state.twinPlaceRequested = false;
+}
+// An explicit re-centre (button, both thumbsticks, "place twin") moves the
+// operator's mapping and the twin together, so the markers stay on the twin's
+// hands; the server ignores gesture re-centres while the twin is fixed.
+function explicitRecenter() {
+  state.twinPlaceRequested = true;
+  send({ type: 'recenter' });
+}
+$('#twin-place').onclick = explicitRecenter;
+$('#twin-fixed').addEventListener('change', () => send({ type: 'set', twin_fixed: $('#twin-fixed').checked }));
 
 // Server-computed placement: the robot base at `p` (robot axes from the WebXR
 // floor origin) turned by `yaw` about +Z, so the twin's head sits where the
@@ -262,6 +318,7 @@ function connectTeleop() {
   ws.onopen = () => {
     state.connected = true;
     ws.send(JSON.stringify({ type: 'hello', want_poses: true }));
+    ws.send(JSON.stringify({ type: 'set', twin_fixed: $('#twin-fixed').checked }));
     setStatus('connected; waiting for hello…');
     if (keepalive) clearInterval(keepalive);
     keepalive = setInterval(() => {
@@ -306,21 +363,42 @@ async function onHello(msg) {
   imagePlane.visible = msg.camera_available !== false;
   $('#record').disabled = !msg.recording;
   if (msg.twin_offset_m) setTwinOffset(msg.twin_offset_m);
-  else if (msg.twin) setTwinPose(msg.twin);
+  else if (msg.twin) placeTwin(msg.twin);
   else setTwinOffset([0, 0, 1]);   // until the first re-centre places it
-  if (first && msg.model) await loadMeshes(msg.model);
+  // The camera does not wait for the twin: on a headset the meshes take a
+  // while to fetch and parse (and parsing blocks this thread), and the first
+  // hello is the only one that opens the camera socket.  Nor may a mesh
+  // failure leave the page half set up.
   if (first) { connectCamera(); }
+  if (first && msg.model) {
+    try { await loadMeshes(msg.model); }
+    catch (e) { console.warn('mesh loading failed; the twin stays empty', e); setStatus('meshes failed to load (see console); camera and control still work', 'warn'); }
+  }
   renderStatus();
 }
 
 function onState(msg) {
   state.lastState = msg;
   if (msg.t != null) state.lastRttMs = performance.now() - msg.t;
-  if (msg.twin) setTwinPose(msg.twin);
+  if (msg.twin) placeTwin(msg.twin);
   if (msg.recording !== undefined) state.recording = msg.recording;
   if (msg.geometries) applyPoses(msg.geometries);
   if (msg.tcp) for (const [side, pose] of Object.entries(msg.tcp)) { const f = tcpFrames[side]; if (f) placeObject(f, pose); }
+  if (msg.arms_enabled !== undefined) $('#arms-on').checked = !!msg.arms_enabled;
+  if (msg.head_enabled !== undefined) $('#head-on').checked = !!msg.head_enabled;
+  updateMarkers(msg.arms);
+  for (const event of msg.events || []) onServerEvent(event);
   renderStatus();
+}
+
+// Events the server raises from gestures.  "end_session": the operator held
+// the stop sign long enough; the arms are already off on the server, and the
+// headset leaves VR so the session is visibly over.
+function onServerEvent(event) {
+  if (event === 'end_session') {
+    setStatus('stop gesture held: session ended by the operator; the arms hold.', 'warn');
+    if (state.xrSession) state.xrSession.end().catch(() => {});
+  }
 }
 
 function toggleRecording() { send({ type: 'record', action: 'toggle' }); }
@@ -346,6 +424,7 @@ function send(obj) {
   return true;
 }
 state.send = send;   // for tests: window.__robopy_vr.send({...})
+state.handEntry = (frame, refSpace, source) => handEntry(frame, refSpace, source);   // for tests
 
 // --------------------------------------------------------------- camera socket
 function connectCamera() {
@@ -355,7 +434,10 @@ function connectCamera() {
   ws.onopen = () => { state.camConnected = true; };
   ws.onmessage = async (ev) => {
     if (typeof ev.data === 'string') {
-      try { const m = JSON.parse(ev.data); if (m.type === 'camera' && m.fov_deg) sizeImagePlane(m.fov_deg); } catch (e) { /* ignore */ }
+      try {
+        const m = JSON.parse(ev.data);
+        if (m.type === 'camera' && m.fov_deg) { state.cameraView = m; sizeImagePlane(m.fov_deg); }
+      } catch (e) { /* ignore */ }
       return;
     }
     try {
@@ -385,10 +467,24 @@ function connectCamera() {
 // --------------------------------------------------------------- WebXR
 const xrSupportEl = $('#xr-support');
 const enterButton = $('#enter-vr');
+const passthroughBox = $('#passthrough');
+// Passthrough: an immersive-ar session shows the room through the headset's
+// cameras behind the twin, the camera image and the HUD, so the operator sees
+// the real robot and their own surroundings while driving.  Quest Browser
+// supports it; a headset that does not gets plain immersive-vr.
 if (navigator.xr) {
-  navigator.xr.isSessionSupported('immersive-vr').then((ok) => {
-    enterButton.disabled = !ok;
-    xrSupportEl.textContent = ok ? 'WebXR available' : 'no immersive-vr support on this device';
+  Promise.all([
+    navigator.xr.isSessionSupported('immersive-vr').catch(() => false),
+    navigator.xr.isSessionSupported('immersive-ar').catch(() => false),
+  ]).then(([vr, ar]) => {
+    state.vrSupported = vr; state.arSupported = ar;
+    enterButton.disabled = !(vr || ar);
+    passthroughBox.disabled = !ar;
+    if (!ar) passthroughBox.checked = false;
+    xrSupportEl.textContent = (vr || ar)
+      ? `WebXR available${ar ? ' (passthrough AR supported)' : ' (no passthrough: VR only)'}`
+      : 'no immersive-vr/ar support on this device';
+    updateEnterLabel();
   }).catch(() => { xrSupportEl.textContent = 'WebXR check failed'; });
 } else {
   xrSupportEl.textContent = window.isSecureContext
@@ -396,15 +492,41 @@ if (navigator.xr) {
     : 'not a secure context: WebXR needs https:// or localhost';
 }
 
+function wantPassthrough() { return Boolean(state.arSupported && passthroughBox.checked); }
+function updateEnterLabel() {
+  enterButton.textContent = wantPassthrough() ? 'Enter AR (passthrough)' : 'Enter VR';
+}
+passthroughBox.addEventListener('change', updateEnterLabel);
+
+function setPassthroughScene(on) {
+  // Nothing may paint over the passthrough: no background, no floor grid.
+  scene.background = on ? null : VR_BACKGROUND;
+  floor.visible = !on;
+  renderer.setClearAlpha(on ? 0 : 1);
+}
+
 enterButton.addEventListener('click', async () => {
+  const ar = wantPassthrough();
+  const mode = ar ? 'immersive-ar' : 'immersive-vr';
   try {
-    const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'] });
+    const session = await navigator.xr.requestSession(mode, { optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'] });
     state.xrSession = session;
+    state.xrMode = mode;
     state.preview = false;
-    session.addEventListener('end', () => { state.xrSession = null; setStatus('XR session ended; the arms hold.', 'warn'); });
+    setPassthroughScene(ar);
+    session.addEventListener('end', () => {
+      state.xrSession = null; state.xrMode = null;
+      setPassthroughScene(false);
+      setStatus('XR session ended; the arms hold.', 'warn');
+    });
     await renderer.xr.setSession(session);
   } catch (err) {
-    setStatus(`could not start XR: ${err.message}`, 'bad');
+    setPassthroughScene(false);
+    if (ar) {
+      setStatus(`could not start passthrough AR (${err.message}); untick "passthrough" for plain VR`, 'bad');
+    } else {
+      setStatus(`could not start XR: ${err.message}`, 'bad');
+    }
   }
 });
 
@@ -426,6 +548,106 @@ for (let i = 0; i < 2; i += 1) {
 function xrPose(transform) {
   const p = transform.position, q = transform.orientation;
   return { p: [p.x, p.y, p.z], q: [q.x, q.y, q.z, q.w] };
+}
+
+// --------------------------------------------------------------- hands
+// A tracked hand is sent as its joints (position each, orientation for the
+// wrist) and drawn as small spheres, green while the server says that arm is
+// clutched.  Positions are rounded to 0.1 mm to keep the message small.
+const HAND_JOINT_RADIUS = 0.008;
+const handMaterials = {
+  idle: new THREE.MeshStandardMaterial({ color: 0xd8dde6, roughness: 0.7 }),
+  clutched: new THREE.MeshStandardMaterial({ color: 0x4ce07a, roughness: 0.7 }),
+  wrist: new THREE.MeshStandardMaterial({ color: 0xff9f43, roughness: 0.7 }),
+};
+const handSphere = new THREE.SphereGeometry(1, 12, 8);
+const r4 = (v) => Math.round(v * 1e4) / 1e4;
+
+function handDrawing(side) {
+  let drawing = state.hands[side];
+  if (!drawing) {
+    drawing = { group: new THREE.Group(), joints: {} };
+    scene.add(drawing.group);
+    state.hands[side] = drawing;
+  }
+  return drawing;
+}
+
+function hideHand(side) {
+  const drawing = state.hands[side];
+  if (drawing) drawing.group.visible = false;
+}
+
+// Engagement markers: the server sends, per arm, where the operator's hand
+// must be for the clutch to engage (page coordinates: robot axes from the
+// WebXR floor origin, like the twin pose) and the radius that counts as
+// "there".  Amber until the hand is inside, green once it is; hidden while
+// that arm is clutched or nothing is tracked on that side.
+const markerMaterials = {
+  far: new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.35, depthWrite: false }),
+  near: new THREE.MeshBasicMaterial({ color: 0x4ce07a, transparent: true, opacity: 0.45, depthWrite: false }),
+};
+const markerRing = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, wireframe: true });
+
+function updateMarkers(arms) {
+  for (const side of ['left', 'right']) {
+    const a = arms && arms[side];
+    const engage = a && a.engage;
+    let marker = state.markers[side];
+    if (!engage || a.clutched || !a.tracked) { if (marker) marker.group.visible = false; continue; }
+    if (!marker) {
+      const group = new THREE.Group();
+      const ball = new THREE.Mesh(handSphere, markerMaterials.far);
+      const ring = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 8), markerRing);
+      group.add(ball); group.add(ring);
+      scene.add(group);
+      marker = { group, ball, ring };
+      state.markers[side] = marker;
+    }
+    const p = new THREE.Vector3(engage.p[0], engage.p[1], engage.p[2]).applyMatrix4(XR_FROM_ROBOT);
+    marker.group.position.copy(p);
+    marker.group.visible = true;
+    const r = Math.max(0.01, engage.radius_m || 0.05);
+    marker.ball.scale.setScalar(r);
+    marker.ring.scale.setScalar(r * 1.02);
+    marker.ball.material = engage.in_place ? markerMaterials.near : markerMaterials.far;
+  }
+}
+
+function handEntry(frame, refSpace, source) {
+  const hand = source.hand;
+  if (!hand) return null;
+  const joints = {};
+  const drawing = handDrawing(source.handedness);
+  const arm = state.lastState && state.lastState.arms && state.lastState.arms[source.handedness];
+  const clutched = !!(arm && arm.clutched);
+  let any = false;
+  for (const [name, space] of hand.entries()) {
+    const pose = frame.getJointPose(space, refSpace);
+    let mesh = drawing.joints[name];
+    if (!mesh) {
+      mesh = new THREE.Mesh(handSphere, handMaterials.idle);
+      drawing.joints[name] = mesh;
+      drawing.group.add(mesh);
+    }
+    if (!pose) { mesh.visible = false; continue; }
+    const p = pose.transform.position;
+    const entry = { p: [r4(p.x), r4(p.y), r4(p.z)] };
+    if (name === 'wrist') {
+      const q = pose.transform.orientation;
+      entry.q = [q.x, q.y, q.z, q.w];
+    }
+    joints[name] = entry;
+    any = true;
+    mesh.visible = true;
+    mesh.position.set(p.x, p.y, p.z);
+    const radius = pose.radius || HAND_JOINT_RADIUS;
+    mesh.scale.setScalar(radius);
+    mesh.material = name === 'wrist' ? handMaterials.wrist : (clutched ? handMaterials.clutched : handMaterials.idle);
+  }
+  drawing.group.visible = any;
+  if (!any) return null;
+  return { hand: { joints } };
 }
 
 function controllerEntry(frame, refSpace, source) {
@@ -460,15 +682,24 @@ function collectAndSend(frame, timeMs) {
   const viewer = frame.getViewerPose(refSpace);
   const msg = { type: 'pose', t: performance.now(), head: viewer ? xrPose(viewer.transform) : null, left: null, right: null };
   const session = renderer.xr.getSession();
+  const handSeen = { left: false, right: false };
   for (const source of session.inputSources) {
     if (source.handedness !== 'left' && source.handedness !== 'right') continue;
+    if (source.hand) {
+      // A tracked hand; the server reads its gestures.
+      handSeen[source.handedness] = true;
+      msg[source.handedness] = handEntry(frame, refSpace, source);
+      continue;
+    }
     const entry = controllerEntry(frame, refSpace, source);
     msg[source.handedness] = entry;
     handleButtons(source.handedness, entry);
   }
-  // Re-centre: both thumbsticks clicked.
-  const l = msg.left && msg.left.buttons.stick, r = msg.right && msg.right.buttons.stick;
-  if (l && r && !state.recenterHeld) { state.recenterHeld = true; send({ type: 'recenter' }); }
+  for (const side of ['left', 'right']) if (!handSeen[side]) hideHand(side);
+  // Re-centre: both thumbsticks clicked (hands do it with both middle pinches, server-side).
+  const l = msg.left && msg.left.buttons && msg.left.buttons.stick;
+  const r = msg.right && msg.right.buttons && msg.right.buttons.stick;
+  if (l && r && !state.recenterHeld) { state.recenterHeld = true; explicitRecenter(); }
   if (!(l && r)) state.recenterHeld = false;
   send(msg);
 }
@@ -563,6 +794,15 @@ function renderStatus() {
     if (h.arms) {
       lines.push(`arms      ${h.arms.left.mapping} mapping  clutch ${h.clutch_button === 'a' ? 'A/X' : h.clutch_button}  scale ${h.arms.left.position_scale}  orientation ${h.arms.left.orientation_enabled ? 'on' : 'off'}  grippers L:${h.arms.left.gripper_available ? 'on' : 'unmeasured'} R:${h.arms.right.gripper_available ? 'on' : 'unmeasured'}`);
     } else lines.push('arms      off (no teleop)');
+    if (h.hands) {
+      const g = h.hands;
+      const clutch = { pinch: 'pinch (thumb+index)', grip: 'grip (middle+ring+little curled)', always: 'always while tracked' }[g.clutch_gesture] || g.clutch_gesture;
+      const gripper = { curl: 'curl the other fingers', pinch: 'thumb-index distance', none: 'off' }[g.gripper_gesture] || g.gripper_gesture;
+      const gate = g.engage_radius_m ? `  engage within ${(g.engage_radius_m * 100).toFixed(0)}cm of the marker` : '';
+      lines.push(`hands     clutch ${clutch}  gripper ${gripper}  at ${g.reference}${gate}`);
+      const opened = g.open_recenter_hold_s ? `   re-centre: both hands open (palms away) ${g.open_recenter_hold_s}s` : '';
+      lines.push(`          re-centre/resume: both middle pinches${opened}   record: hold one ${g.record_hold_s}s   pause: both palms to the headset ${g.pause_hold_s}s, end: ${g.end_hold_s}s`);
+    } else lines.push('hands     ignored (controllers only)');
   }
   lines.push(recordingLine());
   const recBtn = $('#record');
@@ -571,7 +811,20 @@ function renderStatus() {
   recBtn.classList.toggle('on', active);
   if (s) {
     const hd = s.head || {};
-    lines.push(`operator  ${s.operator.recentred ? 'recentred' : 'NOT recentred'}  head ${s.head_enabled ? 'on' : 'off'}  arms ${s.arms_enabled ? 'on' : 'off'}`);
+    const g = s.gestures || {};
+    const paused = g.paused ? '  PAUSED by the stop gesture (both middle pinches, or the arms checkbox, resume)' : '';
+    lines.push(`operator  ${s.operator.recentred ? 'recentred' : 'NOT recentred'}  head ${s.head_enabled ? 'on' : 'off'}  arms ${s.arms_enabled ? 'on' : 'off'}${paused}`);
+    if (g.stop_hold_s > 0) {
+      const hh = state.hello && state.hello.hands;
+      const pauseAt = hh ? hh.pause_hold_s : 0.5, endAt = hh ? hh.end_hold_s : 2.5;
+      const phase = g.stop_hold_s >= endAt ? 'ENDING' : g.stop_hold_s >= pauseAt ? 'paused; keep holding to END' : 'hold to pause';
+      lines.push(`stop      palms shown ${g.stop_hold_s.toFixed(1)}s  ${phase} (pause ${pauseAt}s, end ${endAt}s)`);
+    }
+    if (g.fist_hold_s > 0) {
+      const hh = state.hello && state.hello.hands;
+      const endAt = hh && hh.end_fist_hold_s != null ? hh.end_fist_hold_s : 1.5;
+      lines.push(`end       both fists ${g.fist_hold_s.toFixed(1)}s  ${g.fist_hold_s >= endAt ? 'ENDING' : `hold to end the session (${endAt}s)`}`);
+    }
     if (hd.tracking) {
       const t = hd.targets_rad || {};
       lines.push(`headset   yaw ${(hd.yaw_input_rad * DEG).toFixed(1)}°  pitch ${(hd.pitch_input_rad * DEG).toFixed(1)}°   ->  ${Object.entries(t).map(([k, v]) => `${k}=${(v * DEG).toFixed(1)}°`).join('  ')}${hd.at_limit && hd.at_limit.length ? '  AT LIMIT ' + hd.at_limit.join(',') : ''}`);
@@ -579,8 +832,23 @@ function renderStatus() {
     for (const side of ['left', 'right']) {
       const a = (s.arms || {})[side];
       if (!a) continue;
-      const hint = { a: side === 'left' ? 'hold X' : 'hold A', grip: 'squeeze grip', stick: 'click stick' }[state.clutchButton] || 'hold the clutch';
-      lines.push(`${side.padEnd(9)} ${a.tracked ? (a.clutched ? 'CLUTCHED - following' : `idle (${hint} to drive)`) : 'controller not tracked'}${a.gripper_rad != null ? `  gripper ${(a.gripper_rad * DEG).toFixed(0)}°` : ''}`);
+      let hint = { a: side === 'left' ? 'hold X' : 'hold A', grip: 'squeeze grip', stick: 'click stick' }[state.clutchButton] || 'hold the clutch';
+      let lost = 'controller not tracked';
+      let extra = '';
+      if (a.input === 'hand') {
+        hint = 'pinch thumb+index';
+        lost = a.hand && a.hand.problem ? `hand: ${a.hand.problem}` : (state.hello && state.hello.hands ? 'hand not tracked' : 'hand ignored (server started without hands)');
+        if (a.hand && a.hand.tracked) {
+          extra = `  pinch ${a.hand.pinch_m != null ? (a.hand.pinch_m * 1000).toFixed(0) + 'mm' : '—'}${a.hand.curl != null ? `  curl ${(a.hand.curl * 100).toFixed(0)}%` : ''}${a.hand.grip ? '  GRIP' : ''}${a.hand.middle_pinch ? '  MIDDLE PINCH' : ''}`;
+        }
+      }
+      let status;
+      if (!a.tracked) status = lost;
+      else if (a.clutched) status = 'CLUTCHED - following';
+      else if (a.waiting) status = `WAITING - bring the hand to the marker (${a.engage && a.engage.distance_m != null ? (a.engage.distance_m * 100).toFixed(0) + ' cm away' : 'not in place'})`;
+      else if (a.engage) status = a.engage.in_place ? `at the marker (${hint} to drive)` : `idle - marker ${a.engage.distance_m != null ? (a.engage.distance_m * 100).toFixed(0) + ' cm' : '?'} away, go there and ${hint}`;
+      else status = `idle (${hint} to drive)`;
+      lines.push(`${side.padEnd(9)} ${status}${a.gripper_rad != null ? `  gripper ${(a.gripper_rad * DEG).toFixed(0)}°` : ''}${extra}`);
     }
     if (s.ik) {
       const e = s.ik.errors || {};
@@ -597,7 +865,10 @@ function renderStatus() {
   lines.push(`link      sent ${state.sent}  recv ${state.received}  rtt ${state.lastRttMs == null ? '—' : state.lastRttMs.toFixed(0) + 'ms'}  ${cam}`);
   const el = $('#vr-status');
   el.textContent = lines.join('\n');
-  drawHud(lines.slice(0, 6));
+  // In the headset only the live lines matter (the static configuration is
+  // on the page): what the operator and each arm are doing, and any gate,
+  // pause or stop gesture in progress.
+  drawHud(lines.filter((l) => /^(operator|stop|left|right|ik|recording|warning)/.test(l)).slice(0, 6));
   const rtt = state.lastRttMs == null ? '' : `  rtt ${state.lastRttMs.toFixed(0)} ms`;
   setStatus(`${state.connected ? 'live' : 'offline'}${rtt}`, state.connected ? 'ok' : 'bad');
 }
@@ -617,7 +888,7 @@ $('#preview').addEventListener('click', () => {
   $('#preview').textContent = state.preview ? 'Stop preview' : 'Desktop preview';
   setStatus(state.preview ? 'desktop preview: orbit the view to move the head' : 'preview stopped', 'warn');
 });
-$('#recenter').addEventListener('click', () => send({ type: 'recenter' }));
+$('#recenter').addEventListener('click', explicitRecenter);
 $('#head-on').addEventListener('change', (e) => send({ type: 'set', head_enabled: e.target.checked }));
 $('#arms-on').addEventListener('change', (e) => send({ type: 'set', arms_enabled: e.target.checked }));
 $('#twin-on').addEventListener('change', (e) => { robotGroup.visible = e.target.checked; });

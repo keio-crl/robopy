@@ -16,15 +16,24 @@ Client -> server::
     {"type": "pose", "t": <ms>,
      "head":  {"p": [x, y, z], "q": [x, y, z, w]} | null,
      "left":  {"p": [...], "q": [...], "clutch": bool, "trigger": 0..1,
-               "buttons": {"a": bool, "b": bool, "stick": bool}} | null,
+               "buttons": {"a": bool, "b": bool, "stick": bool}}       (a controller)
+              | {"hand": {"joints": {"wrist": {"p": [...], "q": [...]},
+                                     "thumb-tip": {"p": [...]}, ...}}}  (a tracked hand)
+              | null,
      "right": {...} | null}
     {"type": "recenter"}
-    {"type": "ping"}                       keepalive; answered with {"type": "pong"}
+    {"type": "ping"}                       keepalive; answered with a full "state" (the machine's
+                                            joints and the twin's poses), so the page shows the
+                                            robot as it stands before the headset streams poses
     {"type": "set", "head_enabled": bool, "arms_enabled": bool,
      "position_scale": float, "orientation_enabled": bool, "want_poses": bool}
 
 Poses are WebXR poses (metres, ``xyzw`` quaternion) in the page's reference
-space; the server does every frame conversion so the page stays dumb.
+space; the server does every frame conversion so the page stays dumb.  A
+tracked hand (WebXR Hand Input) is sent as its joints, and every gesture --
+the pinch that stands for the clutch, the finger curl that stands for the
+trigger, the two-handed pinch that re-centres -- is read by
+:mod:`robopy.vr.hand_tracking` on the server.
 
 Server -> client::
 
@@ -33,7 +42,9 @@ Server -> client::
     {"type": "state", "seq": n, "t": <echoed ms>, "joints": {...},
      "geometries": [{"p": [...], "q": [...]}, ...]   (only when want_poses),
      "tcp": {"left": {...}, "right": {...}},
-     "head": {...}, "arms": {...}, "ik": {...}, "warnings": [...], "server_ms": float}
+     "head": {...}, "arms": {...}, "ik": {...}, "warnings": [...], "server_ms": float,
+     "gestures": {"paused": bool, "stop_hold_s": float, "fist_hold_s": float}  (with hands),
+     "events": ["end_session"]                                (when raised)}
     {"type": "error", "message": "..."}
 
 Exactly one operator may stream at a time; a second ``/ws/teleop`` connection
@@ -45,13 +56,14 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import select
 import socket
 import ssl
 import threading
 import time
 import webbrowser
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Tuple
@@ -66,6 +78,15 @@ from robopy.viewer.server import IKSetup, ViewerServer, _Handler
 from .arm_teleop import ControllerSample, DualArmTeleop
 from .backend import TeleopBackend, TeleopCommand
 from .camera import FrameStreamer, SyntheticFrameSource
+from .hand_tracking import (
+    HandEvents,
+    HandFrame,
+    HandInput,
+    HandReading,
+    HandTrackingConfig,
+    TwoHandGestures,
+    operator_transform,
+)
 from .head_tracking import HeadTracker
 from .recording import CameraTap, PushedFrames, SessionRecorder
 from .websocket import (
@@ -81,6 +102,30 @@ from .xr_math import OperatorFrame, xr_pose_to_robot
 
 logger = logging.getLogger(__name__)
 
+
+def _finite(value: Any) -> Any:
+    """``value`` with every non-finite float replaced by ``None``.
+
+    Python's ``json.dumps`` writes ``NaN`` and ``Infinity``, which are not JSON:
+    a browser's ``JSON.parse`` throws on them and the page drops the message
+    -- a hello carrying one empty timing statistic (``p50: nan``) left the
+    headset waiting for it forever.  Nothing here has a meaning for an
+    infinite or undefined number that ``null`` does not carry.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _finite(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_finite(v) for v in value]
+    return value
+
+
+def _dumps(payload: Any) -> str:
+    """Strict JSON: what every browser parses."""
+    return json.dumps(_finite(payload), allow_nan=False)
+
+
 __all__ = ["TeleopSession", "VRServer", "VRServerConfig", "head_anchor_position", "serve_vr"]
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -95,8 +140,10 @@ class VRServerConfig:
         teleop_timeout_s: A teleop socket silent this long is treated as gone
             (clutches released, backend told to hold).
         camera_fov_deg: Horizontal field of view the page uses to size the
-            camera image.  The default is the Intel RealSense D435 colour
-            sensor's data-sheet value; it is *not* a calibration of this camera.
+            camera image when the camera does not report its intrinsics (a
+            RealSense does; see :func:`~robopy.vr.camera.camera_view`), or
+            ``None`` for 69 degrees, the D435 colour sensor's 16:9 data-sheet
+            value.  Given, it overrides the camera's own.
         twin_offset_m: Where the page draws the robot's base, in robot axes
             (x forward, y left, z up) from the WebXR floor origin, or ``None``
             to place the twin so that the robot's head anchor sits where the
@@ -110,6 +157,9 @@ class VRServerConfig:
         clutch_button: Which controller button the page treats as the clutch:
             ``"a"`` (A on the right, X on the left; the thumb), ``"grip"``
             (the squeeze) or ``"stick"`` (the thumbstick click).
+        hands: How tracked hands (WebXR Hand Input, sent by the page when the
+            operator puts the controllers down) are read, or ``None`` to
+            ignore them and drive the arms from controllers only.
         head_enabled: Whether the head follows the headset at session start.
         arms_enabled: Whether the arms follow the controllers at session start.
         record_dir: Where session recordings (and their videos) are written,
@@ -120,10 +170,11 @@ class VRServerConfig:
 
     state_hz: float = 30.0
     teleop_timeout_s: float = 5.0
-    camera_fov_deg: float = 69.0
+    camera_fov_deg: float | None = None
     twin_offset_m: Tuple[float, float, float] | None = None
     arm_anchor_frame: str = "auto"
     clutch_button: str = "a"
+    hands: HandTrackingConfig | None = field(default_factory=HandTrackingConfig)
     head_enabled: bool = True
     arms_enabled: bool = True
     record_dir: Path | None = Path("recordings")
@@ -132,7 +183,7 @@ class VRServerConfig:
     def __post_init__(self) -> None:
         if self.state_hz <= 0.0 or self.teleop_timeout_s <= 0.0:
             raise ValueError("state_hz and teleop_timeout_s must be positive.")
-        if not 10.0 <= self.camera_fov_deg <= 170.0:
+        if self.camera_fov_deg is not None and not 10.0 <= self.camera_fov_deg <= 170.0:
             raise ValueError("camera_fov_deg must be within [10, 170].")
         if self.clutch_button not in ("a", "grip", "stick"):
             raise ValueError("clutch_button must be 'a', 'grip' or 'stick'.")
@@ -200,6 +251,10 @@ def _pose_entry(entry: Any) -> NDArray[np.float64] | None:
         return None
 
 
+def _describe_hand(reading: HandReading | None) -> Dict[str, Any] | None:
+    return None if reading is None else reading.describe()
+
+
 class TeleopSession:
     """Turn one operator's messages into backend commands.
 
@@ -250,6 +305,20 @@ class TeleopSession:
         self._last_arms: Dict[str, Any] = {}
         self._last_controller_base: Dict[str, Any] = {}
         self._last_report: Any = None
+        self.hands: Dict[str, HandInput] | None = None
+        self._hand_gestures: TwoHandGestures | None = None
+        self.paused_by_gesture = False
+        #: With the twin fixed in the room, the operator frame -- and so the
+        #: engage markers, which sit on the twin's hands -- is fixed with it: a
+        #: gesture re-centre only resumes paused arms; the page's explicit
+        #: re-centre (button, thumbsticks, "place twin") moves both together.
+        self.twin_fixed = True
+        self._stop_hold_s = 0.0
+        self._fist_hold_s = 0.0
+        self._pending_events: List[str] = []
+        if config.hands is not None:
+            self.hands = {side: HandInput(side, config.hands) for side in ("left", "right")}
+            self._hand_gestures = TwoHandGestures(config.hands)
         self.recorder_joint_names: List[str] = list(backend.joint_positions())
         self.robot_anchor_m: NDArray[np.float64] | None = None
         if arm_teleop is not None and arm_teleop.needs_anchor:
@@ -281,17 +350,19 @@ class TeleopSession:
             "arms": None if self.arm_teleop is None else self.arm_teleop.describe(),
             "head_enabled": self.head_enabled,
             "arms_enabled": self.arms_enabled,
-            "camera_fov_deg": self.config.camera_fov_deg,
+            "camera_fov_deg": self.config.camera_fov_deg or 69.0,
             "twin_offset_m": None
             if self.config.twin_offset_m is None
             else list(self.config.twin_offset_m),
             "twin": self._twin_pose(),
             "clutch_button": self.config.clutch_button,
+            "hands": None if self.config.hands is None else self.config.hands.describe(),
             "robot_anchor_m": None
             if self.robot_anchor_m is None
             else [float(v) for v in self.robot_anchor_m],
             "state_hz": self.config.state_hz,
             "backend_info": self.backend.describe(),
+            "twin_fixed": self.twin_fixed,
             "camera_available": self.camera_available,
             "recording": None if self.recorder is None else self.recorder.describe(),
         }
@@ -313,9 +384,14 @@ class TeleopSession:
             return self._record(message, now_s)
         if kind == "ping":
             # Keepalive from a page that is connected but not yet streaming
-            # poses (before Enter VR); answering it also lets the page measure
-            # the link.
-            return {"type": "pong", "t": message.get("t")}
+            # poses (before Enter VR).  Answered with a full state rather than
+            # a bare pong: the machine's measured joints and the twin's poses
+            # go with it, so the page draws the robot as it actually stands
+            # from the first second, not at the model's zero until the headset
+            # starts sending poses.  The page measures the link from ``t``
+            # either way.
+            state = self._state(now_s, echo_t=message.get("t"), force=True)
+            return state if state is not None else {"type": "pong", "t": message.get("t")}
         return {"type": "error", "message": f"unknown message type {kind!r}"}
 
     # -- recording ----------------------------------------------------------
@@ -345,6 +421,7 @@ class TeleopSession:
             if self.robot_anchor_m is None
             else [float(v) for v in self.robot_anchor_m],
             "arms": arms,
+            "hands": None if self.config.hands is None else self.config.hands.describe(),
         }
 
     def _record(self, message: Mapping[str, Any], now_s: float) -> Dict[str, Any]:
@@ -389,7 +466,11 @@ class TeleopSession:
             controllers[side] = (
                 None
                 if not arm.get("tracked")
-                else {"p_base": p_base, "clutched": bool(arm.get("clutched"))}
+                else {
+                    "p_base": p_base,
+                    "clutched": bool(arm.get("clutched")),
+                    "input": arm.get("input"),
+                }
             )
             target = arm.get("target")
             targets[side] = None if not target else list(target["p"])
@@ -413,10 +494,13 @@ class TeleopSession:
         )
 
     def _apply_settings(self, message: Mapping[str, Any]) -> Dict[str, Any]:
+        if "twin_fixed" in message:
+            self.twin_fixed = bool(message["twin_fixed"])
         if "head_enabled" in message:
             self.head_enabled = bool(message["head_enabled"])
         if "arms_enabled" in message:
             self.arms_enabled = bool(message["arms_enabled"])
+            self.paused_by_gesture = False
             if not self.arms_enabled and self.arm_teleop is not None:
                 self.arm_teleop.release_all()
         if "want_poses" in message:
@@ -506,36 +590,53 @@ class TeleopSession:
         elif self.head_tracker is not None:
             self._last_head = {"tracking": False}
 
+        samples, inputs, readings = self._read_inputs(message, now_s)
+        events = HandEvents()
+        if self._hand_gestures is not None:
+            events = self._hand_gestures.update(readings, now_s)
+        recentred_now = False
+        resumed_only = False
+        head_robot = self._last_head_robot
+        if events.recenter and head_robot is not None:
+            if self.twin_fixed and self.operator.recentred:
+                # The twin is fixed in the room and the operator frame with it:
+                # the markers stay on the twin's hands, where the operator
+                # reaches to take hold of them.  The gesture only resumes.
+                resumed_only = True
+            else:
+                # Both hands pinched thumb and middle fingertips, or held open: the
+                # same as both thumbstick clicks.  This frame's samples were read in
+                # the old operator frame, so they are dropped and the clutches released.
+                self._recentre_operator(head_robot)
+                head_op = self.operator.to_operator(head_robot)
+                if self.head_tracker is not None:
+                    self.head_tracker.recenter(head_op[:3, :3])
+                if self.arm_teleop is not None:
+                    self.arm_teleop.release_all()
+                samples = {side: None for side in samples}
+                recentred_now = True
+        if events.record_toggle and self.recorder is not None:
+            if self.recorder.active:
+                self.recorder.stop(now_s)
+            else:
+                self.recorder.start(self.recording_metadata(), now_s)
+        self._stop_hold_s = events.stop_hold_s
+        self._fist_hold_s = events.fist_hold_s
+        if events.pause or events.end:
+            # The stop sign: the arms stop following at once and stay off
+            # until the operator resumes (the re-centre gesture, or the page).
+            self._pause_arms()
+            if events.end:
+                self._pending_events.append("end_session")
+        if (recentred_now or resumed_only) and events.resume and self.paused_by_gesture:
+            self.paused_by_gesture = False
+            self.arms_enabled = True
+            resumed_only = True
+        force_state = recentred_now or resumed_only or bool(self._pending_events)
+
         arm_target = None
         grippers: Dict[str, float] = {}
         if self.arm_teleop is not None and self.arms_enabled and self.operator.recentred:
-            samples: Dict[str, ControllerSample | None] = {}
-            for side in ("left", "right"):
-                entry = message.get(side)
-                pose = _pose_entry(entry)
-                if pose is None:
-                    samples[side] = None
-                    continue
-                assert isinstance(entry, dict)
-                buttons = entry.get("buttons") or {}
-                pose_op = self.operator.to_operator(pose)
-                if self.robot_anchor_m is not None:
-                    scale = self.arm_teleop.arms[side].config.position_scale
-                    p_base = self.robot_anchor_m + scale * (
-                        pose_op[:3, 3] - self.operator.head_position_m
-                    )
-                    self._last_controller_base[side] = [float(v) for v in p_base]
-                else:
-                    self._last_controller_base[side] = None
-                samples[side] = ControllerSample(
-                    pose=pose_op,
-                    clutch=bool(entry.get("clutch", False)),
-                    trigger=float(entry.get("trigger", 0.0) or 0.0),
-                    buttons={str(k): bool(v) for k, v in buttons.items()}
-                    if isinstance(buttons, dict)
-                    else {},
-                    stamp_s=now_s,
-                )
             hand_poses = {side: self.backend.hand_pose(side) for side in ("left", "right")}
             output = self.arm_teleop.update(samples, hand_poses, now_s)
             arm_target = output.target
@@ -547,13 +648,23 @@ class TeleopSession:
                     "tracked": cmd.tracked,
                     "gripper_rad": cmd.gripper_rad,
                     "target": None if cmd.target is None else matrix_to_pose(cmd.target),
+                    "input": inputs.get(side),
+                    "hand": _describe_hand(readings.get(side)),
+                    "waiting": cmd.waiting,
+                    "engage": self._engage_marker(side, cmd, hand_poses[side]),
                 }
                 for side, cmd in output.commands.items()
             }
         elif self.arm_teleop is not None:
             self.arm_teleop.release_all()
             self._last_arms = {
-                side: {"clutched": False, "enabled": False, "tracked": False}
+                side: {
+                    "clutched": False,
+                    "enabled": False,
+                    "tracked": False,
+                    "input": inputs.get(side),
+                    "hand": _describe_hand(readings.get(side)),
+                }
                 for side in ("left", "right")
             }
 
@@ -566,7 +677,123 @@ class TeleopSession:
             )
         )
         self._record_frame(now_s)
-        return self._state(now_s, echo_t=message.get("t"))
+        state = self._state(now_s, echo_t=message.get("t"), force=force_state)
+        if state is not None and recentred_now:
+            state["recentred"] = True
+        return state
+
+    def _pause_arms(self) -> None:
+        """Stop the arms following (clutches released, targets held) until resumed."""
+        self.paused_by_gesture = True
+        self.arms_enabled = False
+        if self.arm_teleop is not None:
+            self.arm_teleop.release_all()
+
+    def _engage_marker(
+        self, side: str, command: Any, robot_hand_pose: NDArray[np.float64]
+    ) -> Dict[str, Any] | None:
+        """Where the operator must bring their hand for this arm's clutch to engage.
+
+        The robot's current hand position, taken through the absolute
+        correspondence back into the operator's space, in the page's
+        coordinates (robot axes from the WebXR floor origin, as the twin pose
+        is sent).  ``None`` when no gate applies (relative mapping, no radius,
+        or nothing tracked on that side).
+        """
+        if command.engage_radius_m is None or self.robot_anchor_m is None:
+            return None
+        if self.arm_teleop is None:
+            return None
+        # The correspondence is unscaled (the scale applies to the motion
+        # after the clutch engages), so the marker is the robot's hand as the
+        # twin shows it, whatever the scale.
+        p_op = self.operator.head_position_m + (
+            np.asarray(robot_hand_pose)[:3, 3] - self.robot_anchor_m
+        )
+        T = np.eye(4)
+        T[:3, 3] = p_op
+        p_page = self.operator.from_operator(T)[:3, 3]
+        return {
+            "p": [float(v) for v in p_page],
+            "radius_m": float(command.engage_radius_m),
+            "distance_m": None
+            if command.engage_distance_m is None
+            else float(command.engage_distance_m),
+            "in_place": command.engage_distance_m is not None
+            and command.engage_distance_m <= command.engage_radius_m,
+        }
+
+    def _read_inputs(
+        self, message: Mapping[str, Any], now_s: float
+    ) -> Tuple[
+        Dict[str, ControllerSample | None], Dict[str, str | None], Dict[str, HandReading | None]
+    ]:
+        """Each side's input this frame: a controller pose or a tracked hand.
+
+        Returns ``(samples, inputs, hand_readings)``: the controller-equivalent
+        sample per side (``None`` when nothing is tracked there), which kind of
+        device it came from (``"controller"``, ``"hand"`` or ``None``), and the
+        hand gesture readings (``None`` for a side without a readable hand).
+        Everything is expressed in the operator frame, so nothing is read
+        before the operator has been re-centred.
+        """
+        samples: Dict[str, ControllerSample | None] = {"left": None, "right": None}
+        inputs: Dict[str, str | None] = {"left": None, "right": None}
+        readings: Dict[str, HandReading | None] = {"left": None, "right": None}
+        if not self.operator.recentred:
+            if self.hands is not None:
+                for hand in self.hands.values():
+                    hand.update(None, now_s)
+            return samples, inputs, readings
+        T_op = operator_transform(self.operator.to_operator)
+        head_op = None
+        if self._last_head_robot is not None:
+            head_op = self.operator.to_operator(self._last_head_robot)[:3, 3]
+        for side in ("left", "right"):
+            entry = message.get(side)
+            hand_entry = entry.get("hand") if isinstance(entry, dict) else None
+            pose_op: NDArray[np.float64] | None = None
+            if hand_entry is not None:
+                inputs[side] = "hand"
+                if self.hands is not None:
+                    frame = HandFrame.from_message(hand_entry)
+                    reading = self.hands[side].update(
+                        None if frame is None else frame.transformed(T_op),
+                        now_s,
+                        head_position_m=head_op,
+                    )
+                    readings[side] = reading
+                    samples[side] = reading.sample
+                    if reading.sample is not None and reading.sample.pose is not None:
+                        pose_op = reading.sample.pose
+            else:
+                if self.hands is not None:
+                    self.hands[side].update(None, now_s)  # no hand here: gestures release
+                pose = _pose_entry(entry)
+                if pose is not None:
+                    assert isinstance(entry, dict)
+                    inputs[side] = "controller"
+                    buttons = entry.get("buttons") or {}
+                    pose_op = self.operator.to_operator(pose)
+                    samples[side] = ControllerSample(
+                        pose=pose_op,
+                        clutch=bool(entry.get("clutch", False)),
+                        trigger=float(entry.get("trigger", 0.0) or 0.0),
+                        buttons={str(k): bool(v) for k, v in buttons.items()}
+                        if isinstance(buttons, dict)
+                        else {},
+                        stamp_s=now_s,
+                    )
+            if pose_op is None:
+                continue
+            # Where the device is in the robot's frame under the absolute
+            # correspondence, for the recording and its videos.
+            if self.robot_anchor_m is not None and self.arm_teleop is not None:
+                p_base = self.robot_anchor_m + (pose_op[:3, 3] - self.operator.head_position_m)
+                self._last_controller_base[side] = [float(v) for v in p_base]
+            else:
+                self._last_controller_base[side] = None
+        return samples, inputs, readings
 
     def _state(self, now_s: float, *, echo_t: Any, force: bool = False) -> Dict[str, Any] | None:
         if not force and now_s - self._last_state_s < 1.0 / self.config.state_hz:
@@ -594,6 +821,15 @@ class TeleopSession:
             "arms_enabled": self.arms_enabled,
             "backend": self.backend.name,
         }
+        if self.hands is not None:
+            state["gestures"] = {
+                "paused": self.paused_by_gesture,
+                "stop_hold_s": self._stop_hold_s,
+                "fist_hold_s": self._fist_hold_s,
+            }
+        if self._pending_events:
+            state["events"] = list(self._pending_events)
+            self._pending_events = []
         if report is not None:
             state["ik"] = {
                 "status": report.ik_status,
@@ -630,6 +866,7 @@ class TeleopSession:
             "head_enabled": self.head_enabled,
             "arms_enabled": self.arms_enabled,
             "want_poses": self.want_poses,
+            "paused_by_gesture": self.paused_by_gesture,
             "head": dict(self._last_head),
             "arms": dict(self._last_arms),
         }
@@ -680,6 +917,15 @@ class _VRHandler(_Handler):
             self.close_connection = True
 
 
+def _camera_intrinsics(source: Any) -> Dict[str, float] | None:
+    """The camera's pinhole model through any wrappers, or ``None`` when it has none."""
+    try:
+        k = getattr(source, "intrinsics", None)
+    except Exception:  # noqa: BLE001 - a property that could not read the device
+        return None
+    return k if isinstance(k, dict) else None
+
+
 def _unwrapped(source: Any) -> Any:
     """The camera behind any source wrappers (rotation and the like)."""
     while hasattr(source, "source"):
@@ -704,6 +950,16 @@ class VRServer(ViewerServer):
             tunnel to ``localhost``, which browsers treat as secure).
         config: Session settings.
     """
+
+    def _camera_view(self) -> Dict[str, Any] | None:
+        """How the page should size and centre the picture (see :func:`camera_view`)."""
+        from .camera import camera_view  # noqa: PLC0415
+
+        if self.camera is None:
+            return None
+        explicit = self.vr_config.camera_fov_deg
+        k = None if explicit is not None else _camera_intrinsics(self.camera.source)
+        return camera_view(k, explicit if explicit is not None else 69.0)
 
     def __init__(
         self,
@@ -801,11 +1057,15 @@ class VRServer(ViewerServer):
                     "state_hz": self.vr_config.state_hz,
                     "teleop_timeout_s": self.vr_config.teleop_timeout_s,
                     "camera_fov_deg": self.vr_config.camera_fov_deg,
+                    "camera_view": self._camera_view(),
                     "twin_offset_m": None
                     if self.vr_config.twin_offset_m is None
                     else list(self.vr_config.twin_offset_m),
                     "arm_anchor_frame": self.vr_config.arm_anchor_frame,
                     "clutch_button": self.vr_config.clutch_button,
+                    "hands": None
+                    if self.vr_config.hands is None
+                    else self.vr_config.hands.describe(),
                 },
             }
 
@@ -817,7 +1077,7 @@ class VRServer(ViewerServer):
             if self._session is not None:
                 self._refused_operators += 1
                 ws.send_text(
-                    json.dumps(
+                    _dumps(
                         {
                             "type": "error",
                             "message": "another operator is connected; only one may drive",
@@ -858,10 +1118,10 @@ class VRServer(ViewerServer):
                 try:
                     payload = json.loads(message.text)
                 except ValueError:
-                    ws.send_text(json.dumps({"type": "error", "message": "invalid JSON"}))
+                    ws.send_text(_dumps({"type": "error", "message": "invalid JSON"}))
                     continue
                 if not isinstance(payload, dict):
-                    ws.send_text(json.dumps({"type": "error", "message": "expected an object"}))
+                    ws.send_text(_dumps({"type": "error", "message": "expected an object"}))
                     continue
                 now = time.monotonic()
                 try:
@@ -872,7 +1132,7 @@ class VRServer(ViewerServer):
                     reply = {"type": "error", "message": f"{type(exc).__name__}: {exc}"}
                 if reply is not None:
                     try:
-                        ws.send_text(json.dumps(reply))
+                        ws.send_text(_dumps(reply))
                     except WebSocketError:
                         break
         finally:
@@ -896,10 +1156,15 @@ class VRServer(ViewerServer):
         OpenSSL does not allow and which ended camera streams mid-session.
         """
         if self.camera is None:
-            ws.send_text(json.dumps({"type": "error", "message": "no camera in this session"}))
+            ws.send_text(_dumps({"type": "error", "message": "no camera in this session"}))
             ws.close(1011, "no camera")
             return
         self._camera_clients += 1
+        logger.info(
+            "camera client connected (%d watching); frames so far: %s",
+            self._camera_clients,
+            self.camera.describe().get("frames"),
+        )
         reason = "client closed"
 
         def readable() -> bool:
@@ -911,10 +1176,10 @@ class VRServer(ViewerServer):
 
         try:
             ws.send_text(
-                json.dumps(
+                _dumps(
                     {
                         "type": "camera",
-                        "fov_deg": self.vr_config.camera_fov_deg,
+                        **(self._camera_view() or {}),
                         "source": type(self.camera.source).__name__,
                     }
                 )

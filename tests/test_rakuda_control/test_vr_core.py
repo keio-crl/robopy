@@ -374,6 +374,38 @@ class TestArmTeleop:
         again = arm.update(_sample(0.0, 0.0, 1.2, clutch=True), hand2, 0.04)
         assert np.allclose(again.target, hand2)
 
+    def test_engage_gate_waits_until_the_hand_is_at_the_robot_hand(self) -> None:
+        arm = ArmTeleop(
+            "left", ArmTeleopConfig(mapping="absolute", engage_radius_m=0.05, max_speed_m_s=100.0)
+        )
+        arm.set_anchor([0.0, 0.0, 1.0], [0.0, 0.0, 1.6])
+        hand = np.eye(4)
+        hand[:3, 3] = [0.3, 0.2, 0.7]  # 0.3 ahead, 0.2 left, 0.3 below the anchor
+        # The controller 20 cm above the corresponding spot: pressing waits.
+        far = arm.update(_sample(0.3, 0.2, 1.6 - 0.3 + 0.2, clutch=True), hand, 0.0)
+        assert far.waiting and not far.clutched and not far.enabled and far.target is None
+        assert far.engage_distance_m == pytest.approx(0.2)
+        assert far.engage_radius_m == 0.05
+        # Not pressing: the distance is still reported, nothing waits.
+        idle = arm.update(_sample(0.3, 0.2, 1.6 - 0.3 + 0.2, clutch=False), hand, 0.1)
+        assert not idle.waiting and idle.engage_distance_m == pytest.approx(0.2)
+        # Within the radius: engages, anchored at the current hand.
+        near = arm.update(_sample(0.3, 0.2, 1.6 - 0.3 + 0.03, clutch=True), hand, 0.2)
+        assert near.engaged_now and near.clutched and not near.waiting
+        assert near.engage_distance_m is None
+        assert near.target is not None and np.allclose(near.target, hand)
+        # A sample may carry its own radius, which wins over the arm's.
+        arm.release()
+        near_pose = np.eye(4)
+        near_pose[:3, 3] = [0.3, 0.2, 1.6 - 0.3 + 0.03]
+        strict = ControllerSample(pose=near_pose, clutch=True, engage_radius_m=0.01)
+        assert arm.update(strict, hand, 0.3).waiting
+        # The relative mapping never gates.
+        relative = ArmTeleop("left", ArmTeleopConfig(mapping="relative", engage_radius_m=0.05))
+        assert relative.update(_sample(5.0, 5.0, 5.0, clutch=True), hand, 0.0).clutched
+        with pytest.raises(ValueError, match="engage_radius_m"):
+            ArmTeleopConfig(engage_radius_m=0.0)
+
     def test_untracked_controller_releases_the_clutch(self) -> None:
         arm = ArmTeleop("right", RELATIVE)
         hand = np.eye(4)
@@ -443,10 +475,63 @@ class TestArmTeleop:
         assert measured.gripper_target(7.0) == pytest.approx(1.1)  # clamped
         arm = ArmTeleop("left", measured)
         arm.set_anchor([0.0, 0.0, 1.0], [0.0, 0.0, 1.6])
+        # The trigger drives the gripper only while the clutch is engaged.
         cmd = arm.update(
             ControllerSample(pose=np.eye(4), clutch=False, trigger=0.25), np.eye(4), 0.0
         )
+        assert cmd.gripper_rad is None
+        cmd = arm.update(
+            ControllerSample(pose=np.eye(4), clutch=True, trigger=0.25), np.eye(4), 0.1
+        )
         assert cmd.gripper_rad == pytest.approx(0.35)
+        # Released: the last angle stays, whatever the trigger does; out of
+        # view likewise.
+        cmd = arm.update(
+            ControllerSample(pose=np.eye(4), clutch=False, trigger=1.0), np.eye(4), 0.2
+        )
+        assert cmd.gripper_rad == pytest.approx(0.35)
+        cmd = arm.update(None, np.eye(4), 0.3)
+        assert cmd.gripper_rad == pytest.approx(0.35)
+
+    def test_absolute_pointing_turns_the_gripper_to_the_hand(self) -> None:
+        # The robot hand's approach axis (TCP +Z) points down; the operator's
+        # hand points forward (+X), rolled in any way at the press: the target
+        # turns the approach axis forward, whatever the relative rotation says.
+        arm = ArmTeleop(
+            "left",
+            ArmTeleopConfig(
+                mapping="relative",
+                max_speed_m_s=100.0,
+                max_angular_speed_rad_s=100.0,
+                approach_axis=(0.0, 0.0, 1.0),
+            ),
+        )
+        hand = np.eye(4)
+        hand[:3, :3] = np.diag([1.0, -1.0, -1.0])  # TCP +Z = world -Z: pointing down
+        rolled = np.eye(4)
+        rolled[:3, :3] = rotation_z(1.2)  # the operator's hand, turned any way
+        forward = np.array([1.0, 0.0, 0.0])
+        arm.update(
+            ControllerSample(pose=rolled, clutch=True, pointing=forward), hand, 0.0
+        )
+        cmd = arm.update(
+            ControllerSample(pose=rolled, clutch=True, pointing=forward), hand, 0.1
+        )
+        assert cmd.target is not None
+        assert cmd.target[:3, :3] @ np.array([0.0, 0.0, 1.0]) == pytest.approx(forward, abs=1e-9)
+        # Relative (or no pointing): the same press leaves the hand pointing down.
+        relative = ArmTeleop(
+            "left",
+            ArmTeleopConfig(mapping="relative", pointing="relative", approach_axis=(0.0, 0.0, 1.0)),
+        )
+        relative.update(ControllerSample(pose=rolled, clutch=True, pointing=forward), hand, 0.0)
+        cmd = relative.update(
+            ControllerSample(pose=rolled, clutch=True, pointing=forward), hand, 0.1
+        )
+        assert cmd.target is not None
+        assert cmd.target[:3, :3] @ np.array([0.0, 0.0, 1.0]) == pytest.approx(
+            [0.0, 0.0, -1.0], abs=1e-9
+        )
 
     def test_config_validation(self) -> None:
         with pytest.raises(ValueError):
@@ -515,13 +600,18 @@ class TestAbsoluteArmTeleop:
             cmd = arm.update(_sample(0.4, -0.25, 1.3, clutch=True), hand, 0.1 * i)
         assert np.allclose(cmd.target[:3, 3], self.ROBOT + [0.4, -0.25, -0.3], atol=1e-9)
 
-    def test_scale_is_about_the_head_and_orientation_stays_relative(self) -> None:
+    def test_scale_is_about_the_press_and_orientation_stays_relative(self) -> None:
         arm = self._arm(position_scale=0.5)
         hand = np.eye(4)
         hand[:3, :3] = rotation_z(1.0)
+        # The press itself is unscaled: the controller 0.4 m in front of the
+        # head puts the hand 0.4 m in front of the anchor ...
         arm.update(_sample(0.4, 0.0, 1.6, clutch=True), hand, 0.0)
         cmd = arm.update(_sample(0.4, 0.0, 1.6, clutch=True, R=rotation_z(0.2)), hand, 1.0)
-        assert np.allclose(cmd.target[:3, 3], self.ROBOT + [0.2, 0.0, 0.0])
+        assert np.allclose(cmd.target[:3, 3], self.ROBOT + [0.4, 0.0, 0.0])
+        # ... and the motion since is scaled about that point.
+        cmd = arm.update(_sample(0.6, 0.0, 1.6, clutch=True, R=rotation_z(0.2)), hand, 2.0)
+        assert np.allclose(cmd.target[:3, 3], self.ROBOT + [0.5, 0.0, 0.0])
         # Orientation: the controller turned 0.2 rad since the press, so the
         # hand turns 0.2 rad from where it was -- not to the controller's own attitude.
         assert np.allclose(cmd.target[:3, :3], rotation_z(0.2) @ rotation_z(1.0), atol=1e-9)
@@ -567,6 +657,7 @@ class TestDualArmTeleop:
         teleop.release_all()
         held = teleop.update({"left": None, "right": None}, hands, 1.0)
         assert not held.target.left_enabled and not held.target.right_enabled
-        assert held.gripper_targets_rad == {}
+        # Released and out of view: the gripper keeps its last commanded angle.
+        assert held.gripper_targets_rad == pytest.approx({"l_arm_grip": 0.5})
         with pytest.raises(ValueError):
             DualArmTeleop(target_ttl_s=0.0)

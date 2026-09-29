@@ -14,7 +14,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Protocol
+from typing import Any, Callable, Dict, Mapping, Protocol
 
 import cv2
 import numpy as np
@@ -225,6 +225,11 @@ class RealsenseFrameSource:
         fps: Colour stream rate.
         timeout_ms: How long :meth:`read` waits for a new frame.
         reconnect_after_s: Restart the pipeline after this long without a frame.
+        start_attempts: With more than one, a start is verified: the pipeline
+            must deliver a frame within ``FIRST_FRAME_TIMEOUT_S`` or it is
+            stopped and started again, up to this many times.  A D435 on a
+            marginal USB link opens its pipeline and then sends nothing; a
+            restart usually gets a stream.  One (the default) trusts the start.
     """
 
     def __init__(
@@ -236,28 +241,47 @@ class RealsenseFrameSource:
         fps: int = 30,
         timeout_ms: float = 100.0,
         reconnect_after_s: float = 5.0,
+        start_attempts: int = 1,
     ) -> None:
-        from robopy.config.sensor_config.visual_config.camera_config import (
-            RealsenseCameraConfig,
-        )
-        from robopy.sensors.visual.realsense_camera import RealsenseCamera
-
-        config = RealsenseCameraConfig(
-            name=f"realsense{index}",
-            index=index,
-            width=width,
-            height=height,
-            fps=fps,
-            color_mode="rgb",
-            is_depth_camera=False,
-        )
-        self._camera: Any = RealsenseCamera(config=config)
-        self._camera.connect()
+        if start_attempts < 1:
+            raise ValueError("start_attempts must be at least 1.")
+        self._index, self._width, self._height, self._fps = index, width, height, fps
+        self.start_attempts = start_attempts
+        self.reconnect_after_s = reconnect_after_s
+        self._camera: Any = self._connect(fps)
         self._timeout_ms = timeout_ms
         self.reconnect_after_s = reconnect_after_s
         self.failures = 0
         self.reconnects = 0
         self._last_frame_s = time.monotonic()
+
+    @property
+    def intrinsics(self) -> Dict[str, float] | None:
+        """The colour stream's pinhole model, read from the device, or ``None``.
+
+        ``{"width", "height", "fx", "fy", "ppx", "ppy"}`` in pixels.  The page
+        sizes and centres the picture from these, so a direction in the
+        headset is the same direction from the robot's camera: a D435 colour
+        stream at 640x480 sees about 55 degrees across, not the 69 of its
+        16:9 data sheet, and a picture drawn at 69 put the robot's arms a
+        quarter further out than they are.
+        """
+        try:
+            profile = self._camera.rs_profile
+            import pyrealsense2 as rs  # noqa: PLC0415
+
+            stream = profile.get_stream(rs.stream.color).as_video_stream_profile()
+            k = stream.get_intrinsics()
+        except Exception:  # noqa: BLE001 - no device, no profile, no pyrealsense2
+            return None
+        return {
+            "width": float(k.width),
+            "height": float(k.height),
+            "fx": float(k.fx),
+            "fy": float(k.fy),
+            "ppx": float(k.ppx),
+            "ppy": float(k.ppy),
+        }
 
     def read(self) -> NDArray[np.uint8] | None:
         """The newest colour frame as BGR ``uint8``, or ``None`` if none is new.
@@ -278,6 +302,77 @@ class RealsenseFrameSource:
         self._last_frame_s = time.monotonic()
         return to_bgr_uint8(frame, color="rgb")
 
+    #: How long a verified start (``start_attempts > 1``) waits for the first frame.
+    FIRST_FRAME_TIMEOUT_S = 2.5
+
+    def _connect(self, fps: int) -> Any:
+        from robopy.config.sensor_config.visual_config.camera_config import (
+            RealsenseCameraConfig,
+        )
+        from robopy.sensors.visual.realsense_camera import RealsenseCamera
+
+        config = RealsenseCameraConfig(
+            name=f"realsense{self._index}",
+            index=self._index,
+            width=self._width,
+            height=self._height,
+            fps=fps,
+            color_mode="rgb",
+            is_depth_camera=False,
+        )
+        attempts = self.start_attempts
+        last_error: Exception | None = None
+        camera: Any = None
+        for attempt in range(1, attempts + 1):
+            camera = RealsenseCamera(config=config)
+            try:
+                try:
+                    camera.connect(warmup=False)  # the frame check below is the warm-up
+                except TypeError:
+                    camera.connect()
+            except Exception as exc:  # noqa: BLE001 - the device may be re-enumerating
+                last_error = exc
+                camera = None
+                logger.warning("RealSense start %d/%d failed: %s", attempt, attempts, exc)
+                if attempt < attempts:
+                    time.sleep(1.0)
+                continue
+            if attempts == 1:
+                return camera  # no verification asked for
+            deadline = time.monotonic() + self.FIRST_FRAME_TIMEOUT_S
+            while time.monotonic() < deadline:
+                try:
+                    camera.async_read(timeout_ms=200)
+                except Exception:  # noqa: BLE001 - no frame yet
+                    continue
+                if attempt > 1:
+                    logger.info("RealSense streams after %d starts", attempt)
+                return camera
+            if attempt == attempts:
+                logger.error(
+                    "RealSense: pipeline open but no frame in %d starts; keeping it and retrying "
+                    "every %.0f s. Check the USB link: a D435 that shows as USB 2 has a marginal "
+                    "cable or port.",
+                    attempts,
+                    self.reconnect_after_s,
+                )
+                return camera
+            logger.warning(
+                "RealSense start %d/%d: pipeline open but no frame within %.1f s; restarting it",
+                attempt,
+                attempts,
+                self.FIRST_FRAME_TIMEOUT_S,
+            )
+            try:
+                camera.disconnect()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("RealSense disconnect after a silent start: %s", exc)
+            time.sleep(0.5)
+        raise RuntimeError(
+            f"RealSense could not be started in {attempts} attempt(s)"
+            + (f": {last_error}" if last_error else "")
+        )
+
     def _maybe_reconnect(self) -> None:
         if time.monotonic() - self._last_frame_s < self.reconnect_after_s:
             return
@@ -293,7 +388,7 @@ class RealsenseFrameSource:
         except Exception as exc:  # noqa: BLE001
             logger.debug("RealSense disconnect during restart: %s", exc)
         try:
-            self._camera.connect()
+            self._camera = self._connect(self._fps)
         except Exception as exc:  # noqa: BLE001
             logger.error("RealSense restart failed: %s", exc)
 
@@ -332,6 +427,13 @@ class RotatedFrameSource:
         self.degrees = degrees % 360
         self.mirror = bool(mirror)
 
+    @property
+    def intrinsics(self) -> Dict[str, float] | None:
+        """The source's pinhole model, turned and mirrored as the picture is."""
+        return rotate_intrinsics(
+            getattr(self.source, "intrinsics", None), self.degrees, mirror=self.mirror
+        )
+
     def read(self) -> NDArray[np.uint8] | None:
         """The source's frame, upright and the right way round."""
         frame = self.source.read()
@@ -345,6 +447,48 @@ class RotatedFrameSource:
     def close(self) -> None:
         """Release the source."""
         self.source.close()
+
+
+def rotate_intrinsics(
+    k: Mapping[str, float] | None, degrees: int, *, mirror: bool = False
+) -> Dict[str, float] | None:
+    """A pinhole model for the picture turned clockwise by ``degrees`` (then mirrored)."""
+    if k is None:
+        return None
+    w, h = k["width"], k["height"]
+    fx, fy, cx, cy = k["fx"], k["fy"], k["ppx"], k["ppy"]
+    turns = (degrees % 360) // 90
+    if turns == 1:  # clockwise: (u, v) -> (h - v, u)
+        w, h, fx, fy, cx, cy = h, w, fy, fx, h - cy, cx
+    elif turns == 2:
+        cx, cy = w - cx, h - cy
+    elif turns == 3:  # (u, v) -> (v, w - u)
+        w, h, fx, fy, cx, cy = h, w, fy, fx, cy, w - cx
+    if mirror:
+        cx = w - cx
+    return {"width": w, "height": h, "fx": fx, "fy": fy, "ppx": cx, "ppy": cy}
+
+
+def camera_view(intrinsics: Mapping[str, float] | None, fallback_fov_deg: float) -> Dict[str, Any]:
+    """What the page needs to draw the picture where the camera sees: FOV and optical centre.
+
+    ``fx_n``/``fy_n`` are the focal lengths over the image size and
+    ``cx_n``/``cy_n`` the optical centre as a fraction of it, so they hold
+    for any downscaled JPEG.  Without intrinsics, a centred picture of the
+    fallback horizontal field of view.
+    """
+    if intrinsics is None:
+        return {"fov_deg": float(fallback_fov_deg), "from": "configured"}
+    w, h = intrinsics["width"], intrinsics["height"]
+    return {
+        "fov_deg": float(np.degrees(2.0 * np.arctan(w / (2.0 * intrinsics["fx"])))),
+        "vfov_deg": float(np.degrees(2.0 * np.arctan(h / (2.0 * intrinsics["fy"])))),
+        "fx_n": intrinsics["fx"] / w,
+        "fy_n": intrinsics["fy"] / h,
+        "cx_n": intrinsics["ppx"] / w,
+        "cy_n": intrinsics["ppy"] / h,
+        "from": "intrinsics",
+    }
 
 
 def rotate_frame(frame: NDArray[np.uint8], degrees: int) -> NDArray[np.uint8]:

@@ -134,11 +134,17 @@ def _joint_state(names: tuple[str, ...], positions: Mapping[str, float]) -> Join
 
 
 def _errors_of(result: Any) -> Dict[str, float | None]:
+    errors = result.errors()
     return {
-        "left_position_m": result.left_position_error_m,
-        "left_orientation_rad": result.left_orientation_error_rad,
-        "right_position_m": result.right_position_error_m,
-        "right_orientation_rad": result.right_orientation_error_rad,
+        key: errors[key]
+        for key in (
+            "left_position_m",
+            "left_orientation_rad",
+            "left_axis_rad",
+            "right_position_m",
+            "right_orientation_rad",
+            "right_axis_rad",
+        )
     }
 
 
@@ -368,6 +374,14 @@ class ControlSystemBackend:
         report.hand_poses = {side: self.hand_pose(side) for side in ("left", "right")}
         report.gripper_positions_rad = dict(self._last_grippers)
         report.compute_ms = (time.perf_counter() - started) * 1e3
+        if self._system.manager.state.value == "fault":
+            reasons = "; ".join(
+                f"{f.get('reason')}: {f.get('detail')}" for f in self._system.report()["faults"]
+            )
+            warnings.append(
+                f"HARDWARE FAULT -- the servo loop has stopped and the follower holds its pose; "
+                f"nothing here moves it any more. Restart robopy-vr. Cause: {reasons or 'unknown'}"
+            )
         report.warnings = warnings
         return report
 

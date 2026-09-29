@@ -7,7 +7,6 @@ involved here; the page itself is exercised manually with Playwright.
 from __future__ import annotations
 
 import json
-import math
 import threading
 import urllib.error
 import urllib.request
@@ -92,38 +91,94 @@ class TestModelBundle:
         assert [g["id"] for g in described if g["static"]] == ["root#0"]
         assert not [g for g in described if g["link"] == "torso_link" and g["static"]]
 
-    def test_the_motor_travel_becomes_the_slider_range(self, tmp_path: Path) -> None:
-        # Rakuda's joints are driven over the whole DYNAMIXEL count range, which
-        # is wider than several ranges its CAD export declares. The page's
-        # sliders span that travel; the model -- and so the solver -- keeps the
-        # URDF range, which describe() reports alongside.
+    def test_sliders_solver_and_overrides_read_one_resolved_range(self, tmp_path: Path) -> None:
+        # One resolver decides every joint's range: the URDF range, replaced by
+        # a recorded override, narrowed by a soft limit. The slider range *is*
+        # the solver's range; nothing applies an actuator travel to every axis.
         from robopy.kinematics.synthetic_dual_arm import write_synthetic_dual_arm_urdf
 
-        travelled = ModelBundle.load(
-            write_synthetic_dual_arm_urdf(tmp_path / "travel.urdf"),
-            soft_limits=SOFT_LIMITS,
-            joint_travel_rad=(-math.pi, math.pi),
+        # A soft limit that does not overlap the range at all (a calibration
+        # gone wrong) would leave the joint no angle: the viewer drops it,
+        # keeps the model's range and says so, instead of refusing to start.
+        stray = ModelBundle.load(
+            write_synthetic_dual_arm_urdf(tmp_path / "stray.urdf"),
+            soft_limits={
+                **SOFT_LIMITS,
+                "elbow_pitch_left_dof": {"lower": 2.5, "upper": 2.6},  # URDF +/-2.4
+                "elbow_yaw_left_dof": {
+                    "lower": 1.5,
+                    "upper": 1.6,
+                },  # inside the URDF, not the override
+            },
+            joint_limit_overrides={
+                "elbow_yaw_left_dof": {"lower": -1.0, "upper": 1.0, "reason": "measured stop"}
+            },
         )
-        joints = {j["name"]: j for j in travelled.describe()["joints"]}
+        joints = {j["name"]: j for j in stray.describe()["joints"]}
+        assert joints["elbow_pitch_left_dof"]["limit_source"] == "urdf"
+        assert joints["elbow_yaw_left_dof"]["limit_source"] == "override"
+        ignored = [w for w in stray.warnings if "IGNORED" in w]
+        assert len(ignored) == 2 and "elbow_pitch_left_dof" in ignored[0]
 
-        elbow = joints["elbow_pitch_left_dof"]  # URDF range +/-2.4 rad
-        assert elbow["limit_source"] == "motor"
-        assert (elbow["lower"], elbow["upper"]) == pytest.approx((-math.pi, math.pi))
-        assert (elbow["model_lower"], elbow["model_upper"]) == pytest.approx((-2.4, 2.4))
+        resolved = ModelBundle.load(
+            write_synthetic_dual_arm_urdf(tmp_path / "resolved.urdf"),
+            soft_limits={
+                **SOFT_LIMITS,
+                "elbow_yaw_left_dof": {"lower": -1.0, "upper": 1.0, "validated": True},
+                "wrist_yaw_left_dof": (-9.0, 9.0),  # wider than the URDF: does not widen
+            },
+            joint_limit_overrides={
+                "elbow_pitch_left_dof": {"lower": -2.0, "upper": 2.9, "reason": "measured stop"}
+            },
+        )
+        joints = {j["name"]: j for j in resolved.describe()["joints"]}
 
-        # A soft limit is a measurement of this joint, so it still narrows the
-        # slider; the motor travel only replaces the URDF's declared range.
-        torso = joints["torso_yaw_dof"]
-        assert torso["limit_source"] == "soft"
+        elbow = joints["elbow_pitch_left_dof"]  # URDF +/-2.4, overridden
+        assert elbow["limit_source"] == "override" and elbow["validated"] is True
+        assert (elbow["lower"], elbow["upper"]) == pytest.approx((-2.0, 2.9))
+        assert (elbow["model_lower"], elbow["model_upper"]) == pytest.approx((-2.0, 2.9))
+        assert (elbow["urdf_lower"], elbow["urdf_upper"]) == pytest.approx((-2.4, 2.4))
+        lower, upper = resolved.model.position_limits(["elbow_pitch_left_dof"])
+        assert (lower[0], upper[0]) == pytest.approx((-2.0, 2.9))  # the solver sees the same
+
+        yaw = joints["elbow_yaw_left_dof"]  # URDF +/-2.8 narrowed by a measured soft limit
+        assert yaw["limit_source"] == "soft" and yaw["validated"] is True
+        assert (yaw["lower"], yaw["upper"]) == pytest.approx((-1.0, 1.0))
+
+        wrist = joints["wrist_yaw_left_dof"]  # a wide soft limit changes nothing
+        assert wrist["limit_source"] == "urdf"
+        assert (wrist["lower"], wrist["upper"]) == pytest.approx((-2.8, 2.8))
+        assert any("wider than" in w for w in resolved.warnings)
+
+        torso = joints["torso_yaw_dof"]  # a plain pair is provisional
+        assert torso["limit_source"] == "soft" and torso["validated"] is False
         assert (torso["lower"], torso["upper"]) == pytest.approx(SOFT_LIMITS["torso_yaw_dof"])
-        assert any("actuator travel" in w for w in travelled.warnings)
+        assert any("provisional" in w for w in resolved.warnings)
+        assert not any(j["limit_source"] == "motor" for j in joints.values())
 
-    def test_without_a_travel_the_range_stays_the_model_s(self, bundle: ModelBundle) -> None:
+    def test_without_overrides_the_range_is_the_model_s(self, bundle: ModelBundle) -> None:
         joints = {j["name"]: j for j in bundle.describe()["joints"]}
         elbow = joints["elbow_pitch_left_dof"]
-        assert elbow["limit_source"] == "urdf"
+        assert elbow["limit_source"] == "urdf" and elbow["validated"] is True
         assert (elbow["lower"], elbow["upper"]) == pytest.approx((-2.4, 2.4))
         assert joints["torso_yaw_dof"]["limit_source"] == "soft"
+
+    def test_a_home_pose_is_checked_before_it_is_offered(self, tmp_path: Path) -> None:
+        from robopy.kinematics.synthetic_dual_arm import write_synthetic_dual_arm_urdf
+
+        urdf = write_synthetic_dual_arm_urdf(tmp_path / "home.urdf")
+        good = ModelBundle.load(
+            urdf, soft_limits=SOFT_LIMITS, home_positions_rad={"elbow_pitch_left_dof": 0.8}
+        )
+        assert good.home_positions_rad["elbow_pitch_left_dof"] == pytest.approx(0.8)
+        assert good.describe()["home_positions_rad"]["torso_yaw_dof"] == 0.0
+        bad = ModelBundle.load(
+            urdf, soft_limits=SOFT_LIMITS, home_positions_rad={"elbow_pitch_left_dof": 3.0}
+        )
+        assert bad.home_positions_rad == {}
+        assert any(
+            "not usable as a home pose" in w and "elbow_pitch_left_dof" in w for w in bad.warnings
+        )
 
     def test_poses_place_every_geometry_and_both_tcps(self, bundle: ModelBundle) -> None:
         poses = bundle.poses({"torso_yaw_dof": 0.3})
@@ -370,3 +425,254 @@ class TestOrientationWeightAndStall:
             },
         )
         assert status == 400
+
+
+class TestTrajectoryMode:
+    """``mode: trajectory``: timed samples, a session that resumes, explicit resets."""
+
+    def _start(self, bundle: ModelBundle) -> Dict[str, float]:
+        start = {name: 0.0 for name in bundle.joint_order}
+        start["elbow_pitch_left_dof"] = -0.6
+        start["elbow_pitch_right_dof"] = -0.6
+        return start
+
+    def _goal(self, server: ViewerServer, start: Dict[str, float], dx: float) -> Dict[str, Any]:
+        _, cur = _call(server, "/api/fk", {"joints": start})
+        left = dict(cur["tcp"]["left"])
+        left["p"] = [left["p"][0] + dx, left["p"][1], left["p"][2]]
+        return left
+
+    def test_a_move_is_a_timed_trajectory_within_the_ceilings(
+        self, server: ViewerServer, bundle: ModelBundle
+    ) -> None:
+        start = self._start(bundle)
+        goal = self._goal(server, start, 0.06)
+        _call(server, "/api/ik/reset", {"joints": start})
+        status, res = _call(
+            server,
+            "/api/ik",
+            {"mode": "trajectory", "seq": 1, "joints": start, "targets": {"left": goal}},
+        )
+        assert status == 200, res
+        assert res["mode"] == "trajectory" and res["seq"] == 1
+        assert res["status"] == "converged" and res["commandable"] is True
+        assert res["enabled"] == ["left"]
+        assert res["goal_error_m"]["left"] < 2e-3
+        samples = res["samples"]
+        assert len(samples) == res["n_samples"] >= 5
+        assert samples[0]["t"] == 0.0 and samples[0]["joints"] == pytest.approx(start)
+        # 60 mm at <= 0.25 m/s with 1 m/s^2 of acceleration is not 350 ms.
+        assert res["duration_s"] > 0.35
+        limits = res["limits"]
+        for a, b in zip(samples, samples[1:]):
+            dt = b["t"] - a["t"]
+            assert dt == pytest.approx(res["dt_s"])
+            pa, pb = np.array(a["tcp"]["left"]["p"]), np.array(b["tcp"]["left"]["p"])
+            assert np.linalg.norm(pb - pa) / dt <= limits["max_linear_velocity_m_s"] * 1.05 + 1e-3
+        assert res["reference"]["left"]["p"] == pytest.approx(goal["p"], abs=1e-6)
+        assert res["goals"]["left"]["p"] == pytest.approx(goal["p"])
+        assert "collision_modelled" in res and res["priority_mode"] == "hierarchical"
+        assert res["orientation_mode"] == "axis_aligned"  # the profile's default
+        assert len(res["poses"]["geometries"]) == len(bundle.geometries)
+
+    def test_a_retarget_resumes_from_the_playing_trajectory(
+        self, server: ViewerServer, bundle: ModelBundle
+    ) -> None:
+        start = self._start(bundle)
+        goal = self._goal(server, start, 0.08)
+        _call(server, "/api/ik/reset", {"joints": start})
+        _, first = _call(
+            server,
+            "/api/ik",
+            {
+                "mode": "trajectory",
+                "seq": 7,
+                "joints": start,
+                "targets": {"left": goal},
+                "max_duration_s": 0.2,
+            },
+        )
+        assert first["truncated"] is True and first["status"] == "tracking"
+        # The page is 0.1 s into the playback when the operator pushes the
+        # target further: the continuation starts from the joints at that
+        # instant and the reference keeps its velocity.
+        t = 0.1
+        at = next(s for s in first["samples"] if s["t"] >= t)
+        further = dict(goal)
+        further["p"] = [goal["p"][0] + 0.02, goal["p"][1], goal["p"][2]]
+        _, second = _call(
+            server,
+            "/api/ik",
+            {
+                "mode": "trajectory",
+                "seq": 8,
+                "joints": at["joints"],
+                "targets": {"left": further},
+                "resume": {"seq": 7, "t": t},
+            },
+        )
+        assert second["resumed_from"] == {"seq": 7, "t": t}
+        assert second["status"] == "converged", second["message"]
+        assert second["samples"][0]["joints"] == pytest.approx(at["joints"])
+        # The reference did not restart from rest: its first step is about the
+        # speed it had, not the crawl of a fresh start.
+        r0 = np.array(second["samples"][0]["reference"]["left"]["p"])
+        r1 = np.array(second["samples"][1]["reference"]["left"]["p"])
+        v_resumed = np.linalg.norm(r1 - r0) / second["dt_s"]
+        f0 = np.array(first["samples"][0]["reference"]["left"]["p"])
+        f1 = np.array(first["samples"][1]["reference"]["left"]["p"])
+        v_fresh = np.linalg.norm(f1 - f0) / first["dt_s"]
+        assert v_resumed > 3 * v_fresh
+        # A resume for a sequence the session no longer holds starts at rest.
+        _, third = _call(
+            server,
+            "/api/ik",
+            {
+                "mode": "trajectory",
+                "seq": 9,
+                "joints": start,
+                "targets": {"left": goal},
+                "resume": {"seq": 3, "t": 0.5},
+            },
+        )
+        assert third["resumed_from"] is None
+
+    def test_reset_is_explicit_and_counted(self, server: ViewerServer, bundle: ModelBundle) -> None:
+        _, before = _call(server, "/api/model")
+        status, res = _call(server, "/api/ik/reset", {"joints": self._start(bundle)})
+        assert status == 200 and res["ok"] is True
+        _, after = _call(server, "/api/model")
+        assert after["ik"]["resets"] == before["ik"]["resets"] + 1 == res["resets"]
+        status, _ = _call(server, "/api/ik/reset", {"joints": 3})
+        assert status == 400
+
+    def test_bad_requests(self, server: ViewerServer, bundle: ModelBundle) -> None:
+        start = self._start(bundle)
+        goal = self._goal(server, start, 0.01)
+        status, err = _call(
+            server, "/api/ik", {"mode": "teleport", "joints": start, "targets": {"left": goal}}
+        )
+        assert status == 400 and "mode" in err["error"]
+        status, err = _call(
+            server,
+            "/api/ik",
+            {"mode": "trajectory", "joints": start, "targets": {"left": goal}, "max_duration_s": 0},
+        )
+        assert status == 400
+        status, err = _call(
+            server,
+            "/api/ik",
+            {
+                "mode": "trajectory",
+                "joints": start,
+                "targets": {"left": goal},
+                "orientation_mode": "sideways",
+            },
+        )
+        assert status == 400 and "orientation" in err["error"]
+
+    def test_the_description_states_the_session(self, server: ViewerServer) -> None:
+        _, model = _call(server, "/api/model")
+        ik = model["ik"]
+        assert ik["priority_mode"] == "hierarchical"
+        # The profile's default: the gripper points where the target points,
+        # along an approach axis read off the model for each side.
+        assert ik["orientation_mode"] == "axis_aligned"
+        assert ik["orientation_modes"] == ["position_only", "pose", "axis_aligned"]
+        assert set(ik["approach_axis_tcp"]) == {"left", "right"}
+        assert len(ik["approach_axis_tcp"]["left"]) == 3
+        assert ik["collision_modelled"] is False  # the fixture registers no pairs
+        traj = ik["trajectory"]
+        assert traj["profile"] == "simulation"
+        assert traj["sample_period_s"] == 0.02
+        assert traj["max_linear_velocity_m_s"] == 0.25
+        assert ik["config"]["task_priority_mode"] == "hierarchical"
+        assert ik["config"]["limit_avoidance_enabled"] is True
+
+    def test_pose_mode_reports_orientation_and_a_weight_is_range_checked(
+        self, server: ViewerServer, bundle: ModelBundle
+    ) -> None:
+        start = self._start(bundle)
+        goal = self._goal(server, start, 0.02)
+        status, res = _call(
+            server,
+            "/api/ik",
+            {
+                "mode": "trajectory",
+                "joints": start,
+                "targets": {"left": goal},
+                "orientation_mode": "pose",
+                "orientation_weight": 0.5,
+            },
+        )
+        assert status == 200
+        assert res["orientation_mode"] == "pose" and res["orientation_weight"] == 0.5
+        assert res["goal_orientation_error_rad"]["left"] < 0.05
+        status, _ = _call(
+            server,
+            "/api/ik",
+            {
+                "mode": "trajectory",
+                "joints": start,
+                "targets": {"left": goal},
+                "orientation_mode": "pose",
+                "orientation_weight": 11,
+            },
+        )
+        assert status == 400
+        # Back to the page's default so later tests see the described state.
+        _call(
+            server,
+            "/api/ik",
+            {
+                "mode": "trajectory",
+                "joints": start,
+                "targets": {"left": goal},
+                "orientation_mode": "axis_aligned",
+            },
+        )
+
+
+class TestTrajectoryProfileFromConfig:
+    """``control.trajectory`` decides the viewer's ceilings; gaps are named."""
+
+    def test_unset_config_runs_the_simulation_profile(self) -> None:
+        from robopy.config.robot_config.rakuda_config import RakudaTrajectoryConfig
+        from robopy.viewer.cli import _trajectory_from_config
+        from robopy.viewer.server import SIMULATION_TRAJECTORY_LIMITS
+
+        kwargs, note = _trajectory_from_config(RakudaTrajectoryConfig())
+        assert kwargs["trajectory_profile"] == "simulation"
+        assert kwargs["trajectory_limits"] == SIMULATION_TRAJECTORY_LIMITS
+        assert kwargs["sample_period_s"] == 0.02
+        assert note and "simulation profile" in note
+
+    def test_a_partial_config_is_filled_and_said_so(self) -> None:
+        from robopy.config.robot_config.rakuda_config import RakudaTrajectoryConfig
+        from robopy.viewer.cli import _trajectory_from_config
+
+        kwargs, note = _trajectory_from_config(
+            RakudaTrajectoryConfig(max_linear_velocity_m_s=0.1, sample_period_s=0.01)
+        )
+        assert kwargs["trajectory_profile"] == "config+simulation"
+        assert kwargs["trajectory_limits"].max_linear_velocity_m_s == 0.1
+        assert kwargs["trajectory_limits"].max_linear_acceleration_m_s2 == 1.0
+        assert kwargs["sample_period_s"] == 0.01
+        assert note and "max_linear_acceleration_m_s2" in note and "refuse" in note
+
+    def test_a_complete_config_is_used_as_given(self) -> None:
+        from robopy.config.robot_config.rakuda_config import RakudaTrajectoryConfig
+        from robopy.viewer.cli import _trajectory_from_config
+
+        kwargs, note = _trajectory_from_config(
+            RakudaTrajectoryConfig(
+                sample_period_s=0.01,
+                max_linear_velocity_m_s=0.1,
+                max_linear_acceleration_m_s2=0.5,
+                max_angular_velocity_rad_s=1.0,
+                max_angular_acceleration_rad_s2=3.0,
+                lag_tolerance_m=0.01,
+            )
+        )
+        assert note is None and kwargs["trajectory_profile"] == "config"
+        assert kwargs["trajectory_limits"].lag_tolerance_m == 0.01

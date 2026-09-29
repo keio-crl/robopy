@@ -19,12 +19,17 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Sequence, Tuple
+from typing import Any, Dict, Literal, Sequence, Tuple
 
 #: Solver settings for stepping once per pose sample (rather than jogging to
 #: convergence as the viewer does).  A bounded step per sample, a short
 #: compute budget and no acceleration window -- the operator's hand is the
 #: trajectory generator here.
+#: The VR's orientation weight when neither the config nor --orientation-weight
+#: says: higher than the solver's 0.15, so the hand's roll (the wrist yaw's
+#: job) is followed rather than given up for a few millimetres of position.
+DEFAULT_ORIENTATION_WEIGHT = 0.5
+
 STREAMING_IK_OVERRIDES: Dict[str, Any] = {
     "max_joint_step_rad": 0.05,
     "compute_budget_s": 0.05,
@@ -42,11 +47,15 @@ def build_parser() -> argparse.ArgumentParser:
         prog="robopy-vr",
         description=(
             "VR teleoperation of the Rakuda from a WebXR headset: the headset drives the "
-            "head, the controllers drive the arms, the head camera is shown in front of the "
-            "operator. Simulated unless --hardware is given."
+            "head, the controllers or the tracked bare hands drive the arms, the head camera "
+            "is shown in front of the operator. Simulated unless --hardware is given."
         ),
     )
     add_model_arguments(parser)
+    # The twin is drawn on a headset: the convex hulls (2.9 MB) instead of the
+    # visual meshes (53 MB), which took the page's thread long enough to parse
+    # that the teleop socket timed out meanwhile.  --geometry visual restores them.
+    parser.set_defaults(geometry="collision")
     net = parser.add_argument_group("network")
     net.add_argument(
         "--host", default="127.0.0.1", help="bind address; 0.0.0.0 for a headset on the LAN"
@@ -73,14 +82,21 @@ def build_parser() -> argparse.ArgumentParser:
     cam = parser.add_argument_group("camera")
     cam.add_argument(
         "--camera",
-        default="synthetic",
-        help="synthetic (default), none, opencv:<index|/dev/videoN|url>, or "
-        "realsense[:index] (the colour stream of an Intel RealSense; needs pyrealsense2)",
+        default="auto",
+        help="auto (default: with --hardware or --hardware-head the head's RealSense when "
+        "pyrealsense2 and a device are present, else the test pattern), synthetic, none, "
+        "opencv:<index|/dev/videoN|url>, or realsense[:index] (the colour stream of an Intel "
+        "RealSense; needs pyrealsense2: uv run --extra realsense ...)",
     )
     cam.add_argument(
         "--camera-size", default="640x480", metavar="WxH", help="RealSense colour stream size"
     )
-    cam.add_argument("--camera-fps", type=float, default=30.0)
+    cam.add_argument(
+        "--camera-fps",
+        type=float,
+        default=30.0,
+        help="camera and stream rate (default 30)",
+    )
     cam.add_argument(
         "--camera-mirror",
         choices=["on", "off"],
@@ -103,8 +119,9 @@ def build_parser() -> argparse.ArgumentParser:
     cam.add_argument(
         "--camera-fov",
         type=float,
-        default=69.0,
-        help="horizontal field of view in degrees used to size the image (D435 colour: 69)",
+        default=None,
+        help="horizontal field of view in degrees used to size the image. Default: the "
+        "camera's own intrinsics (a RealSense reports them: about 55 degrees at 640x480), else 69",
     )
 
     head = parser.add_argument_group("head")
@@ -161,6 +178,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     arms.add_argument("--no-orientation", action="store_true", help="translation-only hand targets")
     arms.add_argument(
+        "--orientation-mode",
+        choices=["position_only", "pose", "axis_aligned"],
+        default=None,
+        help="what of the hand's pose the solver follows: axis_aligned (the default of the "
+        "shared solver profile: position and the direction the gripper points, read off the "
+        "model or control.ik.approach_axis_tcp; the roll about it is free and the arms' roll "
+        "joints are held at neutral by a posture cost), position_only, or pose (full "
+        "orientation; with the two-axis wrist a held orientation costs centimetres of position "
+        "and rolls the arm). Default: control.ik.orientation_mode from the config, else "
+        "axis_aligned. Applies to the simulation and, with --hardware, to the machine's solver",
+    )
+    arms.add_argument(
+        "--orientation-weight",
+        type=float,
+        default=None,
+        metavar="W",
+        help="weight of the hand's orientation error against its position (1.0) in the solver, "
+        "in the pose and axis_aligned modes (no effect in position_only). Default: "
+        f"control.ik.orientation_cost from the config, else {DEFAULT_ORIENTATION_WEIGHT}. "
+        "Applies to the simulation and, with --hardware, to the machine's solver",
+    )
+    arms.add_argument(
         "--max-hand-speed", type=float, default=0.6, help="m/s slew limit of the targets"
     )
     arms.add_argument("--torso", choices=["fixed", "optimize", "manual"], default="fixed")
@@ -173,13 +212,140 @@ def build_parser() -> argparse.ArgumentParser:
         "Without it the trigger does nothing: the travel is a measurement, not a default.",
     )
     arms.add_argument("--target-ttl", type=float, default=0.25, help="seconds a target stays valid")
+    arms.add_argument(
+        "--engage-radius",
+        type=float,
+        default=None,
+        metavar="M",
+        help="absolute mapping, controllers: the clutch engages only once the controller has "
+        "been brought within this distance (robot metres) of where the robot's hand is, "
+        "shown as a marker; default: engage at once and pull the hand over. Hands have "
+        "their own --hand-engage-radius",
+    )
+
+    hands = parser.add_argument_group(
+        "hands",
+        "Bare-hand tracking (WebXR Hand Input). Put the controllers down and the Quest tracks "
+        "the hands; the page streams their joints and the server reads the gestures. Both "
+        "kinds of input work in the same session.",
+    )
+    hands.add_argument(
+        "--no-hands", action="store_true", help="ignore tracked hands; controllers only"
+    )
+    hands.add_argument(
+        "--hand-clutch",
+        choices=["grip", "pinch", "always"],
+        default="grip",
+        help="what drives an arm from a hand: grip (middle, ring and little fingers curled into "
+        "the palm, as round a handle; default -- the thumb and index then work the gripper), "
+        "pinch (thumb and index fingertips together; the curled fingers work the gripper) or "
+        "always (the arm follows whenever the hand is tracked)",
+    )
+    hands.add_argument(
+        "--hand-gripper",
+        choices=["curl", "pinch", "none"],
+        default=None,
+        help="the gripper signal from a hand: pinch (how close the thumb and index tips are; "
+        "the default with --hand-clutch grip or always), curl (middle, ring and little fingers "
+        "closed into the palm; the default with --hand-clutch pinch) or none. It acts only while "
+        "that hand holds its arm; released, the gripper keeps its angle. As with the trigger, "
+        "nothing moves without the gripper's measured travel",
+    )
+    hands.add_argument(
+        "--pointing",
+        choices=["absolute", "relative"],
+        default="absolute",
+        help="how a hand's orientation drives the gripper: absolute (default: the gripper's "
+        "approach axis points where the hand points, wrist to middle knuckle, however the "
+        "robot's hand was turned when the grip engaged) or relative (the hand's rotation since "
+        "the grip, added to the robot hand's pose then -- an offset present then, a forearm roll "
+        "wound up, stays for the whole grasp). Controllers are always relative",
+    )
+    hands.add_argument(
+        "--hand-reference",
+        choices=["palm", "wrist", "pinch"],
+        default="palm",
+        help="which point of the hand is its position: the palm centre (default), the wrist "
+        "joint or the pinch point between thumb and index tips",
+    )
+    hands.add_argument(
+        "--pinch-on",
+        type=float,
+        default=0.02,
+        metavar="M",
+        help="fingertip distance below which a pinch engages (default 0.02 m)",
+    )
+    hands.add_argument(
+        "--pinch-off",
+        type=float,
+        default=0.035,
+        metavar="M",
+        help="fingertip distance above which a held pinch releases (default 0.035 m)",
+    )
+    hands.add_argument(
+        "--hand-engage-radius",
+        type=float,
+        default=0.05,
+        metavar="M",
+        help="absolute mapping: a pinch engages only once the hand has been brought within "
+        "this distance (robot metres) of where the robot's hand is, shown as a marker in "
+        "the headset, so a pinch never yanks the arm across the workspace (default 0.05; "
+        "0 engages at once)",
+    )
+    hands.add_argument(
+        "--stop-hold",
+        default="0.5,2.5",
+        metavar="PAUSE,END",
+        help="seconds both open palms are shown to the headset before the arms pause, and "
+        "before the session ends (default 0.5,2.5)",
+    )
+    hands.add_argument(
+        "--hand-end-hold",
+        default="1.5",
+        metavar="SECONDS|off",
+        help="hold both fists (all four fingers curled, no pinch) this long to end the VR "
+        "session (default 1.5; off disables the sign -- the stop sign held for its end time "
+        "still ends it)",
+    )
+    hands.add_argument(
+        "--hand-pointing-filter",
+        default="0.15",
+        metavar="SECONDS|off",
+        help="time constant of the low-pass filter on a hand's pointing (default 0.15 s). "
+        "Hand tracking jitters by a degree or so, and with the wrist near straight the solver "
+        "turns that into forearm-roll swings; a longer constant is steadier and slower",
+    )
+    hands.add_argument(
+        "--hand-open-recenter",
+        default="1.5",
+        metavar="SECONDS|off",
+        help="hold both hands open (fingers spread, palms not towards the headset) this long "
+        "to re-centre: the robot's head goes where the headset is now (default 1.5, long "
+        "enough not to fire while looking around with the hands open; off "
+        "turns it off; only with --hand-clutch pinch)",
+    )
 
     hw = parser.add_argument_group("hardware")
     hw.add_argument(
         "--hardware",
         action="store_true",
-        help="drive the real follower via .robopy/rakuda/config.yaml (needs --config and a "
-        "control section in cartesian_teleop mode). THE ROBOT WILL MOVE.",
+        help="drive the real follower via .robopy/rakuda/config.yaml (needs a control section "
+        "in cartesian_teleop mode). Without a leader port the follower alone is driven. "
+        "THE ROBOT WILL MOVE.",
+    )
+    hw.add_argument(
+        "--release-on-exit",
+        action="store_true",
+        help="follower-only --hardware: switch the follower's torque OFF when the session ends "
+        "(the arms go limp: support them). Default: the follower keeps holding its pose with "
+        "torque ON and only the port is closed",
+    )
+    hw.add_argument(
+        "--hardware-check",
+        action="store_true",
+        help="with --hardware: connect, build and validate the control system, print which "
+        "motors it would drive and where the hands are, then exit WITHOUT enabling torque "
+        "or starting the loop",
     )
     hw.add_argument(
         "--hardware-head",
@@ -234,9 +400,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="JOINT=RAD",
-        help="simulation start configuration (repeatable). Default: elbows bent 0.8 rad, because "
-        "the Rakuda export's zero pose is fully extended with the right elbow on its limit, "
-        "where no solver step is feasible. Ignored with --hardware (the machine is where it is).",
+        help="simulation start configuration (repeatable), or one of: 'zero' (the model's zero "
+        "pose, every joint at 0) or 'machine' (read the real follower once, read-only, on "
+        "--follower-port / the configured port, and start where it stands; needs --config). "
+        "Default: elbows bent 0.8 rad, because the Rakuda export's zero pose is fully extended "
+        "with the right elbow near its limit, where the solver has little room. Ignored with "
+        "--hardware (the machine is where it is).",
     )
     parser.add_argument(
         "--twin-offset",
@@ -412,6 +581,77 @@ def _home_head_before_loop(backend: Any, bus: Any) -> Dict[str, Any]:
     return {"moved": True, "arrived": arrived, "start": home}
 
 
+def _print_joints_against_limits(system: Any) -> None:
+    """``--hardware-check``: every measured joint next to the limits the solver obeys.
+
+    The limits are the profile the control system resolved (URDF, overrides,
+    soft limits), so a joint the machine rests past them shows up here, before
+    torque is enabled, rather than as an infeasible solve later.
+    """
+    measured = system.follower_positions_urdf()
+    names = [n for n in system.model.movable_joint_names if n in measured]
+    lower, upper = system.model.position_limits(names)
+    print("  measured joints against the solver's limits (rad):")
+    outside = []
+    for i, name in enumerate(names):
+        value = measured[name]
+        lo, hi = float(lower[i]), float(upper[i])
+        flag = ""
+        if value < lo - 1e-9:
+            flag = f"  <-- {lo - value:.4f} below the lower limit"
+            outside.append(name)
+        elif value > hi + 1e-9:
+            flag = f"  <-- {value - hi:.4f} above the upper limit"
+            outside.append(name)
+        print(f"    {name:28s} {value:+8.4f}   [{lo:+8.4f}, {hi:+8.4f}]{flag}")
+    if outside:
+        print(
+            f"  {len(outside)} joint(s) rest outside the limits: {', '.join(outside)}. The solver "
+            "holds such a joint at its limit and commands it there; if the machine sits there "
+            "at rest, its recorded travel or soft limit is narrower than the machine."
+        )
+    else:
+        print("  every measured joint is inside its limits")
+
+
+def _grippers_from_calibration(control: Any, grippers: Dict[str, Dict[str, Any]]) -> Dict[str, str]:
+    """Fill a side's gripper travel from ``follower_joint_calibration`` when --gripper did not.
+
+    The calibration's zero pose for a gripper is *fully open* and closing is
+    positive (robopy-rakuda-calibrate --side follower --motors l_arm_grip,...),
+    so open is 0 rad and closed is the far end of the measured travel.
+    ``grippers`` is updated in place; the returned notes say what was taken.
+    """
+    notes: Dict[str, str] = {}
+    for side in ("left", "right"):
+        if side in grippers:
+            continue
+        motor = f"{side[0]}_arm_grip"
+        spec = control.follower_joint_calibration.get(motor)
+        if (
+            spec is None
+            or spec.zero_count is None
+            or spec.lower_limit_rad is None
+            or spec.upper_limit_rad is None
+        ):
+            continue
+        closed = (
+            spec.lower_limit_rad
+            if abs(spec.lower_limit_rad) > abs(spec.upper_limit_rad)
+            else spec.upper_limit_rad
+        )
+        grippers[side] = {
+            "gripper_motor": motor,
+            "gripper_open_rad": 0.0,
+            "gripper_closed_rad": float(closed),
+        }
+        notes[side] = (
+            f"travel from the calibration of {motor}: open 0.00 rad (its zero pose), closed "
+            f"{closed:+.2f} rad (--gripper overrides)"
+        )
+    return notes
+
+
 def _leader_grippers(leader: Any, *, hold: bool) -> str:
     """Torque OFF the leader's grippers, or (``hold``) give them the spring-back goal.
 
@@ -529,8 +769,16 @@ DEFAULT_START_POSE: Dict[str, float] = {
 
 
 def _start_pose(
-    args: argparse.Namespace, parser: argparse.ArgumentParser, joints: Sequence[str]
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+    joints: Sequence[str],
+    *,
+    loaded: Any = None,
 ) -> Dict[str, float]:
+    if args.start_pose == ["zero"]:
+        return {}
+    if args.start_pose == ["machine"]:
+        return _machine_start_pose(args, parser, joints, loaded)
     if args.start_pose:
         out: Dict[str, float] = {}
         for entry in args.start_pose:
@@ -545,6 +793,60 @@ def _start_pose(
     return {k: v for k, v in DEFAULT_START_POSE.items() if k in joints}
 
 
+def _simulated_leader_bus(cfg: Any) -> Any:
+    """A leader bus that exists only in memory, for a follower-only hardware session."""
+    from robopy.motor.sim_dynamixel_bus import SimulatedDynamixelBus, SimulatedJoint
+    from robopy.robots.rakuda.rakuda_leader import RakudaLeader
+
+    motors = RakudaLeader(cfg)._create_motors()
+    return SimulatedDynamixelBus(
+        motors, joints={name: SimulatedJoint() for name in motors}, auto_step=True
+    )
+
+
+def _machine_start_pose(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+    joints: Sequence[str],
+    loaded: Any,
+) -> Dict[str, float]:
+    """``--start-pose machine``: the real follower's joint angles, read once, read-only."""
+    from robopy.config.dotrobopy import apply_rakuda_dotconfig
+    from robopy.config.robot_config.rakuda_config import RakudaConfig
+    from robopy.viewer.machine_mirror import open_follower_mirror
+
+    if loaded is None or loaded.config is None:
+        parser.error(
+            "--start-pose machine needs .robopy/rakuda/config.yaml with a control section (the "
+            "follower's joint calibration)"
+        )
+    port = (
+        args.follower_port
+        or apply_rakuda_dotconfig(RakudaConfig(leader_port="", follower_port="")).follower_port
+    )
+    if not port:
+        parser.error("--start-pose machine needs --follower-port (or follower_port in the config)")
+    try:
+        mirror = open_follower_mirror(
+            port, loaded.config.follower_joint_calibration, known_urdf_joints=joints
+        )
+    except Exception as exc:  # noqa: BLE001 - a clear message, then exit
+        parser.error(f"--start-pose machine: cannot read the follower on {port}: {exc}")
+    try:
+        snap = mirror.snapshot()
+    finally:
+        mirror.stop()
+    if snap["error"]:
+        parser.error(f"--start-pose machine: the follower did not answer: {snap['error']}")
+    pose = {j: float(v) for j, v in snap["joints"].items() if j in joints}
+    left_out = sorted(set(joints) - set(pose))
+    print(
+        f"Start pose read from the follower on {port} (read-only, port closed again): "
+        f"{len(pose)} joints" + (f"; at 0 (not calibrated): {left_out}" if left_out else "")
+    )
+    return pose
+
+
 def _make_camera(args: argparse.Namespace, caption: Any) -> Any:
     from .camera import (
         FrameStreamer,
@@ -555,6 +857,11 @@ def _make_camera(args: argparse.Namespace, caption: Any) -> Any:
     )
 
     spec = str(args.camera).strip().lower()
+    auto = spec == "auto"
+    if auto:
+        # The machine has a RealSense on its head: show it whenever the machine
+        # is driven, and say so when it cannot be, rather than failing.
+        spec = "realsense" if (args.hardware or args.hardware_head) else "synthetic"
     if spec == "none":
         return None
     if spec == "synthetic":
@@ -572,12 +879,25 @@ def _make_camera(args: argparse.Namespace, caption: Any) -> Any:
             raise SystemExit(f"--camera-size expects WxH, got {args.camera_size!r}") from None
         try:
             source = RealsenseFrameSource(
-                index, width=width, height=height, fps=int(args.camera_fps)
+                index, width=width, height=height, fps=int(args.camera_fps), start_attempts=4
             )
         except ImportError as exc:
-            raise SystemExit(
-                f"--camera realsense needs pyrealsense2 (uv sync --extra realsense): {exc}"
-            ) from exc
+            if not auto:
+                raise SystemExit(
+                    f"--camera realsense needs pyrealsense2 (uv sync --extra realsense): {exc}"
+                ) from exc
+            print(
+                "  camera: pyrealsense2 is not installed, showing the test pattern instead "
+                "(start with `uv run --extra kinematics --extra realsense ...` for the head camera)"
+            )
+            args.camera = "synthetic"
+            return _make_camera(args, caption)
+        except Exception as exc:  # noqa: BLE001 - no device, busy device: fall back when auto
+            if not auto:
+                raise
+            print(f"  camera: no RealSense could be opened ({exc}); showing the test pattern")
+            args.camera = "synthetic"
+            return _make_camera(args, caption)
     else:
         raise SystemExit(
             "--camera must be synthetic, none, opencv:<source> or realsense[:index], "
@@ -597,8 +917,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
     tls = _resolve_tls(args, parser)
-    if args.hardware and not args.config:
-        parser.error("--hardware needs --config so the page shows the model the controller uses")
+    if args.hardware and args.no_config:
+        parser.error("--hardware needs the config so the page shows the model the controller uses")
     if args.hardware and args.hardware_head:
         parser.error("--hardware and --hardware-head are different things; pick one")
     if args.hardware_head:
@@ -613,15 +933,47 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     from .arm_teleop import ArmTeleopConfig, DualArmTeleop
     from .backend import ControlSystemBackend, SimulationBackend
+    from .hand_tracking import HandTrackingConfig
     from .head_only import HeadOnlyFollowerBackend, head_motor_mapping
     from .head_tracking import HeadJointMapping, HeadTracker, HeadTrackingConfig
     from .server import VRServer, VRServerConfig, serve_vr
 
-    loaded = load_model(args, parser, ik_overrides=STREAMING_IK_OVERRIDES)
+    ik_overrides = dict(STREAMING_IK_OVERRIDES)
+    if args.orientation_weight is not None:
+        if not 0.0 <= args.orientation_weight <= 10.0:
+            parser.error("--orientation-weight must be within [0, 10]")
+        ik_overrides["orientation_cost"] = float(args.orientation_weight)
+    if args.orientation_mode is not None:
+        ik_overrides["orientation_mode"] = args.orientation_mode
+    loaded = load_model(args, parser, ik_overrides=ik_overrides)
     bundle = loaded.bundle
+    if loaded.ik is not None and not args.no_orientation:
+        if "orientation_cost" not in loaded.ik_overrides:
+            loaded.ik.solver.set_task_costs(orientation_cost=DEFAULT_ORIENTATION_WEIGHT)
+        mode = loaded.ik.solver.orientation_mode
+        if mode == "position_only":
+            print(
+                "Hand orientation: not followed (solver mode position_only; the arms' roll "
+                "joints are held at neutral by a posture cost). --orientation-mode axis_aligned "
+                "or pose, or control.ik.orientation_mode, to follow it"
+            )
+        elif mode == "axis_aligned":
+            print(
+                f"Hand orientation: the gripper points where the hand points (axis_aligned, weight "
+                f"{loaded.ik.solver.orientation_cost:.2f} against position 1.0; the roll about the "
+                f"gripper's axis is free). Approach axis in the TCP frame: "
+                f"{loaded.ik.solver.config.approach_axis_tcp}"
+            )
+        else:
+            print(
+                f"Hand orientation: mode {mode}, weight {loaded.ik.solver.orientation_cost:.2f} "
+                "against position 1.0 (--orientation-weight, or control.ik.orientation_cost, to "
+                "change; the roll about the gripper's axis is what a low weight gives up first)"
+            )
     pair = None
     follower = None
     leader = None
+    hardware_system: Any = None
     head_motors: Any = None
     head_backend: Any = None
     try:
@@ -643,10 +995,79 @@ def main(argv: Sequence[str] | None = None) -> int:
                 parser.error(
                     "--hardware needs control.mode: cartesian_teleop in .robopy/rakuda/config.yaml"
                 )
-            print("HARDWARE MODE: connecting to the arms and starting Cartesian control.")
-            pair = RakudaPairSys(cfg)
-            pair.connect()
-            system = pair.start_control()
+            # The machine's solver takes the same orientation settings as the
+            # simulation's: the flags go into control.ik before the system is built.
+            if args.orientation_mode is not None:
+                cfg.control.ik.orientation_mode = args.orientation_mode
+            if args.orientation_weight is not None:
+                cfg.control.ik.orientation_cost = float(args.orientation_weight)
+            elif cfg.control.ik.orientation_cost is None and not args.no_orientation:
+                cfg.control.ik.orientation_cost = DEFAULT_ORIENTATION_WEIGHT
+            if cfg.leader_port:
+                print("HARDWARE MODE: connecting to both arms and building Cartesian control.")
+                pair = RakudaPairSys(cfg)
+                pair.connect()
+                system = pair.build_control_system()
+            else:
+                # Follower only: the leader takes no part in Cartesian teleoperation,
+                # so its bus is a simulated stand-in that the servo never touches.
+                from robopy.robots.rakuda.rakuda_control import RakudaControlSystem
+                from robopy.robots.rakuda.rakuda_follower import RakudaFollower
+
+                if not cfg.follower_port:
+                    parser.error(
+                        "--hardware needs --follower-port (or follower_port in the config)"
+                    )
+                print(
+                    "HARDWARE MODE: connecting to the follower (no leader port: the follower alone "
+                    "is driven) and building Cartesian control."
+                )
+                follower = RakudaFollower(cfg)
+                follower.connect()
+                system = RakudaControlSystem.from_buses(
+                    cfg.control, _simulated_leader_bus(cfg), follower.motors
+                )
+            driven = list(system.follower.motor_names)
+            idle = sorted(set(system.follower.bus.motors) - set(driven))
+            print(f"  follower motors driven ({len(driven)}): {', '.join(driven)}")
+            if idle:
+                print(f"  left as they are (no geometry calibration): {', '.join(idle)}")
+            for side in ("left", "right"):
+                p = system.hand_pose(side)[:3, 3]
+                print(
+                    f"  {side} hand now at x={p[0]:+.3f} y={p[1]:+.3f} z={p[2]:+.3f} m (robot base)"
+                )
+            if args.hardware_check:
+                import statistics
+
+                spans = []
+                for _ in range(10):
+                    st = system.follower.read_state()
+                    spans.append(st.acquisition_span_s)
+                span_limit = cfg.control.max_acquisition_span_s
+                limit_text = "the servo default 0.010" if span_limit is None else f"{span_limit}"
+                print(
+                    f"  one state read of the follower's {len(system.follower.motor_names)} "
+                    f"motors spans {statistics.median(spans) * 1e3:.1f} ms (max "
+                    f"{max(spans) * 1e3:.1f} ms); control.max_acquisition_span_s is "
+                    f"{limit_text} s, control_period_s {cfg.control.control_period_s} s"
+                )
+                report = system.report()
+                gaps = report["calibration_gaps"].get("follower", {})
+                print(f"  follower calibration gaps: {gaps or 'none'}")
+                _print_joints_against_limits(system)
+                print(
+                    "check only: torque NOT enabled, loop NOT started. Remove --hardware-check "
+                    "to drive."
+                )
+                return 0
+            print("  enabling torque (the follower holds its pose) and starting the loop")
+            system.configure()
+            system.align()
+            system.start()
+            hardware_system = system
+            if pair is not None:
+                pair._control_system = system  # so pair.stop_control() stops it on the way out
             backend: Any = ControlSystemBackend(system, target_ttl_s=args.target_ttl)
             model = system.model
         elif args.hardware_head:
@@ -757,7 +1178,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         else:
             model = bundle.model
-            start = _start_pose(args, parser, model.movable_joint_names)
+            start = _start_pose(args, parser, model.movable_joint_names, loaded=loaded)
             backend = SimulationBackend(bundle, loaded.ik, initial_positions=start)
             if start:
                 print(
@@ -842,21 +1263,42 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print("Arms disabled: no solver (see above).", file=sys.stderr)
             else:
                 grippers = _parse_grippers(args.gripper, parser)
+                if backend.name != "simulation" and loaded.config is not None:
+                    for side, note in _grippers_from_calibration(loaded.config, grippers).items():
+                        print(f"  {side} gripper: {note}")
                 if backend.name == "simulation" and grippers:
                     print(
                         "  note: the model has no gripper joints; gripper commands are recorded, "
                         "not simulated."
                     )
-                configs = {
-                    side: ArmTeleopConfig(
-                        mapping=args.mapping,
-                        position_scale=args.position_scale,
-                        orientation_enabled=not args.no_orientation,
-                        max_speed_m_s=args.max_hand_speed,
-                        **grippers.get(side, {}),
-                    )
+                # The gripper's approach axis, from the solver that drives the arms
+                # (the machine's, or the simulation's): what an absolute pointing turns.
+                from robopy.kinematics.dual_arm_ik import approach_axis_for
+
+                solver = getattr(getattr(backend, "system", None), "ik", None)
+                if solver is None and loaded.ik is not None:
+                    solver = loaded.ik.solver
+                axis_spec = None if solver is None else solver.config.approach_axis_tcp
+                approach_axes = {
+                    side: None if axis_spec is None else approach_axis_for(axis_spec, side)
                     for side in ("left", "right")
                 }
+                try:
+                    configs = {
+                        side: ArmTeleopConfig(
+                            mapping=args.mapping,
+                            position_scale=args.position_scale,
+                            orientation_enabled=not args.no_orientation,
+                            max_speed_m_s=args.max_hand_speed,
+                            engage_radius_m=args.engage_radius,
+                            pointing=args.pointing,
+                            approach_axis=approach_axes[side],
+                            **grippers.get(side, {}),
+                        )
+                        for side in ("left", "right")
+                    }
+                except ValueError as exc:
+                    parser.error(str(exc))
                 arm_teleop = DualArmTeleop(
                     configs["left"],
                     configs["right"],
@@ -872,10 +1314,97 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.clutch
                 ]
                 print(f"Arms: {args.mapping} mapping; hold {clutch_name} to drive an arm.")
+                if args.engage_radius is not None and args.mapping == "absolute":
+                    print(
+                        "  the clutch engages once the controller is within "
+                        f"{args.engage_radius:g} m of the robot's hand (the marker in the headset)"
+                    )
 
         if head_tracker is None and arm_teleop is None:
             print("Nothing to teleoperate.", file=sys.stderr)
             return 1
+
+        # -- hands ----------------------------------------------------------
+        hands_config = None
+        if not args.no_hands:
+            try:
+                pause_hold, end_hold = (float(v) for v in args.stop_hold.split(","))
+            except ValueError:
+                parser.error("--stop-hold takes two numbers: PAUSE,END seconds")
+            end_fist: float | None = None
+            if args.hand_end_hold != "off":
+                try:
+                    end_fist = float(args.hand_end_hold)
+                except ValueError:
+                    parser.error("--hand-end-hold takes seconds or 'off'")
+            pointing_filter: float | None = None
+            if args.hand_pointing_filter != "off":
+                try:
+                    pointing_filter = float(args.hand_pointing_filter)
+                except ValueError:
+                    parser.error("--hand-pointing-filter takes seconds or 'off'")
+            open_recenter: float | None = None
+            if args.hand_open_recenter != "off":
+                try:
+                    open_recenter = float(args.hand_open_recenter)
+                except ValueError:
+                    parser.error("--hand-open-recenter takes seconds or 'off'")
+            try:
+                gripper_gesture: Literal["curl", "pinch", "none"] = args.hand_gripper or (
+                    "curl" if args.hand_clutch == "pinch" else "pinch"
+                )
+                hands_config = HandTrackingConfig(
+                    clutch_gesture=args.hand_clutch,
+                    gripper_gesture=gripper_gesture,
+                    reference=args.hand_reference,
+                    pinch_on_m=args.pinch_on,
+                    pinch_off_m=args.pinch_off,
+                    engage_radius_m=None
+                    if args.hand_engage_radius <= 0.0
+                    else args.hand_engage_radius,
+                    pause_hold_s=pause_hold,
+                    end_hold_s=end_hold,
+                    open_recenter_hold_s=open_recenter,
+                    end_fist_hold_s=end_fist,
+                    pointing_filter_s=pointing_filter,
+                )
+            except ValueError as exc:
+                parser.error(str(exc))
+            drive = {
+                "grip": "curl the middle, ring and little fingers (grip) to drive an arm",
+                "pinch": "pinch thumb and index to drive an arm",
+                "always": "an arm follows its hand whenever the hand is tracked",
+            }[hands_config.clutch_gesture]
+            gripper_hint = {
+                "curl": "curl the other fingers for the gripper",
+                "pinch": "bring thumb and index together to close the gripper",
+                "none": "no gripper from the hands",
+            }[hands_config.gripper_gesture]
+            print(
+                f"Hands: {drive}; {gripper_hint}; hand position at the {hands_config.reference}. "
+                "Pinch thumb and middle finger on both hands to re-centre (and resume), hold it "
+                f"on one hand for {hands_config.record_hold_s:g} s to record."
+            )
+            if hands_config.open_recenter:
+                print(
+                    f"  hold both hands open (palms away from the headset) for "
+                    f"{hands_config.open_recenter_hold_s:g} s to re-centre on where you are now "
+                    "(it also resumes arms paused by the stop sign)"
+                )
+            if hands_config.engage_radius_m is not None and args.mapping == "absolute":
+                print(
+                    f"  a pinch engages only within {hands_config.engage_radius_m:g} m of the "
+                    "robot's hand: bring the hand to the marker in the headset first"
+                )
+            print(
+                f"  show both open palms to the headset for {hands_config.pause_hold_s:g} s to "
+                f"pause the arms, {hands_config.end_hold_s:g} s to end the session"
+            )
+            if hands_config.end_fist_hold_s is not None:
+                print(
+                    f"  make both hands into fists for {hands_config.end_fist_hold_s:g} s to end "
+                    "the session (leave VR)"
+                )
 
         # -- camera, TLS, server -------------------------------------------
         def caption() -> str:
@@ -894,6 +1423,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
             ssl_context.load_cert_chain(str(tls[0]), str(tls[1]))
 
+        import importlib.util
+
+        # Without MuJoCo the videos cannot be drawn: record anyway and leave
+        # the drawing to robopy-vr-render, instead of failing after each take.
+        render_videos = not args.no_render and importlib.util.find_spec("mujoco") is not None
         server = VRServer(
             bundle,
             ik=loaded.ik,
@@ -912,21 +1446,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 else _parse_triplet(args.twin_offset, parser, "--twin-offset"),
                 arm_anchor_frame=args.arm_anchor,
                 clutch_button=args.clutch,
+                hands=hands_config,
                 record_dir=None if args.no_record else args.record_dir,
-                render_videos=not args.no_render,
+                render_videos=render_videos,
             ),
         )
         if not args.no_record:
             renderer = "off (--no-render)"
             if not args.no_render:
-                import importlib.util
-
                 from .render import select_gl_backend
 
                 # Not imported here: MuJoCo picks its GL backend on first
                 # import, so that is left to the renderer, which sets it up.
-                if importlib.util.find_spec("mujoco") is None:
-                    renderer = "UNAVAILABLE: pip install mujoco"
+                if not render_videos:
+                    renderer = (
+                        "UNAVAILABLE (MuJoCo not installed): recordings are kept and can be drawn "
+                        "later with `uv run --extra sim robopy-vr-render <file>.json`; to draw "
+                        "them right away, start with `uv run --extra kinematics --extra sim`"
+                    )
                 else:
                     renderer = f"MuJoCo (MUJOCO_GL={select_gl_backend() or 'default'})"
             print(
@@ -942,10 +1479,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 pair.disconnect()
         if head_backend is not None:
             head_backend.close()
+        if hardware_system is not None and pair is None:
+            try:
+                print("stopping control:", "; ".join(hardware_system.stop()))
+            except Exception as exc:  # noqa: BLE001 - reported, the disconnect still runs
+                print(f"stopping control failed: {exc}")
         if leader is not None:
             leader.disconnect()
         if follower is not None:
-            follower.disconnect()  # the follower's own convention: torque off on the way out
+            if hardware_system is not None and pair is None and not args.release_on_exit:
+                # The stop policy left the follower holding its pose in position
+                # control; keep it that way rather than dropping the arms.
+                print(
+                    "the follower keeps HOLDING its pose with torque ON (--release-on-exit "
+                    "to let it go limp); its port is closed."
+                )
+                follower.motors.close()
+            else:
+                follower.disconnect()  # the follower's own convention: torque off on the way out
         loaded.cleanup()
     return 0
 

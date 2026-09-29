@@ -1,0 +1,843 @@
+"""Hand-tracked poses -> the same clutch-based arm samples a controller gives.
+
+A Meta Quest can track the operator's bare hands (WebXR Hand Input).  The page
+then streams the 25 joint poses of each hand instead of a controller pose, and
+this module turns them into the :class:`~robopy.vr.arm_teleop.ControllerSample`
+that :class:`~robopy.vr.arm_teleop.ArmTeleop` already consumes, so the two
+mappings (absolute, relative), the slew limits, the hold on tracking loss and
+the recording are all shared with the controllers.  Nothing on the page
+interprets the hand: every gesture is decided here, where it can be tested.
+
+What stands in for the controller's buttons:
+
+* **clutch** -- a *pinch* of the thumb and index fingertips (with hysteresis:
+  engaged below ``pinch_on_m``, released above ``pinch_off_m``); or a *grip*:
+  the middle, ring and little fingers curled into the palm (``"grip"``,
+  engaged at ``grip_on`` curl, released below ``grip_off``), holding the arm
+  the way one holds a handle; or, with ``clutch_gesture="always"``, the mere
+  fact that the hand is tracked;
+* **gripper (the trigger)** -- how far the middle, ring and little fingers are
+  *curled* into the palm (``"curl"``: pinch to hold the arm, close the rest of
+  the hand to close the gripper), or how close the thumb and index tips are
+  (``"pinch"``: with the grip clutch, hold the arm with the last three fingers
+  and pinch to close the gripper; or with the always-on clutch), or nothing;
+* **re-centre (both thumbstick clicks)** -- a pinch of the thumb and *middle*
+  fingertips on both hands at once, or both hands held open -- all fingers
+  straight, no pinch, palms turned *away* from the headset (the stop sign
+  turned round) -- for ``open_recenter_hold_s``.  Either also resumes arms
+  paused by the stop sign.  The open hands re-centre only with the pinch
+  clutch; with ``clutch_gesture="always"`` an open hand is the normal driving
+  state;
+* **record (B / Y)** -- the same middle pinch on one hand, held for
+  ``record_hold_s``;
+* **stop** -- both palms turned towards the headset with the fingers straight
+  (the "stop" sign): held for ``pause_hold_s`` it pauses the arms (clutches
+  released, arms hold, nothing follows until the operator resumes with the
+  re-centre gesture); kept up to ``end_hold_s`` it ends the session (the page
+  leaves VR).  Nothing the hands do while paused moves an arm;
+* **end (a sign of its own)** -- both hands made into fists (all four fingers
+  curled, no pinch) for ``end_fist_hold_s``: the arms stop and the session
+  ends, the same as the long stop sign, but with a shape used for nothing
+  else, so it can be made deliberately.
+
+Before a pinch may drive an arm the operator's hand must be *where the robot's
+hand is*: in the absolute mapping the clutch stays pending until the mapped
+target lies within ``engage_radius_m`` of the current hand pose (the
+engagement gate of :class:`~robopy.vr.arm_teleop.ArmTeleop`), so a pinch made
+far from the robot's hand never yanks the arm across the workspace.  The page
+draws where to bring the hand.
+
+The hand's *pose* is the wrist joint's orientation with a chosen reference
+point as position: the centre of the palm (default), the wrist joint, or the
+pinch point between thumb and index tips.  As with the controllers the
+orientation is applied relatively, so the wrist's axis convention does not
+matter.
+
+The joint names are those of the WebXR Hand Input specification; the page sends
+each joint's position in the session's reference space, and the wrist's
+orientation.  Frames are converted with :mod:`robopy.vr.xr_math`.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Literal, Mapping, Tuple
+
+import numpy as np
+from numpy.typing import NDArray
+
+from .arm_teleop import ControllerSample
+from .xr_math import xr_pose_to_robot, xr_vector_to_robot
+
+__all__ = [
+    "CURL_FINGERS",
+    "FINGERS",
+    "HAND_JOINTS",
+    "HandEvents",
+    "HandFrame",
+    "HandInput",
+    "HandReading",
+    "HandTrackingConfig",
+    "TwoHandGestures",
+    "operator_transform",
+]
+
+#: The 25 joints of a WebXR hand, in the specification's order.
+HAND_JOINTS: Tuple[str, ...] = (
+    "wrist",
+    "thumb-metacarpal",
+    "thumb-phalanx-proximal",
+    "thumb-phalanx-distal",
+    "thumb-tip",
+    "index-finger-metacarpal",
+    "index-finger-phalanx-proximal",
+    "index-finger-phalanx-intermediate",
+    "index-finger-phalanx-distal",
+    "index-finger-tip",
+    "middle-finger-metacarpal",
+    "middle-finger-phalanx-proximal",
+    "middle-finger-phalanx-intermediate",
+    "middle-finger-phalanx-distal",
+    "middle-finger-tip",
+    "ring-finger-metacarpal",
+    "ring-finger-phalanx-proximal",
+    "ring-finger-phalanx-intermediate",
+    "ring-finger-phalanx-distal",
+    "ring-finger-tip",
+    "pinky-finger-metacarpal",
+    "pinky-finger-phalanx-proximal",
+    "pinky-finger-phalanx-intermediate",
+    "pinky-finger-phalanx-distal",
+    "pinky-finger-tip",
+)
+
+#: The joints of each finger from the knuckle to the tip (the metacarpal does
+#: not flex, so it takes no part in the curl).
+FINGERS: Dict[str, Tuple[str, ...]] = {
+    "index": (
+        "index-finger-phalanx-proximal",
+        "index-finger-phalanx-intermediate",
+        "index-finger-phalanx-distal",
+        "index-finger-tip",
+    ),
+    "middle": (
+        "middle-finger-phalanx-proximal",
+        "middle-finger-phalanx-intermediate",
+        "middle-finger-phalanx-distal",
+        "middle-finger-tip",
+    ),
+    "ring": (
+        "ring-finger-phalanx-proximal",
+        "ring-finger-phalanx-intermediate",
+        "ring-finger-phalanx-distal",
+        "ring-finger-tip",
+    ),
+    "pinky": (
+        "pinky-finger-phalanx-proximal",
+        "pinky-finger-phalanx-intermediate",
+        "pinky-finger-phalanx-distal",
+        "pinky-finger-tip",
+    ),
+}
+
+#: Fingers whose curl is the gripper signal: the ones a pinch leaves free.
+CURL_FINGERS: Tuple[str, ...] = ("middle", "ring", "pinky")
+
+
+@dataclass
+class HandTrackingConfig:
+    """How the hands are read.
+
+    Attributes:
+        clutch_gesture: ``"pinch"`` (thumb and index tips together drive the
+            arm; the default), ``"grip"`` (the middle, ring and little fingers
+            curled into the palm drive it; the thumb and index are left for
+            the gripper) or ``"always"`` (the arm follows whenever the hand is
+            tracked -- with the absolute mapping the hand then goes to the
+            operator's the moment it is seen).  While a grip is held the
+            middle-finger pinch (re-centre, record) is not read -- a curled
+            middle finger meets the thumb by accident -- and the two-fist end
+            sign is off, a fist being the grip itself.
+        gripper_gesture: ``"curl"`` (middle, ring and little fingers closed
+            into the palm = closed gripper), ``"pinch"`` (the index pinch, fully
+            open at ``pinch_open_m``) or ``"none"``.  As with the trigger the
+            gripper only moves when its travel has been measured.
+        reference: Which point is the hand's position: ``"palm"`` (between the
+            wrist and the middle knuckle), ``"wrist"`` or ``"pinch"`` (between
+            the thumb and index tips).
+        pinch_on_m: Thumb-to-index (or middle) tip distance below which a pinch
+            engages.
+        pinch_off_m: Distance above which an engaged pinch releases.  The gap
+            to ``pinch_on_m`` is the hysteresis that keeps a held pinch from
+            chattering.
+        pinch_open_m: For ``gripper_gesture="pinch"``: the tip distance at
+            which the gripper is fully open (fully closed at ``pinch_on_m``).
+        curl_open_ratio: Tip-to-knuckle distance over the finger's length at
+            which a finger counts as straight (gripper open).
+        curl_closed_ratio: The ratio at which it counts as fully curled.
+        grip_on: For ``clutch_gesture="grip"``: the mean curl of the middle,
+            ring and little fingers (0 straight, 1 fully curled) at which the
+            grip engages.
+        grip_off: The curl below which an engaged grip releases; the gap to
+            ``grip_on`` is the hysteresis.
+        record_hold_s: How long a one-handed middle pinch is held to toggle
+            the recording.
+        engage_radius_m: How close (robot metres) the mapped hand must come to
+            the robot's hand before a pinch engages the clutch in the absolute
+            mapping; ``None`` engages at once (the hand is pulled over at the
+            slew-limited speed, as a controller does by default).
+        pause_hold_s: How long both palms are shown to the headset before the
+            arms pause.
+        end_hold_s: How long they are kept up before the session ends.
+        facing_cos: Cosine of the largest angle between a palm's normal and the
+            direction to the headset that still counts as "facing" it.
+        straight_ratio: Curl ratio above which a finger counts as straight
+            for the stop sign and the open hand.
+        open_recenter_hold_s: How long both hands are held open before the
+            operator frame is re-centred on the headset; ``None`` turns the
+            gesture off.  Only with the pinch clutch.
+        end_fist_hold_s: How long both fists are held before the session
+            ends; ``None`` turns that sign off (the long stop sign still ends).
+        pointing_filter_s: Time constant of a low-pass filter on the hand's
+            pointing (wrist to middle knuckle); ``None`` passes it raw.  The
+            tracked joints jitter by millimetres over a 9 cm lever, a degree
+            or so, and with the gripper pointing along the forearm (a straight
+            wrist, the two-axis wrist's singularity) the solver answers that
+            with forearm-roll swings of ten degrees and more.
+    """
+
+    clutch_gesture: Literal["pinch", "grip", "always"] = "pinch"
+    gripper_gesture: Literal["curl", "pinch", "none"] = "curl"
+    reference: Literal["palm", "wrist", "pinch"] = "palm"
+    pinch_on_m: float = 0.02
+    pinch_off_m: float = 0.035
+    pinch_open_m: float = 0.08
+    curl_open_ratio: float = 0.9
+    curl_closed_ratio: float = 0.45
+    grip_on: float = 0.6
+    grip_off: float = 0.35
+    record_hold_s: float = 1.0
+    engage_radius_m: float | None = 0.05
+    pause_hold_s: float = 0.5
+    end_hold_s: float = 2.5
+    facing_cos: float = 0.7
+    straight_ratio: float = 0.75
+    open_recenter_hold_s: float | None = 1.5
+    end_fist_hold_s: float | None = 1.5
+    pointing_filter_s: float | None = 0.15
+
+    def __post_init__(self) -> None:
+        if self.clutch_gesture not in ("pinch", "grip", "always"):
+            raise ValueError("clutch_gesture must be 'pinch', 'grip' or 'always'.")
+        if self.gripper_gesture not in ("curl", "pinch", "none"):
+            raise ValueError("gripper_gesture must be 'curl', 'pinch' or 'none'.")
+        if self.reference not in ("palm", "wrist", "pinch"):
+            raise ValueError("reference must be 'palm', 'wrist' or 'pinch'.")
+        if self.clutch_gesture == "pinch" and self.gripper_gesture == "pinch":
+            raise ValueError(
+                "the index pinch cannot be both the clutch and the gripper; use "
+                "gripper_gesture='curl' (or 'none'), or clutch_gesture='always'."
+            )
+        if self.clutch_gesture == "grip" and self.gripper_gesture == "curl":
+            raise ValueError(
+                "the curled fingers cannot be both the clutch and the gripper; use "
+                "gripper_gesture='pinch' (or 'none') with clutch_gesture='grip'."
+            )
+        if not 0.0 < self.grip_off < self.grip_on <= 1.0:
+            raise ValueError("Need 0 < grip_off < grip_on <= 1.")
+        if not 0.0 < self.pinch_on_m < self.pinch_off_m:
+            raise ValueError("Need 0 < pinch_on_m < pinch_off_m.")
+        if self.pinch_open_m <= self.pinch_off_m:
+            raise ValueError("pinch_open_m must be above pinch_off_m.")
+        if not 0.0 < self.curl_closed_ratio < self.curl_open_ratio <= 1.0:
+            raise ValueError("Need 0 < curl_closed_ratio < curl_open_ratio <= 1.")
+        if self.record_hold_s <= 0.0:
+            raise ValueError("record_hold_s must be positive.")
+        if self.engage_radius_m is not None and self.engage_radius_m <= 0.0:
+            raise ValueError("engage_radius_m must be positive (or None to engage at once).")
+        if not 0.0 < self.pause_hold_s < self.end_hold_s:
+            raise ValueError("Need 0 < pause_hold_s < end_hold_s.")
+        if not -1.0 < self.facing_cos < 1.0 or not 0.0 < self.straight_ratio < 1.0:
+            raise ValueError("facing_cos must be in (-1, 1) and straight_ratio in (0, 1).")
+        if self.open_recenter_hold_s is not None and self.open_recenter_hold_s <= 0.0:
+            raise ValueError("open_recenter_hold_s must be positive (or None to turn it off).")
+        if self.pointing_filter_s is not None and self.pointing_filter_s <= 0.0:
+            raise ValueError("pointing_filter_s must be positive (or None to pass it raw).")
+        if self.end_fist_hold_s is not None and self.end_fist_hold_s <= 0.0:
+            raise ValueError("end_fist_hold_s must be positive (or None to turn it off).")
+
+    @property
+    def open_recenter(self) -> bool:
+        """Whether holding both hands open re-centres."""
+        return self.open_recenter_hold_s is not None and self.clutch_gesture != "always"
+
+    @property
+    def end_fist(self) -> bool:
+        """Whether two held fists end the session (not with the grip clutch)."""
+        return self.end_fist_hold_s is not None and self.clutch_gesture != "grip"
+
+    @property
+    def required_joints(self) -> Tuple[str, ...]:
+        """The joints a hand must report for this configuration to read it."""
+        # The middle knuckle is also the hand's pointing (wrist to knuckle).
+        joints = [
+            "wrist",
+            "thumb-tip",
+            "index-finger-tip",
+            "middle-finger-tip",
+            "middle-finger-phalanx-proximal",
+        ]
+        if self.gripper_gesture == "curl" or self.clutch_gesture == "grip":
+            for finger in CURL_FINGERS:
+                joints.extend(FINGERS[finger])
+        return tuple(dict.fromkeys(joints))
+
+    def describe(self) -> Dict[str, Any]:
+        """JSON-friendly settings, for the page and the recording header."""
+        return {
+            "clutch_gesture": self.clutch_gesture,
+            "gripper_gesture": self.gripper_gesture,
+            "reference": self.reference,
+            "pinch_on_m": self.pinch_on_m,
+            "pinch_off_m": self.pinch_off_m,
+            "pinch_open_m": self.pinch_open_m,
+            "curl_open_ratio": self.curl_open_ratio,
+            "curl_closed_ratio": self.curl_closed_ratio,
+            "grip_on": self.grip_on,
+            "grip_off": self.grip_off,
+            "record_hold_s": self.record_hold_s,
+            "engage_radius_m": self.engage_radius_m,
+            "pause_hold_s": self.pause_hold_s,
+            "end_hold_s": self.end_hold_s,
+            "open_recenter_hold_s": self.open_recenter_hold_s if self.open_recenter else None,
+            "end_fist_hold_s": self.end_fist_hold_s if self.end_fist else None,
+            "pointing_filter_s": self.pointing_filter_s,
+        }
+
+
+def _finite_triplet(value: Any) -> NDArray[np.float64] | None:
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        return None
+    if not all(isinstance(v, (int, float)) and np.isfinite(v) for v in value):
+        return None
+    return np.asarray(value, dtype=np.float64)
+
+
+@dataclass(frozen=True)
+class HandFrame:
+    """One hand's joints, in some right-handed metric frame.
+
+    Attributes:
+        positions: ``{joint: (3,)}`` for the joints that were reported.
+        wrist_rotation: ``(3, 3)`` orientation of the wrist joint.
+    """
+
+    positions: Mapping[str, NDArray[np.float64]]
+    wrist_rotation: NDArray[np.float64]
+
+    @classmethod
+    def from_message(cls, entry: Any) -> HandFrame | None:
+        """Parse the page's ``{"joints": {name: {"p": [3], "q": [4]?}}}`` into robot axes.
+
+        Joint positions may also be bare ``[x, y, z]`` lists.  The wrist must
+        carry an orientation.  Returns ``None`` when the entry is not a hand
+        at all (no usable wrist); other malformed joints are simply dropped.
+        """
+        if not isinstance(entry, dict):
+            return None
+        joints = entry.get("joints")
+        if not isinstance(joints, dict):
+            return None
+        wrist = joints.get("wrist")
+        if not isinstance(wrist, dict):
+            return None
+        p, q = _finite_triplet(wrist.get("p")), wrist.get("q")
+        if p is None or not isinstance(q, (list, tuple)) or len(q) != 4:
+            return None
+        if not all(isinstance(v, (int, float)) and np.isfinite(v) for v in q):
+            return None
+        try:
+            T_wrist = xr_pose_to_robot(list(p), list(q))
+        except ValueError:
+            return None
+        positions: Dict[str, NDArray[np.float64]] = {"wrist": T_wrist[:3, 3].copy()}
+        for name, joint in joints.items():
+            if name == "wrist" or not isinstance(name, str):
+                continue
+            raw = joint.get("p") if isinstance(joint, dict) else joint
+            triplet = _finite_triplet(raw)
+            if triplet is not None:
+                positions[name] = xr_vector_to_robot(triplet.tolist())
+        return cls(positions=positions, wrist_rotation=T_wrist[:3, :3].copy())
+
+    def transformed(self, T: NDArray[np.float64]) -> HandFrame:
+        """The same hand expressed through the rigid transform ``T`` (``(4, 4)``)."""
+        T = np.asarray(T, dtype=np.float64)
+        R, t = T[:3, :3], T[:3, 3]
+        return HandFrame(
+            positions={name: R @ p + t for name, p in self.positions.items()},
+            wrist_rotation=R @ self.wrist_rotation,
+        )
+
+    def has(self, *joints: str) -> bool:
+        """Whether every named joint was reported."""
+        return all(j in self.positions for j in joints)
+
+    def distance(self, a: str, b: str) -> float:
+        """Distance between two joints (``KeyError`` when one is missing)."""
+        return float(np.linalg.norm(self.positions[a] - self.positions[b]))
+
+    def pinch_distance(self, finger: str = "index") -> float:
+        """Thumb tip to the named finger's tip."""
+        return self.distance("thumb-tip", f"{finger}-finger-tip")
+
+    def curl_ratio(self, finger: str) -> float:
+        """Tip-to-knuckle distance over the finger's length: ~1 straight, small when curled."""
+        chain = FINGERS[finger]
+        length = sum(self.distance(a, b) for a, b in zip(chain[:-1], chain[1:]))
+        if length < 1e-6:
+            return 1.0
+        return self.distance(chain[0], chain[-1]) / length
+
+    def palm_normal(self, side: str) -> NDArray[np.float64] | None:
+        """Unit vector out of the palm, from the wrist and the index and little knuckles.
+
+        The three points span the palm; which side of that plane is the palm
+        depends on the hand, so ``side`` (``"left"`` / ``"right"``) picks the
+        sign.  ``None`` when a knuckle is missing or the points are collinear.
+        """
+        if not self.has("wrist", "index-finger-phalanx-proximal", "pinky-finger-phalanx-proximal"):
+            return None
+        w = self.positions["wrist"]
+        a = self.positions["index-finger-phalanx-proximal"] - w
+        b = self.positions["pinky-finger-phalanx-proximal"] - w
+        n = np.cross(a, b)
+        norm = float(np.linalg.norm(n))
+        if norm < 1e-9:
+            return None
+        n = n / norm
+        return n if side == "right" else -n
+
+    def palm_center(self) -> NDArray[np.float64]:
+        """Between the wrist and the middle knuckle (falls back to the wrist)."""
+        if self.has("middle-finger-phalanx-proximal"):
+            return 0.5 * (
+                self.positions["wrist"] + self.positions["middle-finger-phalanx-proximal"]
+            )
+        return self.positions["wrist"].copy()
+
+    def pointing(self) -> NDArray[np.float64] | None:
+        """Unit vector from the wrist to the middle knuckle: where the hand points.
+
+        The long axis of the palm, which a curled grip or a pinch leaves where
+        it was (the fingertips do not), and the counterpart of a gripper's
+        approach axis.  ``None`` when the two joints coincide.
+        """
+        v = self.positions["middle-finger-phalanx-proximal"] - self.positions["wrist"]
+        n = float(np.linalg.norm(v))
+        return None if n < 1e-6 else v / n
+
+    def reference_pose(self, reference: str) -> NDArray[np.float64]:
+        """``(4, 4)`` hand pose: the wrist's orientation at the chosen reference point."""
+        if reference == "wrist":
+            p = self.positions["wrist"]
+        elif reference == "palm":
+            p = 0.5 * (self.positions["wrist"] + self.positions["middle-finger-phalanx-proximal"])
+        elif reference == "pinch":
+            p = 0.5 * (self.positions["thumb-tip"] + self.positions["index-finger-tip"])
+        else:
+            raise ValueError(f"unknown hand reference {reference!r}")
+        T = np.eye(4)
+        T[:3, :3] = self.wrist_rotation
+        T[:3, 3] = p
+        return T
+
+
+@dataclass(frozen=True)
+class HandReading:
+    """What one hand said this step.
+
+    Attributes:
+        sample: The controller-equivalent sample, or ``None`` when the hand is
+            not tracked (or not readable), which releases the arm's clutch.
+        tracked: Whether a usable hand frame arrived.
+        pinch: Whether the index pinch is engaged (with hysteresis).
+        pinch_m: Thumb-to-index tip distance, if measured.
+        middle_pinch: Whether the middle pinch is engaged.
+        middle_pinch_m: Thumb-to-middle tip distance, if measured.
+        grip: Whether the grip clutch is engaged (``clutch_gesture="grip"``).
+        curl: Mean curl of the free fingers in ``[0, 1]``, if measured.
+        gripper: The trigger-equivalent in ``[0, 1]`` (1 = closed).
+        stop_sign: The open palm is turned towards the headset (fingers
+            straight, no pinch): this hand's half of the stop gesture.
+        open_hand: The hand is open (fingers straight, no pinch) and its palm
+            is not turned to the headset: this hand's half of the open-hands
+            re-centre.
+        fist: All four fingers curled into the palm, no pinch: this hand's
+            half of the end sign.
+        problem: Why the hand could not be read, if it could not.
+    """
+
+    sample: ControllerSample | None
+    tracked: bool
+    pinch: bool = False
+    pinch_m: float | None = None
+    middle_pinch: bool = False
+    middle_pinch_m: float | None = None
+    grip: bool = False
+    curl: float | None = None
+    gripper: float = 0.0
+    stop_sign: bool = False
+    open_hand: bool = False
+    fist: bool = False
+    problem: str | None = None
+
+    def describe(self) -> Dict[str, Any]:
+        """JSON-friendly state for the page's HUD and the recording."""
+        return {
+            "tracked": self.tracked,
+            "pinch": self.pinch,
+            "pinch_m": self.pinch_m,
+            "middle_pinch": self.middle_pinch,
+            "middle_pinch_m": self.middle_pinch_m,
+            "grip": self.grip,
+            "curl": self.curl,
+            "gripper": self.gripper,
+            "stop_sign": self.stop_sign,
+            "open_hand": self.open_hand,
+            "fist": self.fist,
+            "problem": self.problem,
+        }
+
+
+class _Pinch:
+    """A pinch with hysteresis."""
+
+    def __init__(self, on_m: float, off_m: float) -> None:
+        self.on_m, self.off_m = on_m, off_m
+        self.engaged = False
+
+    def update(self, distance_m: float | None) -> bool:
+        if distance_m is None:
+            self.engaged = False
+        elif self.engaged:
+            self.engaged = distance_m <= self.off_m
+        else:
+            self.engaged = distance_m < self.on_m
+        return self.engaged
+
+
+class HandInput:
+    """One hand -> :class:`~robopy.vr.arm_teleop.ControllerSample`, with gesture state."""
+
+    def __init__(self, side: str, config: HandTrackingConfig | None = None) -> None:
+        """Bind the reader to one hand.
+
+        Args:
+            side: ``"left"`` or ``"right"``; for reporting.
+            config: Gesture settings; defaults otherwise.
+        """
+        if side not in ("left", "right"):
+            raise ValueError("side must be 'left' or 'right'.")
+        self.side = side
+        self.config = config or HandTrackingConfig()
+        self._pinch = _Pinch(self.config.pinch_on_m, self.config.pinch_off_m)
+        self._middle = _Pinch(self.config.pinch_on_m, self.config.pinch_off_m)
+        self._grip = False
+        self._pointing: NDArray[np.float64] | None = None
+        self._pointing_s: float | None = None
+        self.last = HandReading(sample=None, tracked=False)
+
+    def reset(self) -> None:
+        """Forget any engaged gesture (the hand was lost, or the operator re-centred)."""
+        self._pinch.engaged = False
+        self._middle.engaged = False
+        self._grip = False
+        self._pointing = None
+        self._pointing_s = None
+        self.last = HandReading(sample=None, tracked=False)
+
+    def _filtered_pointing(
+        self, raw: NDArray[np.float64] | None, now_s: float
+    ) -> NDArray[np.float64] | None:
+        """First-order low-pass of the pointing direction, renormalised each step."""
+        tau = self.config.pointing_filter_s
+        if raw is None or tau is None:
+            self._pointing, self._pointing_s = raw, now_s
+            return raw
+        if self._pointing is None or self._pointing_s is None or now_s <= self._pointing_s:
+            self._pointing, self._pointing_s = raw.copy(), now_s
+            return raw
+        alpha = 1.0 - float(np.exp(-(now_s - self._pointing_s) / tau))
+        blended = self._pointing + alpha * (raw - self._pointing)
+        n = float(np.linalg.norm(blended))
+        self._pointing = raw.copy() if n < 1e-6 else blended / n
+        self._pointing_s = now_s
+        return self._pointing
+
+    def update(
+        self,
+        frame: HandFrame | None,
+        now_s: float,
+        head_position_m: NDArray[np.float64] | None = None,
+    ) -> HandReading:
+        """Read the hand for this step.
+
+        Args:
+            frame: The hand in the operator frame, or ``None`` when it is not
+                tracked.  A lost hand releases every gesture at once: the arm
+                must not keep following a pose that is no longer measured.
+            now_s: Monotonic time, seconds.
+            head_position_m: The headset's position in the same frame, for
+                the stop sign (palm towards the headset); without it the sign
+                is never recognised.
+        """
+        c = self.config
+        if frame is None:
+            self.reset()
+            return self.last
+        missing = [j for j in c.required_joints if j not in frame.positions]
+        if missing:
+            self.reset()
+            self.last = HandReading(
+                sample=None, tracked=False, problem=f"joints not tracked: {', '.join(missing)}"
+            )
+            return self.last
+        pinch_m = frame.pinch_distance("index")
+        middle_m = frame.pinch_distance("middle")
+        pinch = self._pinch.update(pinch_m)
+        middle = self._middle.update(middle_m)
+        curl: float | None = None
+        gripper = 0.0
+        if c.gripper_gesture == "curl" or c.clutch_gesture == "grip":
+            span = c.curl_open_ratio - c.curl_closed_ratio
+            curls = [
+                min(1.0, max(0.0, (c.curl_open_ratio - frame.curl_ratio(f)) / span))
+                for f in CURL_FINGERS
+            ]
+            curl = float(np.mean(curls))
+        if c.gripper_gesture == "curl" and curl is not None:
+            gripper = curl
+        elif c.gripper_gesture == "pinch":
+            span = c.pinch_open_m - c.pinch_on_m
+            gripper = min(1.0, max(0.0, (c.pinch_open_m - pinch_m) / span))
+        if c.clutch_gesture == "grip" and curl is not None:
+            self._grip = curl >= c.grip_off if self._grip else curl >= c.grip_on
+            if self._grip:
+                # A curled middle finger meets the thumb by accident while the
+                # index pinches: no re-centre or recording from a held grip.
+                middle = False
+                self._middle.engaged = False
+        clutch = {"pinch": pinch, "grip": self._grip}.get(c.clutch_gesture, True)
+        stop_sign = False
+        straight = not (pinch or middle) and all(
+            frame.has(*FINGERS[f]) and frame.curl_ratio(f) >= c.straight_ratio for f in FINGERS
+        )
+        fist = (
+            c.end_fist
+            and not (pinch or middle)
+            and all(
+                frame.has(*FINGERS[f]) and frame.curl_ratio(f) <= c.curl_closed_ratio
+                for f in FINGERS
+            )
+        )
+        if head_position_m is not None and straight:
+            normal = frame.palm_normal(self.side)
+            if normal is not None:
+                towards = np.asarray(head_position_m, dtype=np.float64) - frame.palm_center()
+                length = float(np.linalg.norm(towards))
+                if length > 1e-6:
+                    stop_sign = float(normal @ towards) / length >= c.facing_cos
+        sample = ControllerSample(
+            pose=frame.reference_pose(c.reference),
+            clutch=clutch,
+            trigger=gripper,
+            buttons={
+                "pinch": pinch,
+                "grip": self._grip,
+                "middle_pinch": middle,
+                "stop_sign": stop_sign,
+                "open_hand": straight and not stop_sign,
+                "fist": fist,
+            },
+            stamp_s=now_s,
+            engage_radius_m=c.engage_radius_m,
+            pointing=self._filtered_pointing(frame.pointing(), now_s),
+        )
+        self.last = HandReading(
+            sample=sample,
+            tracked=True,
+            pinch=pinch,
+            pinch_m=pinch_m,
+            middle_pinch=middle,
+            middle_pinch_m=middle_m,
+            grip=self._grip,
+            curl=curl,
+            gripper=gripper,
+            stop_sign=stop_sign,
+            open_hand=straight and not stop_sign,
+            fist=fist,
+        )
+        return self.last
+
+
+@dataclass(frozen=True)
+class HandEvents:
+    """Session-level gestures raised this step.
+
+    Attributes:
+        recenter: Re-centre now: both hands pinched thumb and middle fingertips
+            just now, or have been held open for ``open_recenter_hold_s``.
+        resume: Arms paused by the stop sign follow again: every re-centre
+            gesture resumes.
+        record_toggle: One hand held that pinch for ``record_hold_s``.
+        pause: Both palms have been shown to the headset for ``pause_hold_s``.
+        end: They have been kept up for ``end_hold_s``, or both fists have
+            been held for ``end_fist_hold_s``.
+        stop_hold_s: How long the stop sign has been held so far (0 when it
+            is not being made), for the page to show the progress.
+        fist_hold_s: Likewise for the two fists.
+    """
+
+    recenter: bool = False
+    resume: bool = False
+    record_toggle: bool = False
+    pause: bool = False
+    end: bool = False
+    stop_hold_s: float = 0.0
+    fist_hold_s: float = 0.0
+
+
+@dataclass
+class _Hold:
+    started_s: float | None = None
+    fired: bool = False
+
+
+class TwoHandGestures:
+    """Both hands' readings -> re-centre and record events.
+
+    Re-centre fires on the edge where both hands come to pinch thumb and middle
+    fingertips together.  Record toggles when one hand alone holds that pinch
+    for ``record_hold_s``; a hold that turns into the two-handed gesture, or
+    outlives it, does not also toggle the recording.  The stop sign (both open
+    palms towards the headset) raises ``pause`` once at ``pause_hold_s`` and
+    ``end`` once at ``end_hold_s``; letting go re-arms both.  Both hands held
+    open (and not towards the headset) re-centre once at
+    ``open_recenter_hold_s``; closing either hand re-arms it.  Both fists
+    held for ``end_fist_hold_s`` raise ``end`` once; opening a hand re-arms.
+    """
+
+    def __init__(self, config: HandTrackingConfig | None = None) -> None:
+        self.config = config or HandTrackingConfig()
+        self._both = False
+        self._holds: Dict[str, _Hold] = {"left": _Hold(), "right": _Hold()}
+        self._stop_started_s: float | None = None
+        self._paused_fired = False
+        self._ended_fired = False
+        self._open = _Hold()
+        self._fist = _Hold()
+
+    def reset(self) -> None:
+        """Forget every gesture in progress."""
+        self._both = False
+        self._holds = {"left": _Hold(), "right": _Hold()}
+        self._stop_started_s = None
+        self._paused_fired = self._ended_fired = False
+        self._open = _Hold()
+        self._fist = _Hold()
+
+    def update(self, readings: Mapping[str, HandReading | None], now_s: float) -> HandEvents:
+        """Advance one step with this frame's readings (a missing side is untracked)."""
+        pinched = {
+            side: bool(r is not None and r.tracked and r.middle_pinch)
+            for side in ("left", "right")
+            for r in (readings.get(side),)
+        }
+        both = pinched["left"] and pinched["right"]
+        recenter = both and not self._both
+        self._both = both
+        record = False
+        for side, hold in self._holds.items():
+            if not pinched[side]:
+                hold.started_s, hold.fired = None, False
+                continue
+            if both:
+                # The two-handed gesture takes precedence, and stays taken
+                # until this hand lets go.
+                hold.started_s, hold.fired = None, True
+                continue
+            if hold.fired:
+                continue
+            if hold.started_s is None:
+                hold.started_s = now_s
+            elif now_s - hold.started_s >= self.config.record_hold_s:
+                hold.fired = True
+                record = True
+        # The stop sign needs both hands; it is timed from the moment both show it.
+        stop = all(
+            r is not None and r.tracked and r.stop_sign
+            for r in (readings.get("left"), readings.get("right"))
+        )
+        pause = end = False
+        held = 0.0
+        if not stop:
+            self._stop_started_s = None
+            self._paused_fired = self._ended_fired = False
+        else:
+            if self._stop_started_s is None:
+                self._stop_started_s = now_s
+            held = now_s - self._stop_started_s
+            if held >= self.config.pause_hold_s and not self._paused_fired:
+                self._paused_fired = pause = True
+            if held >= self.config.end_hold_s and not self._ended_fired:
+                self._ended_fired = end = True
+        resume = recenter
+        opened = self.config.open_recenter and all(
+            r is not None and r.tracked and r.open_hand
+            for r in (readings.get("left"), readings.get("right"))
+        )
+        if not opened:
+            self._open = _Hold()
+        elif not self._open.fired:
+            if self._open.started_s is None:
+                self._open.started_s = now_s
+            hold_s = self.config.open_recenter_hold_s
+            if hold_s is not None and now_s - self._open.started_s >= hold_s:
+                self._open.fired = True
+                recenter = resume = True
+        fists = self.config.end_fist and all(
+            r is not None and r.tracked and r.fist
+            for r in (readings.get("left"), readings.get("right"))
+        )
+        fist_held = 0.0
+        if not fists:
+            self._fist = _Hold()
+        else:
+            if self._fist.started_s is None:
+                self._fist.started_s = now_s
+            fist_held = now_s - self._fist.started_s
+            hold_s = self.config.end_fist_hold_s
+            if hold_s is not None and fist_held >= hold_s and not self._fist.fired:
+                self._fist.fired = True
+                end = True
+        return HandEvents(
+            recenter=recenter,
+            resume=resume,
+            record_toggle=record,
+            pause=pause,
+            end=end,
+            stop_hold_s=held,
+            fist_hold_s=fist_held,
+        )
+
+
+def operator_transform(
+    to_operator: Callable[[NDArray[np.float64]], NDArray[np.float64]],
+) -> NDArray[np.float64]:
+    """The ``(4, 4)`` matrix of a rigid pose map such as ``OperatorFrame.to_operator``.
+
+    Applying the map to the identity yields its rotation and translation, so
+    ``to_operator(P) == operator_transform(to_operator) @ P`` for any pose.
+    """
+    return np.asarray(to_operator(np.eye(4)), dtype=np.float64)

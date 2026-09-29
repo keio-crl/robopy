@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Rakuda-2. GENERATED FROM THE CAD EXPORT, DO NOT EDIT BY HAND.
+  Exception, 2026-09-28: the ranges of shoulder_roll_left_dof, shoulder_roll_right_dof and
+  elbow_pitch_right_dof were widened by hand to the travel measured on the machine, as in the URDFs.
 
   source:      assembly_2_convex_collision.urdf
   regenerate:  python -m robopy.sim.mjcf_export
@@ -486,7 +488,7 @@
                                 <geom pos="-0.0245 0.1126 -0.0365" mesh="col_HN13_N101_1______1_1" class="rakuda_collision" />
                                 <body name="shoulder_roll_right" pos="0.0011 -0.011 0" quat="1 0 0 0">
                                   <inertial pos="-0.00936588 -0.00712599 -0.0137422" quat="0.971530412 -0.236913811 0.000689537745 -0.000168148123" mass="0.05965056" diaginertia="2.19325369e-05 1.71717779e-05 6.09662816e-06" />
-                                  <joint name="shoulder_roll_right_dof" range="-3.36135 0.478376" actuatorfrcrange="-1 1" axis="1 0 0" armature="0.01" damping="0.5" />
+                                  <joint name="shoulder_roll_right_dof" range="-3.36135 0.7808" actuatorfrcrange="-1 1" axis="1 0 0" armature="0.01" damping="0.5" />
                                   <geom pos="-0.0256 0.117861 -0.0521335" quat="0.997911 -0.06461 0 0" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM540_W270_1______2_4" class="rakuda_visual" />
                                   <geom pos="-0.0256 0.117861 -0.0521335" quat="0.997911 -0.06461 0 0" mesh="col_XM540_W270_1______2_4" class="rakuda_collision" />
                                   <body name="xm540_w270_1__ソリッド5_4" pos="-0.0151 0.0168181 0.00310675" quat="0.997911 -0.06461 0 0">
@@ -551,7 +553,7 @@
                                               <geom pos="-0.0135718 0.171719 0.0409641" quat="1 0 0 0" mesh="col_XM430_W350_1______5_5" class="rakuda_collision" />
                                               <body name="elbow_pitch_right" pos="0.0294378 0.00846526 -0.0147871" quat="1 0 0 0">
                                                 <inertial pos="-0.00142163 0.0023137 -0.000842018" quat="0.482602518 -0.130729439 0.0731112401 0.862936481" mass="0.001567755" diaginertia="6.98104451e-08 3.62730751e-08 3.62731698e-08" />
-                                                <joint name="elbow_pitch_right_dof" range="-2.79253 0" actuatorfrcrange="-1 1" axis="-0.5 0.813798 -0.296198" armature="0.01" damping="0.5" />
+                                                <joint name="elbow_pitch_right_dof" range="-2.79253 0.227" actuatorfrcrange="-1 1" axis="-0.5 0.813798 -0.296198" armature="0.01" damping="0.5" />
                                                 <geom pos="0.0244772 0.153323 -0.087648" quat="0.707107 -0.353552 0.575442 -0.209445" rgba="0.956863 0.956863 0.956863 1" mesh="vis_HN12_N101_1______1_5" class="rakuda_visual" />
                                                 <geom pos="0.0244772 0.153323 -0.087648" quat="0.707107 -0.353552 0.575442 -0.209445" mesh="col_HN12_N101_1______1_5" class="rakuda_collision" />
                                                 <body name="fr12_h104_1__ソリッド1_2" pos="0.0058782 0.00546775 -0.0019901" quat="0.707107 -0.353552 0.575442 -0.209445">
@@ -768,7 +770,7 @@
                                 <geom pos="-0.0245 -0.1236 -0.0365" mesh="col_HN13_N101_1______1" class="rakuda_collision" />
                                 <body name="shoulder_roll_left" pos="0.0011 0 0" quat="0.999759 0.0219313 0 0">
                                   <inertial pos="-0.00936588 0.00529444 -0.0145464" quat="0.984807538 0.173647948 0.000698961144 0.000123245572" mass="0.05965056" diaginertia="2.19325369e-05 1.71717534e-05 6.09662566e-06" />
-                                  <joint name="shoulder_roll_left_dof" range="-0.392932 3.44679" actuatorfrcrange="-1 1" axis="1 0 0" armature="0.01" damping="0.5" />
+                                  <joint name="shoulder_roll_left_dof" range="-0.5706 3.44679" actuatorfrcrange="-1 1" axis="1 0 0" armature="0.01" damping="0.5" />
                                   <geom pos="-0.0256 -0.1236 -0.0365" rgba="0.270588 0.270588 0.270588 1" mesh="vis_XM540_W270_1______2_2" class="rakuda_visual" />
                                   <geom pos="-0.0256 -0.1236 -0.0365" mesh="col_XM540_W270_1______2_2" class="rakuda_collision" />
                                   <body name="xm540_w270_1__ソリッド5_2" pos="-0.0151 0.00530131 -0.0145652" quat="1 0 0 0">
@@ -1061,13 +1063,13 @@
     <position name="head_yaw_dof" joint="head_yaw_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-1.81055 1.33104" />
     <position name="head_pitch_dof" joint="head_pitch_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-1.50009 0.594303" />
     <position name="shoulder_pitch_right_dof" joint="shoulder_pitch_right_dof" kp="36.5" dampratio="1" forcerange="-7.3 7.3" ctrlrange="-3.14159265 3.14159265" />
-    <position name="shoulder_roll_right_dof" joint="shoulder_roll_right_dof" kp="36.5" dampratio="1" forcerange="-7.3 7.3" ctrlrange="-3.36135 0.478376" />
+    <position name="shoulder_roll_right_dof" joint="shoulder_roll_right_dof" kp="36.5" dampratio="1" forcerange="-7.3 7.3" ctrlrange="-3.36135 0.7808" />
     <position name="elbow_yaw_right_dof" joint="elbow_yaw_right_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-3.45569 2.82749" />
-    <position name="elbow_pitch_right_dof" joint="elbow_pitch_right_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-2.79253 0" />
+    <position name="elbow_pitch_right_dof" joint="elbow_pitch_right_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-2.79253 0.227" />
     <position name="wrist_yaw_right_dof" joint="wrist_yaw_right_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-0.891121 3.29767" />
     <position name="wrist_pitch_right_dof" joint="wrist_pitch_right_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-2.48005 1.41204" />
     <position name="shoulder_pitch_left_dof" joint="shoulder_pitch_left_dof" kp="36.5" dampratio="1" forcerange="-7.3 7.3" ctrlrange="-3.14159265 3.14159265" />
-    <position name="shoulder_roll_left_dof" joint="shoulder_roll_left_dof" kp="36.5" dampratio="1" forcerange="-7.3 7.3" ctrlrange="-0.392932 3.44679" />
+    <position name="shoulder_roll_left_dof" joint="shoulder_roll_left_dof" kp="36.5" dampratio="1" forcerange="-7.3 7.3" ctrlrange="-0.5706 3.44679" />
     <position name="elbow_yaw_left_dof" joint="elbow_yaw_left_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-2.42791 3.85528" />
     <position name="elbow_pitch_left_dof" joint="elbow_pitch_left_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-0.746788 2.30754" />
     <position name="wrist_yaw_left_dof" joint="wrist_yaw_left_dof" kp="20.5" dampratio="1" forcerange="-4.1 4.1" ctrlrange="-2.25701 1.93178" />
