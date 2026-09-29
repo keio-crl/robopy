@@ -259,6 +259,7 @@ class IKSetup:
             name: getattr(cfg, name)
             for name in (
                 "task_priority_mode",
+                "orientation_priority",
                 "orientation_mode",
                 "approach_axis_tcp",
                 "posture_cost",

@@ -40,6 +40,9 @@
   （TCP フレームの向きが左右で別）ので `approach_axis_tcp` は `{left:, right:}` の形も取れる。未設定なら
   `approach_axes_from_model`（手首ピッチ関節→TCP 原点、ゼロ姿勢）で読む。TCP はまだ placeholder
   （validated false）なので、接近軸も「モデルの手の長軸」であって実測ではない。
+- 向き（axis_aligned / pose）は hierarchical の**第二段**に置く（`orientation_priority: secondary`）。第一段に
+  置くと、上腕ロールと前腕ロールを ±90° 逆回しにした形でも指す方向がほぼ同じため、一度巻いたロールは
+  巻き戻すと指す方向がわずかに変わる＝第一段が禁じるので、ロールが ±90° のまま固まる（実機で確認済み）。
 - グリッパはその腕のクラッチ中だけトリガに追従し、離すと最後の値を保持する（`ArmTeleop._last_gripper`）。
 - 素手の既定（robopy-vr の CLI 既定）はクラッチ＝中指・薬指・小指の握り込み（`grip`）、グリッパ＝親指と人差し指の
   距離（`pinch`）。`HandTrackingConfig` 自体の既定は旧方式（pinch / curl）のままで、既存テストはそれを前提にしている。

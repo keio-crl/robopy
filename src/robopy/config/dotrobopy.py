@@ -701,6 +701,7 @@ def parse_rakuda_control_yaml(value: Any) -> Any:
 
 _IK_CHOICES = {
     "task_priority_mode": ("weighted", "hierarchical"),
+    "orientation_priority": ("primary", "secondary"),
     "orientation_mode": ("position_only", "pose", "axis_aligned"),
     "torso_policy": ("fixed", "manual", "optimize"),
     "inactive_arm_policy": ("hold_joints", "hold_world"),

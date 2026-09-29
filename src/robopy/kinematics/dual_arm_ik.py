@@ -201,7 +201,10 @@ def teleop_solver_settings(
       the roll about it free -- weighted :data:`APPROACH_AXIS_COST`; without
       them position only.  ``control.ik.orientation_mode`` selects ``pose``
       (full orientation) instead; with the two-axis wrist that costs several
-      centimetres of position;
+      centimetres of position.  The orientation sits in the second stage
+      (``orientation_priority="secondary"``): the position is exact, the
+      pointing is weighed against the roll posture, so rolls wound up while
+      pointing unwind again instead of staying locked at +90 / -90;
     * a posture objective on the arms' roll joints (:func:`arm_roll_joints`)
       towards their neutral zero, weight :data:`ROLL_POSTURE_COST`;
     * limit avoidance near the ends of travel, and a time-constant gain so the
@@ -213,6 +216,7 @@ def teleop_solver_settings(
         # (singular) arm from wandering along its null space.
         damping=1e-3,
         task_priority_mode="hierarchical",
+        orientation_priority="secondary",
         orientation_mode="position_only",
         gain_time_constant_s=0.08,
         joint_motion_cost={torso_joint: 2.0},
@@ -234,6 +238,7 @@ def teleop_solver_settings(
 
 ORIENTATION_MODES: Tuple[str, ...] = ("position_only", "pose", "axis_aligned")
 PRIORITY_MODES: Tuple[str, ...] = ("weighted", "hierarchical")
+ORIENTATION_PRIORITIES: Tuple[str, ...] = ("primary", "secondary")
 
 
 class DualArmIKStatus(Enum):
@@ -323,6 +328,16 @@ class DualArmIKConfig:
         task_priority_mode: ``"weighted"`` or ``"hierarchical"``; see the
             module docstring.
         orientation_mode: ``"position_only"``, ``"pose"`` or ``"axis_aligned"``.
+        orientation_priority: In the hierarchical mode, where a hand's
+            orientation (or approach axis) sits: ``"primary"`` with the
+            position in the first stage, or ``"secondary"`` in the second,
+            weighed against the posture and limit-avoidance costs while the
+            position stays exact.  With a two-axis wrist a primary orientation
+            locks the arm's roll joints wherever they were wound to (the
+            upper-arm and forearm rolls counter-rotated by 90 degrees each
+            point the gripper almost the same way, and unwinding them turns
+            the pointing a little, which the first stage forbids); secondary
+            lets the roll posture undo that.  Ignored in the weighted mode.
         approach_axis_tcp: The gripper's approach axis in TCP coordinates,
             required by ``axis_aligned``.  Not assumed to be any particular
             axis: state it.
@@ -396,6 +411,7 @@ class DualArmIKConfig:
     limit_avoidance_band_rad: float = 0.2
     limit_avoidance_cost: float = 1.0
     task_priority_mode: str = "weighted"
+    orientation_priority: str = "primary"
     orientation_mode: str = "pose"
     approach_axis_tcp: Tuple[float, float, float] | Mapping[str, Sequence[float]] | None = None
     torso_regularisation: float = 1e-2
@@ -425,6 +441,8 @@ class DualArmIKConfig:
     def __post_init__(self) -> None:
         if self.task_priority_mode not in PRIORITY_MODES:
             raise ValueError(f"task_priority_mode must be one of {PRIORITY_MODES}.")
+        if self.orientation_priority not in ORIENTATION_PRIORITIES:
+            raise ValueError(f"orientation_priority must be one of {ORIENTATION_PRIORITIES}.")
         if self.orientation_mode not in ORIENTATION_MODES:
             raise ValueError(f"orientation_mode must be one of {ORIENTATION_MODES}.")
         if self.orientation_mode == "axis_aligned" and self.approach_axis_tcp is None:
@@ -967,20 +985,41 @@ class DualArmIK:
         hand_tasks, axis_tasks = self._update_task_targets(configuration, target)
 
         # --- first-priority rows: A x + b over the full tangent space ---------
+        # With a secondary orientation (hierarchical mode) the orientation
+        # rows go to ``soft_A``/``soft_b`` instead, and join the second
+        # stage's objective as a weighted least-squares term.
+        secondary_orientation = (
+            cfg.task_priority_mode == "hierarchical" and cfg.orientation_priority == "secondary"
+        )
         rows_A: List[NDArray[np.float64]] = []
         rows_b: List[NDArray[np.float64]] = []
+        soft_A: List[NDArray[np.float64]] = []
+        soft_b: List[NDArray[np.float64]] = []
         lm = 0.0
         for task in hand_tasks:
             J = np.asarray(task.compute_jacobian(configuration), dtype=np.float64)
             e = np.asarray(task.compute_error(configuration), dtype=np.float64)
             W = np.asarray(task.cost, dtype=np.float64)
-            rows_A.append(W[:, None] * J)
+            weighted_J = W[:, None] * J
             weighted_error = task.gain * W * e
+            if secondary_orientation and weighted_J.shape[0] == 6:
+                # Pinocchio's convention: linear rows first, then angular.
+                rows_A.append(weighted_J[:3])
+                rows_b.append(weighted_error[:3])
+                soft_A.append(weighted_J[3:])
+                soft_b.append(weighted_error[3:])
+                lm += task.lm_damping * float(weighted_error[:3] @ weighted_error[:3])
+                continue
+            rows_A.append(weighted_J)
             rows_b.append(weighted_error)
             # Levenberg-Marquardt damping, as Pink adds it per task.
             lm += task.lm_damping * float(weighted_error @ weighted_error)
         for axis in axis_tasks:
             A_t, b_t = axis.weighted_rows(q)
+            if secondary_orientation:
+                soft_A.append(A_t)
+                soft_b.append(b_t)
+                continue
             rows_A.append(A_t)
             rows_b.append(b_t)
             lm += axis.lm_damping * float(b_t @ b_t)
@@ -1000,6 +1039,11 @@ class DualArmIK:
         A = A_full @ S  # task rows over the free variables
         b = b_full + A_full @ known_full
         n_free = len(free_slots)
+        A_soft: NDArray[np.float64] | None = None
+        b_soft: NDArray[np.float64] | None = None
+        if soft_A:
+            A_soft = np.vstack(soft_A) @ S
+            b_soft = np.concatenate(soft_b) + np.vstack(soft_A) @ known_full
 
         # --- normalised singular values, extra damping near singularities -----
         sigma_min = self._min_singular_value(q, target, free_slots)
@@ -1062,6 +1106,10 @@ class DualArmIK:
 
         # --- secondary objective over the free variables ---------------------
         P2, c2 = self._secondary_objective(q, free_slots, dt, gain)
+        if A_soft is not None and b_soft is not None:
+            # The orientation, second only to the position: 1/2 |A_s x + b_s|^2.
+            P2 = P2 + A_soft.T @ A_soft
+            c2 = c2 + A_soft.T @ b_soft
         if target.torso_policy is TorsoPolicy.OPTIMIZE and self._torso_slot in free_slots:
             torso_column = free_slots.index(self._torso_slot)
             P2[torso_column, torso_column] += cfg.torso_regularisation

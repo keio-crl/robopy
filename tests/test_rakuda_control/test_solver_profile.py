@@ -47,6 +47,7 @@ def test_profile_is_position_only_with_a_roll_posture() -> None:
     )
     assert settings["orientation_mode"] == "position_only"
     assert settings["task_priority_mode"] == "hierarchical"
+    assert settings["orientation_priority"] == "secondary"
     assert settings["limit_avoidance_enabled"] is True
     assert settings["posture_cost"] == {"elbow_yaw_left_dof": ROLL_POSTURE_COST}
     assert settings["posture_reference"] == {"elbow_yaw_left_dof": 0.0}
@@ -141,3 +142,39 @@ def test_the_roll_posture_brings_a_displaced_roll_back(synthetic_urdf: Path) -> 
     assert abs(after) < 0.25, after
     moved = float(np.linalg.norm(backend.hand_pose("left")[:3, 3] - hand[:3, 3]))
     assert moved < 0.02
+
+
+def test_a_secondary_orientation_lets_wound_rolls_unwind(synthetic_urdf: Path) -> None:
+    """Counter-rotated rolls with the hand held still: secondary unwinds, primary may not."""
+    from robopy.control.types import DualArmTarget, TorsoPolicy
+    from robopy.viewer.model_bundle import ModelBundle
+    from robopy.viewer.server import IKSetup
+    from robopy.vr.backend import SimulationBackend, TeleopCommand
+
+    bundle = ModelBundle.load(synthetic_urdf, soft_limits=SOFT_LIMITS)
+    rolls = [j for j in arm_roll_joints(bundle.joint_order) if "left" in j]
+    if len(rolls) < 2:
+        pytest.skip("the synthetic fixture has not two roll joints per arm")
+    setup = IKSetup(bundle, config_overrides={"max_state_age_s": 10.0})
+    assert setup.solver.config.orientation_priority == "secondary"
+    start = {rolls[0]: 0.6, rolls[1]: -0.6}
+    backend = SimulationBackend(bundle, setup, initial_positions=start)
+    hand = backend.hand_pose("left").copy()
+    t = 0.0
+    for _ in range(200):
+        t += 1.0 / 50.0
+        target = DualArmTarget(
+            left_target=hand,
+            right_target=None,
+            left_enabled=True,
+            right_enabled=False,
+            torso_policy=TorsoPolicy.FIXED,
+            created_ns=time.monotonic_ns(),
+            expiry_ns=time.monotonic_ns() + 10**9,
+        )
+        report = backend.apply(TeleopCommand(arm_target=target, stamp_s=t))
+        assert report.ik_commandable, report.ik_message
+    after = backend.joint_positions()
+    assert abs(after[rolls[0]]) < 0.3 and abs(after[rolls[1]]) < 0.3, after
+    moved = float(np.linalg.norm(backend.hand_pose("left")[:3, 3] - hand[:3, 3]))
+    assert moved < 0.01

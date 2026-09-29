@@ -225,6 +225,9 @@ class RakudaIKConfig:
             behaviour) or ``hierarchical`` (the hand tasks first, then the
             posture, limit-avoidance and smoothness objectives without
             degrading them).
+        orientation_priority: ``primary`` or ``secondary`` (hierarchical mode):
+            whether the hand's orientation is kept as exactly as its position,
+            or weighed against the posture costs.
         orientation_mode: ``position_only``, ``pose`` or ``axis_aligned``.
         position_cost: Weight of a hand's position error (solver default 1.0).
         orientation_cost: Weight of a hand's orientation (or approach-axis)
@@ -264,6 +267,7 @@ class RakudaIKConfig:
     """
 
     task_priority_mode: str | None = None
+    orientation_priority: str | None = None
     orientation_mode: str | None = None
     position_cost: float | None = None
     orientation_cost: float | None = None
@@ -299,6 +303,7 @@ class RakudaIKConfig:
         out: Dict[str, Any] = {}
         for name in (
             "task_priority_mode",
+            "orientation_priority",
             "orientation_mode",
             "position_cost",
             "orientation_cost",
