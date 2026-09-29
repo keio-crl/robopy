@@ -11,6 +11,7 @@ import pytest
 
 from robopy.kinematics.dual_arm_ik import (
     APPROACH_AXIS_COST,
+    merge_solver_settings,
     ROLL_POSTURE_COST,
     approach_axes_from_model,
     approach_axis_for,
@@ -178,3 +179,15 @@ def test_a_secondary_orientation_lets_wound_rolls_unwind(synthetic_urdf: Path) -
     assert abs(after[rolls[0]]) < 0.3 and abs(after[rolls[1]]) < 0.3, after
     moved = float(np.linalg.norm(backend.hand_pose("left")[:3, 3] - hand[:3, 3]))
     assert moved < 0.01
+
+
+def test_a_configured_neutral_moves_one_joint_and_keeps_the_others() -> None:
+    profile = teleop_solver_settings(
+        "torso_yaw_dof", arm_joints=["elbow_yaw_right_dof", "wrist_yaw_right_dof"]
+    )
+    merged = merge_solver_settings(
+        profile, {"posture_reference": {"wrist_yaw_right_dof": 1.55}, "damping": 0.5}
+    )
+    assert merged["posture_reference"] == {"elbow_yaw_right_dof": 0.0, "wrist_yaw_right_dof": 1.55}
+    assert merged["posture_cost"] == profile["posture_cost"]
+    assert merged["damping"] == 0.5

@@ -149,6 +149,7 @@ def build_model_and_ik(config: RakudaControlConfig) -> Tuple[Any, Any]:
         DualArmIK,
         DualArmIKConfig,
         approach_axes_from_model,
+        merge_solver_settings,
         teleop_solver_settings,
     )
     from robopy.kinematics.urdf_model import WholeBodyModel  # noqa: PLC0415
@@ -246,18 +247,22 @@ def build_model_and_ik(config: RakudaControlConfig) -> Tuple[Any, Any]:
         # section); the loop's timing comes from the control section.
         config=DualArmIKConfig(
             **{
-                **teleop_solver_settings(
-                    spec.torso_joint,
-                    arm_joints=[*spec.left_arm_joints, *spec.right_arm_joints],
-                    approach_axes=approach_axes,
+                **merge_solver_settings(
+                    {
+                        **teleop_solver_settings(
+                            spec.torso_joint,
+                            arm_joints=[*spec.left_arm_joints, *spec.right_arm_joints],
+                            approach_axes=approach_axes,
+                        ),
+                        # The one deliberate difference from the simulation: the
+                        # machine's Cartesian reference governor (control.trajectory)
+                        # already ramps the target's velocity and acceleration, so
+                        # the solver follows the reference at full gain.  A second
+                        # lag here would only add to the delay the operator feels.
+                        "gain_time_constant_s": None,
+                    },
+                    config.ik.solver_overrides(),
                 ),
-                # The one deliberate difference from the simulation: the machine's
-                # Cartesian reference governor (control.trajectory) already ramps
-                # the target's velocity and acceleration, so the solver follows
-                # the reference at full gain.  A second lag here would only add
-                # to the delay the operator feels.
-                "gain_time_constant_s": None,
-                **config.ik.solver_overrides(),
                 "compute_budget_s": config.ik_period_s,
                 "max_state_age_s": config.max_state_age_s,
             }

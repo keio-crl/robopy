@@ -167,6 +167,36 @@ def approach_axes_from_model(
 APPROACH_AXIS_COST = 0.5
 
 
+#: Solver settings that are per-joint maps: an override adds to or replaces
+#: joints of the profile's map instead of replacing the whole map.
+PER_JOINT_SETTINGS: Tuple[str, ...] = ("posture_reference", "posture_cost", "joint_motion_cost")
+
+
+def merge_solver_settings(
+    base: Mapping[str, Any], overrides: Mapping[str, Any] | None
+) -> Dict[str, Any]:
+    """``base`` with ``overrides`` applied, per joint where the setting is a per-joint map.
+
+    ``control.ik.preferred_posture_rad: {wrist_yaw_right_dof: 1.55}`` then moves
+    that one joint's neutral and keeps the profile's neutral for the other
+    roll joints; a plain ``dict.update`` dropped them, and a joint missing from
+    the posture reference is pulled towards wherever it happens to be, i.e.
+    not at all.
+    """
+    merged = dict(base)
+    for key, value in (overrides or {}).items():
+        current = merged.get(key)
+        if (
+            key in PER_JOINT_SETTINGS
+            and isinstance(current, Mapping)
+            and isinstance(value, Mapping)
+        ):
+            merged[key] = {**current, **value}
+        else:
+            merged[key] = value
+    return merged
+
+
 def arm_roll_joints(joints: Sequence[str]) -> List[str]:
     """The roll joints among ``joints``: the upper-arm and forearm rolls.
 

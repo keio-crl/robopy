@@ -183,7 +183,14 @@ class TestCartesianTeleoperation:
         assert ik.config.task_priority_mode == "hierarchical"
         assert ik.config.orientation_mode == "position_only"
         assert ik.config.joint_motion_cost == {SYNTHETIC_TORSO_JOINT: 5.0}
-        assert ik.config.posture_reference == {"elbow_pitch_left_dof": -0.4}
+        # The configured neutral is added to the profile's (the rolls at 0),
+        # joint by joint, rather than replacing it.
+        assert ik.config.posture_reference["elbow_pitch_left_dof"] == -0.4
+        assert all(
+            ik.config.posture_reference[j] == 0.0
+            for j in ik.config.posture_reference
+            if j != "elbow_pitch_left_dof"
+        )
         # The loop's timing still comes from the control section.
         assert ik.config.compute_budget_s == config.ik_period_s
         profile = model.limit_profile()

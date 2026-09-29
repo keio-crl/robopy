@@ -163,6 +163,7 @@ class IKSetup:
             DualArmIK,
             DualArmIKConfig,
             approach_axes_from_model,
+            merge_solver_settings,
             teleop_solver_settings,
         )
 
@@ -210,7 +211,7 @@ class IKSetup:
             # legacy end-point mode still switches it off per request).
             max_joint_acceleration_rad_s2=8.0,
         )
-        settings.update(config_overrides or {})
+        settings = merge_solver_settings(settings, config_overrides)
         if settings.get("orientation_mode") == "axis_aligned" and not settings.get(
             "approach_axis_tcp"
         ):
