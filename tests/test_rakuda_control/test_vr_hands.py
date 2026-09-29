@@ -134,7 +134,14 @@ class TestConfig:
         assert "pinky-finger-tip" in required and "index-finger-phalanx-distal" not in required
         assert set(required) <= set(HAND_JOINTS)
         lean = HandTrackingConfig(gripper_gesture="none", reference="wrist").required_joints
-        assert set(lean) == {"wrist", "thumb-tip", "index-finger-tip", "middle-finger-tip"}
+        # The middle knuckle is always read: it is the hand's pointing.
+        assert set(lean) == {
+            "wrist",
+            "thumb-tip",
+            "index-finger-tip",
+            "middle-finger-tip",
+            "middle-finger-phalanx-proximal",
+        }
 
     def test_validation(self) -> None:
         with pytest.raises(ValueError, match="both the clutch and the gripper"):
@@ -513,6 +520,19 @@ def pose(t: float = 0.0, **sides: Any) -> Dict[str, Any]:
     msg: Dict[str, Any] = {"type": "pose", "t": t, "head": HEAD0, "left": None, "right": None}
     msg.update(sides)
     return msg
+
+
+def test_a_hand_points_from_the_wrist_to_the_middle_knuckle() -> None:
+    frame = HandFrame.from_message(hand_entry(curl=1.0)["hand"])
+    assert frame is not None
+    pointing = frame.pointing()
+    assert pointing is not None and np.linalg.norm(pointing) == pytest.approx(1.0)
+    expected = np.asarray(frame.positions["middle-finger-phalanx-proximal"]) - np.asarray(
+        frame.positions["wrist"]
+    )
+    assert pointing == pytest.approx(expected / np.linalg.norm(expected))
+    reading = HandInput("left").update(frame, 0.0)
+    assert reading.sample is not None and reading.sample.pointing == pytest.approx(pointing)
 
 
 class TestGripClutch:

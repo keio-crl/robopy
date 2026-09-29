@@ -270,9 +270,14 @@ class HandTrackingConfig:
     @property
     def required_joints(self) -> Tuple[str, ...]:
         """The joints a hand must report for this configuration to read it."""
-        joints = ["wrist", "thumb-tip", "index-finger-tip", "middle-finger-tip"]
-        if self.reference == "palm":
-            joints.append("middle-finger-phalanx-proximal")
+        # The middle knuckle is also the hand's pointing (wrist to knuckle).
+        joints = [
+            "wrist",
+            "thumb-tip",
+            "index-finger-tip",
+            "middle-finger-tip",
+            "middle-finger-phalanx-proximal",
+        ]
         if self.gripper_gesture == "curl" or self.clutch_gesture == "grip":
             for finger in CURL_FINGERS:
                 joints.extend(FINGERS[finger])
@@ -410,6 +415,17 @@ class HandFrame:
                 self.positions["wrist"] + self.positions["middle-finger-phalanx-proximal"]
             )
         return self.positions["wrist"].copy()
+
+    def pointing(self) -> NDArray[np.float64] | None:
+        """Unit vector from the wrist to the middle knuckle: where the hand points.
+
+        The long axis of the palm, which a curled grip or a pinch leaves where
+        it was (the fingertips do not), and the counterpart of a gripper's
+        approach axis.  ``None`` when the two joints coincide.
+        """
+        v = self.positions["middle-finger-phalanx-proximal"] - self.positions["wrist"]
+        n = float(np.linalg.norm(v))
+        return None if n < 1e-6 else v / n
 
     def reference_pose(self, reference: str) -> NDArray[np.float64]:
         """``(4, 4)`` hand pose: the wrist's orientation at the chosen reference point."""
@@ -614,6 +630,7 @@ class HandInput:
             },
             stamp_s=now_s,
             engage_radius_m=c.engage_radius_m,
+            pointing=frame.pointing(),
         )
         self.last = HandReading(
             sample=sample,

@@ -251,6 +251,16 @@ def build_parser() -> argparse.ArgumentParser:
         "nothing moves without the gripper's measured travel",
     )
     hands.add_argument(
+        "--pointing",
+        choices=["absolute", "relative"],
+        default="absolute",
+        help="how a hand's orientation drives the gripper: absolute (default: the gripper's "
+        "approach axis points where the hand points, wrist to middle knuckle, however the "
+        "robot's hand was turned when the grip engaged) or relative (the hand's rotation since "
+        "the grip, added to the robot hand's pose then -- an offset present then, a forearm roll "
+        "wound up, stays for the whole grasp). Controllers are always relative",
+    )
+    hands.add_argument(
         "--hand-reference",
         choices=["palm", "wrist", "pinch"],
         default="palm",
@@ -1252,6 +1262,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "  note: the model has no gripper joints; gripper commands are recorded, "
                         "not simulated."
                     )
+                # The gripper's approach axis, from the solver that drives the arms
+                # (the machine's, or the simulation's): what an absolute pointing turns.
+                from robopy.kinematics.dual_arm_ik import approach_axis_for
+
+                solver = getattr(getattr(backend, "system", None), "ik", None)
+                if solver is None and loaded.ik is not None:
+                    solver = loaded.ik.solver
+                axis_spec = None if solver is None else solver.config.approach_axis_tcp
+                approach_axes = {
+                    side: None if axis_spec is None else approach_axis_for(axis_spec, side)
+                    for side in ("left", "right")
+                }
                 try:
                     configs = {
                         side: ArmTeleopConfig(
@@ -1260,6 +1282,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                             orientation_enabled=not args.no_orientation,
                             max_speed_m_s=args.max_hand_speed,
                             engage_radius_m=args.engage_radius,
+                            pointing=args.pointing,
+                            approach_axis=approach_axes[side],
                             **grippers.get(side, {}),
                         )
                         for side in ("left", "right")

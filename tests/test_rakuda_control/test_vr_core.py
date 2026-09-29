@@ -493,6 +493,46 @@ class TestArmTeleop:
         cmd = arm.update(None, np.eye(4), 0.3)
         assert cmd.gripper_rad == pytest.approx(0.35)
 
+    def test_absolute_pointing_turns_the_gripper_to_the_hand(self) -> None:
+        # The robot hand's approach axis (TCP +Z) points down; the operator's
+        # hand points forward (+X), rolled in any way at the press: the target
+        # turns the approach axis forward, whatever the relative rotation says.
+        arm = ArmTeleop(
+            "left",
+            ArmTeleopConfig(
+                mapping="relative",
+                max_speed_m_s=100.0,
+                max_angular_speed_rad_s=100.0,
+                approach_axis=(0.0, 0.0, 1.0),
+            ),
+        )
+        hand = np.eye(4)
+        hand[:3, :3] = np.diag([1.0, -1.0, -1.0])  # TCP +Z = world -Z: pointing down
+        rolled = np.eye(4)
+        rolled[:3, :3] = rotation_z(1.2)  # the operator's hand, turned any way
+        forward = np.array([1.0, 0.0, 0.0])
+        arm.update(
+            ControllerSample(pose=rolled, clutch=True, pointing=forward), hand, 0.0
+        )
+        cmd = arm.update(
+            ControllerSample(pose=rolled, clutch=True, pointing=forward), hand, 0.1
+        )
+        assert cmd.target is not None
+        assert cmd.target[:3, :3] @ np.array([0.0, 0.0, 1.0]) == pytest.approx(forward, abs=1e-9)
+        # Relative (or no pointing): the same press leaves the hand pointing down.
+        relative = ArmTeleop(
+            "left",
+            ArmTeleopConfig(mapping="relative", pointing="relative", approach_axis=(0.0, 0.0, 1.0)),
+        )
+        relative.update(ControllerSample(pose=rolled, clutch=True, pointing=forward), hand, 0.0)
+        cmd = relative.update(
+            ControllerSample(pose=rolled, clutch=True, pointing=forward), hand, 0.1
+        )
+        assert cmd.target is not None
+        assert cmd.target[:3, :3] @ np.array([0.0, 0.0, 1.0]) == pytest.approx(
+            [0.0, 0.0, -1.0], abs=1e-9
+        )
+
     def test_config_validation(self) -> None:
         with pytest.raises(ValueError):
             ArmTeleopConfig(position_scale=0.0)
