@@ -702,20 +702,21 @@ class TeleopSession:
             return None
         if self.arm_teleop is None:
             return None
-        scale = self.arm_teleop.arms[side].config.position_scale
-        p_op = (
-            self.operator.head_position_m
-            + (np.asarray(robot_hand_pose)[:3, 3] - self.robot_anchor_m) / scale
+        # The correspondence is unscaled (the scale applies to the motion
+        # after the clutch engages), so the marker is the robot's hand as the
+        # twin shows it, whatever the scale.
+        p_op = self.operator.head_position_m + (
+            np.asarray(robot_hand_pose)[:3, 3] - self.robot_anchor_m
         )
         T = np.eye(4)
         T[:3, 3] = p_op
         p_page = self.operator.from_operator(T)[:3, 3]
         return {
             "p": [float(v) for v in p_page],
-            "radius_m": float(command.engage_radius_m) / scale,
+            "radius_m": float(command.engage_radius_m),
             "distance_m": None
             if command.engage_distance_m is None
-            else float(command.engage_distance_m) / scale,
+            else float(command.engage_distance_m),
             "in_place": command.engage_distance_m is not None
             and command.engage_distance_m <= command.engage_radius_m,
         }
@@ -786,10 +787,7 @@ class TeleopSession:
             # Where the device is in the robot's frame under the absolute
             # correspondence, for the recording and its videos.
             if self.robot_anchor_m is not None and self.arm_teleop is not None:
-                scale = self.arm_teleop.arms[side].config.position_scale
-                p_base = self.robot_anchor_m + scale * (
-                    pose_op[:3, 3] - self.operator.head_position_m
-                )
+                p_base = self.robot_anchor_m + (pose_op[:3, 3] - self.operator.head_position_m)
                 self._last_controller_base[side] = [float(v) for v in p_base]
             else:
                 self._last_controller_base[side] = None

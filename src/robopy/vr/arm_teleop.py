@@ -64,8 +64,10 @@ class ArmTeleopConfig:
         mapping: ``"absolute"`` (hand target = controller position about the
             head anchor) or ``"relative"`` (displacement since the press).
             See the module docstring.
-        position_scale: Robot metres per operator metre while clutched.  In
-            absolute mapping the scaling is about the head anchor.
+        position_scale: Robot metres per operator metre while clutched.  The
+            scaling is about the point where the clutch engaged, in both
+            mappings, so the engage marker of the absolute mapping stays on
+            the robot's hand whatever the scale.
         orientation_enabled: Whether the controller's rotation drives the
             hand's orientation.  With a two-axis wrist a translation-only
             mapping is often the usable one; see the orientation weight of
@@ -344,9 +346,11 @@ class ArmTeleop:
         assert self._target is not None
         desired = np.eye(4)
         if c.mapping == "absolute":
-            assert self._robot_anchor is not None and self._operator_anchor is not None
-            desired[:3, 3] = self._robot_anchor + c.position_scale * (
-                pose[:3, 3] - self._operator_anchor
+            # The correspondence puts the hand where the controller was at the
+            # press; the scale then applies to the motion since, so the point
+            # of engagement -- the marker on the twin's hand -- is unscaled.
+            desired[:3, 3] = self._mapped(self._controller0) + c.position_scale * (
+                pose[:3, 3] - self._controller0[:3, 3]
             )
         else:
             desired[:3, 3] = self._hand0[:3, 3] + c.position_scale * (
@@ -395,15 +399,21 @@ class ArmTeleop:
             engaged_now=engaged_now,
         )
 
+    def _mapped(self, pose: NDArray[np.float64]) -> NDArray[np.float64]:
+        """The absolute correspondence: the controller's position in the robot's frame.
+
+        Unscaled -- one operator metre from the head is one robot metre from
+        the anchor -- so the engage marker (its inverse) sits on the robot's hand.
+        """
+        assert self._robot_anchor is not None and self._operator_anchor is not None
+        return self._robot_anchor + (pose[:3, 3] - self._operator_anchor)
+
     def _engage_distance(
         self, pose: NDArray[np.float64], current_hand_pose: NDArray[np.float64]
     ) -> float:
         """How far the absolute mapping would move the hand if the clutch engaged now."""
-        c = self.config
-        assert self._robot_anchor is not None and self._operator_anchor is not None
-        mapped = self._robot_anchor + c.position_scale * (pose[:3, 3] - self._operator_anchor)
         current = np.asarray(current_hand_pose, dtype=np.float64)[:3, 3]
-        return float(np.linalg.norm(mapped - current))
+        return float(np.linalg.norm(self._mapped(pose) - current))
 
     def describe(self) -> Dict[str, Any]:
         """JSON-friendly state."""

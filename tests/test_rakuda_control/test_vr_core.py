@@ -547,13 +547,18 @@ class TestAbsoluteArmTeleop:
             cmd = arm.update(_sample(0.4, -0.25, 1.3, clutch=True), hand, 0.1 * i)
         assert np.allclose(cmd.target[:3, 3], self.ROBOT + [0.4, -0.25, -0.3], atol=1e-9)
 
-    def test_scale_is_about_the_head_and_orientation_stays_relative(self) -> None:
+    def test_scale_is_about_the_press_and_orientation_stays_relative(self) -> None:
         arm = self._arm(position_scale=0.5)
         hand = np.eye(4)
         hand[:3, :3] = rotation_z(1.0)
+        # The press itself is unscaled: the controller 0.4 m in front of the
+        # head puts the hand 0.4 m in front of the anchor ...
         arm.update(_sample(0.4, 0.0, 1.6, clutch=True), hand, 0.0)
         cmd = arm.update(_sample(0.4, 0.0, 1.6, clutch=True, R=rotation_z(0.2)), hand, 1.0)
-        assert np.allclose(cmd.target[:3, 3], self.ROBOT + [0.2, 0.0, 0.0])
+        assert np.allclose(cmd.target[:3, 3], self.ROBOT + [0.4, 0.0, 0.0])
+        # ... and the motion since is scaled about that point.
+        cmd = arm.update(_sample(0.6, 0.0, 1.6, clutch=True, R=rotation_z(0.2)), hand, 2.0)
+        assert np.allclose(cmd.target[:3, 3], self.ROBOT + [0.5, 0.0, 0.0])
         # Orientation: the controller turned 0.2 rad since the press, so the
         # hand turns 0.2 rad from where it was -- not to the controller's own attitude.
         assert np.allclose(cmd.target[:3, :3], rotation_z(0.2) @ rotation_z(1.0), atol=1e-9)
