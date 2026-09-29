@@ -129,8 +129,9 @@ class ServoLoopConfig:
         bus_watchdog_counts: Value written to ``BUS_WATCHDOG`` (20 ms per count),
             or ``None`` to leave the register alone.
         max_slow_reads: A snapshot whose samples span more than
-            ``max_acquisition_span_s`` (a retried transaction, a USB hiccup) is
-            not acted on: that cycle issues no command and the motors hold.
+            ``max_acquisition_span_s`` (a retried transaction, a USB hiccup), or
+            a bulk read that timed out or failed to decode, is not acted on:
+            that cycle issues no command and the motors hold their last goal.
             Only this many such reads *in a row* fault the loop.
         range_tolerance_rad: How far outside its calibrated range a measured
             position may be before the cycle faults.  The calibrated ends are
@@ -939,7 +940,15 @@ class ServoLoop:
         states: Dict[str, JointState] = {}
         slow: List[str] = []
         for servo in self._servos:
-            state = servo.read_state()
+            try:
+                state = servo.read_state()
+            except (TimeoutError, ConnectionError) as exc:
+                # One late or garbled bulk read (a USB frame lost, the FTDI
+                # latency timer flushing late) is a missed cycle, not a dead
+                # bus: the motors hold their last goal, as for a slow read.
+                # A run of them is still a fault, below.
+                slow.append(f"{servo.name}: {exc}")
+                continue
             problems = servo.check_state(state)
             servo.poll_diagnostics()
             problems.extend(servo.check_diagnostics())
@@ -968,7 +977,7 @@ class ServoLoop:
                 )
             if self._slow_streak >= self._config.max_slow_reads:
                 raise RuntimeError(
-                    f"{self._slow_streak} slow reads in a row "
+                    f"{self._slow_streak} slow or failed reads in a row "
                     f"(limit {self._config.max_slow_reads}): "
                     + "; ".join(slow)
                     + ". The bus is not delivering snapshots that can be treated as simultaneous."

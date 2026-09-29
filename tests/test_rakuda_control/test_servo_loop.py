@@ -337,6 +337,42 @@ class TestServoLoopCycle:
         drained = loop.drain_logs()
         assert len(drained) == 1024
 
+    def test_a_timed_out_read_skips_the_cycle_and_only_a_run_of_them_faults(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        manager = ModeManager()
+        _running(manager)
+        servo = ArmServo("follower", make_sim_bus(), make_calibration(COUPLED_MOTORS), manager)
+        servo.poll_diagnostics(force=True)
+        steps = []
+        loop = ServoLoop(
+            (servo,),
+            manager,
+            lambda states, dt: steps.append(dt),
+            ServoLoopConfig(max_slow_reads=3),
+        )
+        real_read = servo.read_state
+        fail = {"n": 0}
+
+        def flaky():
+            if fail["n"] > 0:
+                fail["n"] -= 1
+                raise TimeoutError("Bulk state read exceeded its budget.")
+            return real_read()
+
+        monkeypatch.setattr(servo, "read_state", flaky)
+        fail["n"] = 2
+        loop.run_once(0.01)
+        loop.run_once(0.01)
+        assert steps == []  # no command on a missed read
+        loop.run_once(0.01)
+        assert len(steps) == 1  # the next good read goes on
+        fail["n"] = 3
+        loop.run_once(0.01)
+        loop.run_once(0.01)
+        with pytest.raises(RuntimeError, match="3 slow or failed reads in a row"):
+            loop.run_once(0.01)
+
     def test_duplicate_servo_names_are_refused(self) -> None:
         manager = ModeManager()
         servo = ArmServo("s", make_sim_bus(), make_calibration(COUPLED_MOTORS), manager)
