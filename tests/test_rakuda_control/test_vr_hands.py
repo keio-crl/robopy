@@ -535,6 +535,44 @@ def test_a_hand_points_from_the_wrist_to_the_middle_knuckle() -> None:
     assert reading.sample is not None and reading.sample.pointing == pytest.approx(pointing)
 
 
+def test_the_pointing_is_low_pass_filtered() -> None:
+    import math as _math
+
+    hand = HandInput("left", HandTrackingConfig(pointing_filter_s=0.15))
+    straight = HandFrame.from_message(hand_entry()["hand"])
+    assert straight is not None
+    first = hand.update(straight, 0.0)
+    assert first.sample is not None and first.sample.pointing is not None
+    p0 = first.sample.pointing.copy()
+    # The same hand turned 30 degrees about +Y: the filtered pointing moves
+    # part of the way after one 1/60 s step, and nearly all of it after 1 s.
+    a = _math.radians(30.0)
+    R = np.array([[_math.cos(a), 0.0, _math.sin(a)], [0.0, 1.0, 0.0], [-_math.sin(a), 0.0, _math.cos(a)]])
+    wrist = straight.positions["wrist"]
+    turned = HandFrame(
+        positions={name: wrist + R @ (p - wrist) for name, p in straight.positions.items()},
+        wrist_rotation=R @ straight.wrist_rotation,
+    )
+    raw = turned.pointing()
+    assert raw is not None
+    total = _math.degrees(_math.acos(float(np.clip(p0 @ raw, -1, 1))))
+    assert total == pytest.approx(30.0, abs=1e-6)
+    step = hand.update(turned, 1.0 / 60.0).sample
+    assert step is not None and step.pointing is not None
+    moved = _math.degrees(_math.acos(float(np.clip(p0 @ step.pointing, -1, 1))))
+    assert 0.0 < moved < 0.2 * total
+    t = 1.0 / 60.0
+    for _ in range(60):
+        t += 1.0 / 60.0
+        late = hand.update(turned, t).sample
+    assert late is not None and late.pointing is not None
+    assert float(late.pointing @ raw) > _math.cos(_math.radians(1.0))
+    unfiltered = HandInput("left", HandTrackingConfig(pointing_filter_s=None))
+    unfiltered.update(straight, 0.0)
+    now = unfiltered.update(turned, 1.0 / 60.0).sample
+    assert now is not None and now.pointing == pytest.approx(raw)
+
+
 class TestGripClutch:
     """The grip clutch: the last three fingers hold the arm, thumb and index work the gripper."""
 

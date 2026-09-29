@@ -307,6 +307,14 @@ def build_parser() -> argparse.ArgumentParser:
         "still ends it)",
     )
     hands.add_argument(
+        "--hand-pointing-filter",
+        default="0.15",
+        metavar="SECONDS|off",
+        help="time constant of the low-pass filter on a hand's pointing (default 0.15 s). "
+        "Hand tracking jitters by a degree or so, and with the wrist near straight the solver "
+        "turns that into forearm-roll swings; a longer constant is steadier and slower",
+    )
+    hands.add_argument(
         "--hand-open-recenter",
         default="1.5",
         metavar="SECONDS|off",
@@ -1328,6 +1336,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     end_fist = float(args.hand_end_hold)
                 except ValueError:
                     parser.error("--hand-end-hold takes seconds or 'off'")
+            pointing_filter: float | None = None
+            if args.hand_pointing_filter != "off":
+                try:
+                    pointing_filter = float(args.hand_pointing_filter)
+                except ValueError:
+                    parser.error("--hand-pointing-filter takes seconds or 'off'")
             open_recenter: float | None = None
             if args.hand_open_recenter != "off":
                 try:
@@ -1351,6 +1365,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     end_hold_s=end_hold,
                     open_recenter_hold_s=open_recenter,
                     end_fist_hold_s=end_fist,
+                    pointing_filter_s=pointing_filter,
                 )
             except ValueError as exc:
                 parser.error(str(exc))

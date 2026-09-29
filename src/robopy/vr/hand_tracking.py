@@ -198,6 +198,12 @@ class HandTrackingConfig:
             gesture off.  Only with the pinch clutch.
         end_fist_hold_s: How long both fists are held before the session
             ends; ``None`` turns that sign off (the long stop sign still ends).
+        pointing_filter_s: Time constant of a low-pass filter on the hand's
+            pointing (wrist to middle knuckle); ``None`` passes it raw.  The
+            tracked joints jitter by millimetres over a 9 cm lever, a degree
+            or so, and with the gripper pointing along the forearm (a straight
+            wrist, the two-axis wrist's singularity) the solver answers that
+            with forearm-roll swings of ten degrees and more.
     """
 
     clutch_gesture: Literal["pinch", "grip", "always"] = "pinch"
@@ -218,6 +224,7 @@ class HandTrackingConfig:
     straight_ratio: float = 0.75
     open_recenter_hold_s: float | None = 1.5
     end_fist_hold_s: float | None = 1.5
+    pointing_filter_s: float | None = 0.15
 
     def __post_init__(self) -> None:
         if self.clutch_gesture not in ("pinch", "grip", "always"):
@@ -254,6 +261,8 @@ class HandTrackingConfig:
             raise ValueError("facing_cos must be in (-1, 1) and straight_ratio in (0, 1).")
         if self.open_recenter_hold_s is not None and self.open_recenter_hold_s <= 0.0:
             raise ValueError("open_recenter_hold_s must be positive (or None to turn it off).")
+        if self.pointing_filter_s is not None and self.pointing_filter_s <= 0.0:
+            raise ValueError("pointing_filter_s must be positive (or None to pass it raw).")
         if self.end_fist_hold_s is not None and self.end_fist_hold_s <= 0.0:
             raise ValueError("end_fist_hold_s must be positive (or None to turn it off).")
 
@@ -302,6 +311,7 @@ class HandTrackingConfig:
             "end_hold_s": self.end_hold_s,
             "open_recenter_hold_s": self.open_recenter_hold_s if self.open_recenter else None,
             "end_fist_hold_s": self.end_fist_hold_s if self.end_fist else None,
+            "pointing_filter_s": self.pointing_filter_s,
         }
 
 
@@ -534,6 +544,8 @@ class HandInput:
         self._pinch = _Pinch(self.config.pinch_on_m, self.config.pinch_off_m)
         self._middle = _Pinch(self.config.pinch_on_m, self.config.pinch_off_m)
         self._grip = False
+        self._pointing: NDArray[np.float64] | None = None
+        self._pointing_s: float | None = None
         self.last = HandReading(sample=None, tracked=False)
 
     def reset(self) -> None:
@@ -541,7 +553,27 @@ class HandInput:
         self._pinch.engaged = False
         self._middle.engaged = False
         self._grip = False
+        self._pointing = None
+        self._pointing_s = None
         self.last = HandReading(sample=None, tracked=False)
+
+    def _filtered_pointing(
+        self, raw: NDArray[np.float64] | None, now_s: float
+    ) -> NDArray[np.float64] | None:
+        """First-order low-pass of the pointing direction, renormalised each step."""
+        tau = self.config.pointing_filter_s
+        if raw is None or tau is None:
+            self._pointing, self._pointing_s = raw, now_s
+            return raw
+        if self._pointing is None or self._pointing_s is None or now_s <= self._pointing_s:
+            self._pointing, self._pointing_s = raw.copy(), now_s
+            return raw
+        alpha = 1.0 - float(np.exp(-(now_s - self._pointing_s) / tau))
+        blended = self._pointing + alpha * (raw - self._pointing)
+        n = float(np.linalg.norm(blended))
+        self._pointing = raw.copy() if n < 1e-6 else blended / n
+        self._pointing_s = now_s
+        return self._pointing
 
     def update(
         self,
@@ -630,7 +662,7 @@ class HandInput:
             },
             stamp_s=now_s,
             engage_radius_m=c.engage_radius_m,
-            pointing=frame.pointing(),
+            pointing=self._filtered_pointing(frame.pointing(), now_s),
         )
         self.last = HandReading(
             sample=sample,
