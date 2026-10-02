@@ -206,27 +206,33 @@ class RealsenseCamera(Camera[NDArray[np.float32]]):
                 color_sensor.get_option(rs.option.white_balance),
             )
 
-        except Exception as e:
-            self.rs_pipeline = None
-            self.rs_profile = None
-            raise ConnectionError(f"Failed to connect to RealSense camera: {e}")
+        except BaseException as e:
+            # Keep the handle until rollback, including failures after start().
+            try:
+                self.disconnect()
+            except Exception as cleanup_error:
+                logger.warning("RealSense initialization cleanup failed: %s", cleanup_error)
+            if not isinstance(e, Exception):
+                raise
+            raise ConnectionError(f"Failed to connect to RealSense camera: {e}") from e
 
     def disconnect(self) -> None:
         """Disconnect from the camera and stop background thread."""
-        if not self._is_connected:
+        if not self._is_connected and self.rs_pipeline is None:
             logger.warning(f"{self.name} is not connected.")
             return
 
         # Stop background thread
-        self._stop_capture_thread()
-
-        # Stop pipeline
-        if self.rs_pipeline:
-            self.rs_pipeline.stop()
-            self.rs_pipeline = None
-            self.rs_profile = None
-
-        self._is_connected = False
+        try:
+            self._stop_capture_thread()
+        finally:
+            try:
+                if self.rs_pipeline:
+                    self.rs_pipeline.stop()
+            finally:
+                self.rs_pipeline = None
+                self.rs_profile = None
+                self._is_connected = False
         logger.info(f"{self.name} disconnected.")
 
     def read(self, specific_color: Literal["rgb", "bgr"] | None = None) -> NDArray[np.float32]:

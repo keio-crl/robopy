@@ -49,18 +49,23 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
         self._sensors: Sensors = Sensors(cameras=[], tactile=[], audio=[])
 
     # ------------------------------------------------------------- lifecycle
-    def connect(self) -> None:
+    def connect(self, *, connect_leader: bool = True) -> None:
+        """Connect one robot system and its sensors; GELLO is optional for inference."""
+        if self.is_connected:
+            return
         try:
-            self._pair_sys.connect()
-        except Exception:
-            self._pair_sys.disconnect()
+            self._pair_sys.connect(connect_leader=connect_leader)
+            # Keep partially initialized sensors owned for deterministic rollback.
+            self._sensors = self._init_sensors()
+        except BaseException:
+            self.disconnect()
             raise
-        # Defer sensor initialisation until connect() so tests / hardware-less
-        # usage can instantiate XArmRobot without triggering camera discovery.
-        self._sensors = self._init_sensors()
 
     def disconnect(self) -> None:
-        self._pair_sys.disconnect()
+        try:
+            self._pair_sys.disconnect()
+        except Exception as exc:  # keep releasing sensors if the arm fails
+            logger.warning("Robot system disconnect failed: %s", exc)
         for cam in self._sensors.cameras or []:
             try:
                 cam.disconnect()
@@ -76,6 +81,7 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
                 audio.disconnect()
             except Exception as exc:  # pragma: no cover - best effort
                 logger.warning("Audio disconnect failed: %s", exc)
+        self._sensors = Sensors(cameras=[], tactile=[], audio=[])
 
     # --------------------------------------------------------- teleoperation
     def teleoperation(self, max_seconds: float | None = None) -> None:
@@ -486,27 +492,28 @@ class XArmRobot(ComposedRobot[XArmPairSys, Sensors, XArmObs]):
 
     def _init_sensors(self) -> Sensors:
         cameras: List[RealsenseCamera] = []
+        tactiles: List[DigitSensor] = []
+        audios: List[AudioSensor] = []
+        self._sensors = Sensors(cameras=cameras, tactile=tactiles, audio=audios)
         for cam_cfg in self._sensor_configs.cameras:
             if not isinstance(cam_cfg, RealsenseCameraConfig):
                 logger.warning("Skipping unsupported camera config: %s", type(cam_cfg))
                 continue
             cam = RealsenseCamera(cam_cfg)
-            cam.connect()
             cameras.append(cam)
+            cam.connect()
 
-        tactiles: List[DigitSensor] = []
         if self._sensor_configs.tactile:
             for tac_cfg in self._sensor_configs.tactile:
                 tac = DigitSensor(tac_cfg)
-                tac.connect()
                 tactiles.append(tac)
+                tac.connect()
 
-        audios: List[AudioSensor] = []
         if self._sensor_configs.audio:
             for audio_cfg in self._sensor_configs.audio:
                 audio = AudioSensor(audio_cfg)
-                audio.connect()
                 audios.append(audio)
+                audio.connect()
 
         sensors = Sensors(cameras=cameras, tactile=tactiles, audio=audios)
 

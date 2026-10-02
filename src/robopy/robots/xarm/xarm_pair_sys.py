@@ -41,25 +41,30 @@ class XArmPairSys(Robot):
         else:
             self._follower = XArmFollower(cfg)
         self._is_connected = False
+        self._leader_requested = False
 
     # ------------------------------------------------------------- lifecycle
-    def connect(self) -> None:
+    def connect(self, *, connect_leader: bool = True) -> None:
+        """Connect the follower, optionally including GELLO and pose alignment."""
         if self._is_connected:
             logger.info("XArmPairSys already connected.")
             return
         try:
             self._follower.connect()
-            self._leader.connect()
-            self._align_leader_follower()
+            if connect_leader:
+                self._leader_requested = True
+                self._leader.connect()
+                self._align_leader_follower()
             self._is_connected = True
             logger.info("XArmPairSys connected.")
-        except Exception:
+        except BaseException:
             self.disconnect()
             raise
 
     def disconnect(self) -> None:
         try:
-            self._leader.disconnect()
+            if self._leader_requested:
+                self._leader.disconnect()
         except Exception as exc:  # pragma: no cover - best effort
             logger.warning("Failed to disconnect leader: %s", exc)
         try:
@@ -67,6 +72,7 @@ class XArmPairSys(Robot):
         except Exception as exc:  # pragma: no cover - best effort
             logger.warning("Failed to disconnect follower: %s", exc)
         self._is_connected = False
+        self._leader_requested = False
 
     # ---------------------------------------------------------- safety aligner
     def _align_leader_follower(self) -> None:
