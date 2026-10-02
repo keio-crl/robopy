@@ -13,7 +13,7 @@ moved to where its own measured workspace says it can work, and this time it
 picks the block up.
 
 Neither act is a policy.  Both drive the arm with the differential IK in
-:mod:`robopy.roboverse.ik`, through the real task envs, so the success flag at
+``examples/roboverse/ik.py``, through the real task envs, so the success flag at
 the end is the task's own.
 """
 
@@ -37,8 +37,8 @@ except ImportError as exc:  # pragma: no cover - depends on the environment
         "From a robopy checkout:  pip install -e '.[sim]'"
     ) from exc
 
-from robopy.roboverse.ik import Arm, ScriptedRun, solve_ik
-from robopy.roboverse.tasks.rakuda_calvin_table import (
+from ik import Arm, ScriptedRun, solve_ik
+from tasks.rakuda_calvin import (
     CALVIN_PICK_TARGET,
     RakudaCalvinPickEnv,
 )

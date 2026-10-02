@@ -46,6 +46,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
+from robopy.roboverse.robots import RAKUDA_STAND_HEIGHT_M
+
 __all__ = [
     "DEFAULT_WORK_SURFACE_Z",
     "GRASP_OFFSET_ABOVE_MOUNT",
@@ -60,7 +62,11 @@ __all__ = [
 #: Distance from the mounting plane (the underside of the base plate) up to the
 #: origin of the model's ``base`` body.  The CAD origin is at the waist, so a
 #: Rakuda placed at ``z = 0`` is buried to the chest.
-STAND_HEIGHT: float = 0.25752
+#:
+#: Re-exported rather than restated: it is a measurement of the model, so it
+#: lives with the robot config in robopy itself.  Everything else in this module
+#: is a decision about how to build a scene, which is why the rest is here.
+STAND_HEIGHT: float = RAKUDA_STAND_HEIGHT_M
 
 #: Closest a hand can get to the mounting plane.  Measured, and the hard floor
 #: under :data:`WORK_OFFSET_ABOVE_MOUNT`: a surface nearer than this cannot be

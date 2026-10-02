@@ -1,45 +1,39 @@
-"""Tasks this content pack offers to MetaSim.
+"""Tasks this content pack offers to MetaSim: deliberately none.
 
-MetaSim resolves a task name by scanning this package for ``@register_task``
-decorators, so importing the modules here is what makes the names usable:
+MetaSim resolves a task name by scanning a content pack for ``@register_task``
+decorators, and it looks for this submodule by name.  It is empty because the
+Rakuda tasks are **not** part of robopy's API surface -- they are scene-building
+decisions, which change with what you are trying to do, and they live with the
+examples instead:
 
-=========================== =================================================
-``rakuda.reach``            right hand to a sampled target
-``rakuda.bimanual_reach``   both hands to their own targets at once
-``rakuda.push_cube``        push a cube across a table into a goal region
-``rakuda.lift_cube``        close a hand on a cube and pick it up
-``rakuda.calvin_table``     stand in CALVIN's scene D, where its Panda stands
-``rakuda.calvin_pick``      pick a block off CALVIN's bench, mounted to reach it
-=========================== =================================================
+============================ ============================================
+``examples/roboverse/tasks`` the four Rakuda tasks
+``examples/roboverse``       the mount geometry, workspace facts, and IK
+============================ ============================================
 
-All of them run on MuJoCo, which is the only backend the exported assets target.
+What robopy *does* ship is the robot: :mod:`robopy.roboverse.robots` registers
+``rakuda`` and ``rakuda_gripper``, and that is all you need to put the machine
+into a scenario of your own::
 
-``rakuda.calvin_table`` is the odd one out: it has no goal and the robot cannot
-reach the furniture from where CALVIN's scene file puts the arm's base.  It is
-there to put the two robots in one picture at one scale.  ``rakuda.calvin_pick``
-is the same scene with the robot moved to where its own workspace says it can
-work, and is solvable.
+    from metasim.scenario.scenario import ScenarioCfg
+    from metasim.utils.setup_util import get_handler
 
-The first three run on ``rakuda``, the robot the CAD actually describes, whose
-grippers are fixed frames with no fingers to close.  ``rakuda.lift_cube`` needs
-a hand, so it runs on ``rakuda_gripper`` -- the same arms with a jaw borrowed
-from CALVIN's Panda bolted to each gripper frame.  What that is and is not is in
-:mod:`robopy.sim.panda_gripper`; briefly, it is not this machine's gripper and
-nothing it does should be read as evidence about the real one.
+    handler = get_handler(ScenarioCfg(robots=["rakuda"], simulator="mujoco"))
+    handler.launch()
+
+The example tasks still resolve by name once their module has been imported --
+``register_task`` writes into MetaSim's global registry and ``get_task_class``
+answers from it -- so ``import tasks`` in a script under
+``examples/roboverse/`` is enough to make ``get_task_class("rakuda.lift_block")``
+work.  What is lost by living outside the pack is only *discovery*: a fresh
+process's ``list_tasks()`` will not find them on its own.
+
+This module stays rather than being deleted because MetaSim looks for all four
+content roles -- ``robots``, ``tasks``, ``scenes``, ``grounds`` -- and an absent
+one is reported as an import error inside messages about *other* failures, which
+is needlessly confusing.
 """
 
 from __future__ import annotations
 
-from .rakuda_calvin_table import RakudaAtCalvinTableEnv, RakudaCalvinPickEnv
-from .rakuda_lift_cube import RakudaLiftCubeEnv
-from .rakuda_push_cube import RakudaPushCubeEnv
-from .rakuda_reach import RakudaBimanualReachEnv, RakudaReachEnv
-
-__all__ = [
-    "RakudaAtCalvinTableEnv",
-    "RakudaBimanualReachEnv",
-    "RakudaCalvinPickEnv",
-    "RakudaLiftCubeEnv",
-    "RakudaPushCubeEnv",
-    "RakudaReachEnv",
-]
+__all__: list[str] = []

@@ -4,7 +4,7 @@
 シーンに Rakuda-2 を置いて動かせます。**RoboVerse のチェックアウト側を書き換える必要はありません。**
 
 robopy は MetaSim の `metasim.packages` エントリポイントで自身のコンテンツパックを登録しているため、
-インストールするだけで `get_robot("rakuda")` と `rakuda.*` のタスク名が解決されます。
+インストールするだけで `get_robot("rakuda")` が解決されます。
 
 ```bash
 # RoboVerse が入っている環境で（MetaSim は PyPI に無いので、この環境が前提です。
@@ -25,9 +25,45 @@ handler = get_handler(scenario)
 動かして確かめる例:
 
 ```bash
-python examples/robot/rakuda_roboverse.py --demo wave
-python examples/robot/rakuda_roboverse.py --demo task --task rakuda.push_cube --video out.mp4
+python examples/roboverse/rakuda_roboverse.py --demo wave
+python examples/roboverse/rakuda_roboverse.py --demo task --task rakuda.push_cube --video out.mp4
 ```
+
+## :material-package-variant: ライブラリが提供するのは「ロボットだけ」です
+
+robopy が RoboVerse に対して提供するのは **`rakuda` / `rakuda_gripper` という 2 つのロボット**
+だけです。どこに立たせるか・何をさせるかはシーン構築の判断で、やりたいことごとに変わるため、
+**ライブラリ側には置かず `examples/roboverse/` に置いています**。
+
+| | 置き場所 | 中身 |
+| --- | --- | --- |
+| **ライブラリ** | `robopy/roboverse/robots` | `RakudaCfg` / `RakudaGripperCfg`。ロボット名を登録する本体 |
+| | `robopy/roboverse/assets` | MJCF の場所解決 |
+| | `robopy/sim/mjcf_export`, `robopy/sim/panda_gripper` | MJCF 生成器（robot cfg が定数を参照） |
+| **example** | `examples/roboverse/mount.py` | 擬似台の幾何と高さの導出 |
+| | `examples/roboverse/workspace.py` | 実測した可作業領域 |
+| | `examples/roboverse/ik.py` | 逆運動学とスクリプト制御 |
+| | `examples/roboverse/tasks/` | `rakuda.*` の 6 タスク |
+| | `examples/roboverse/calvin_table_asset.py` | CALVIN の机の MJCF 生成 |
+
+シーンにロボットを置くだけなら、上の「ライブラリ」列しか読み込まれません
+（`robopy.roboverse` / `.assets` / `.robots` と `robopy.sim.mjcf_export` / `.panda_gripper` の 8 モジュール）。
+
+!!! note "タスク名の解決には import が必要です"
+    `rakuda.*` のタスクはコンテンツパックの外にあるので、**自動探索されません**。
+    `@register_task` は MetaSim のグローバルレジストリに書き込み、`get_task_class` は
+    そこを最初に見るので、`examples/roboverse/` 配下で `import tasks` すれば名前で引けます。
+
+    ```python
+    import tasks  # noqa: F401  -- これが登録を走らせる
+    from metasim.task.registry import get_task_class
+
+    env_cls = get_task_class("rakuda.lift_block")
+    ```
+
+    失われるのは探索だけで、新規プロセスの `list_tasks()` には出てきません。
+    以下のコード例で `from mount import ...` のように書いているものは、すべて
+    `examples/roboverse/` をカレントに置いた（= そこにあるスクリプトから実行した）前提です。
 
 ## :material-alert: 最初に知っておくべき制約
 
@@ -45,7 +81,7 @@ Rakuda は**自分が取り付けられている面に手が届きません**。
 やっていることと同じです。`calvin_D` ではアームの `robot_base_position` が `z = 0.24`、
 プレイテーブル天板が `z = 0.46` — **ベースは作業面の 0.22 m 下**に固定されています。
 
-robopy でも同じ構成を [`robopy.roboverse.mount`](#) が提供します。違いは2点だけで、
+robopy でも同じ構成を `examples/roboverse/mount.py` が提供します。違いは2点だけで、
 オフセットをこのロボット自身の到達集合から**実測**していること、擬似台が実体のある箱
 であること（CALVIN は幾何を持たない暗黙のマウント）です。
 
@@ -71,7 +107,7 @@ robopy でも同じ構成を [`robopy.roboverse.mount`](#) が提供します。
 作業面の高さを決めれば、他はすべて決まります。
 
 ```python
-from robopy.roboverse.mount import RakudaMount
+from mount import RakudaMount
 
 mount = RakudaMount(work_surface_z=0.75)   # 普通の机の高さ
 mount.describe()
@@ -236,7 +272,7 @@ states, reward, terminated, timeout, _ = env.step(action)
 ```
 
 目標のサンプリング範囲は、モデルの到達可能集合を実際にサンプリングして決めています
-（`robopy.roboverse.tasks._common`）。高さは**取り付け面基準**で書かれているので、
+（`examples/roboverse/workspace.py`）。高さは**取り付け面基準**で書かれているので、
 擬似台を上げ下げすれば目標もロボットと一緒に動きます。テストが同じ値を再計算するので、
 モデルを作り直して形状が変われば失敗します — タスクが黙って解けなくなることはありません。
 

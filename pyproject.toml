@@ -21,6 +21,8 @@ dependencies = [
     "rich>=14.1.0",
     "feetech-servo-sdk>=1.0.0",
     "tqdm>=4.67.1",
+    # typing.override is 3.12+; robopy declares 3.11, which is what Isaac Sim pins.
+    "typing-extensions>=4.4",
     "xarm-python-sdk>=1.17.0",
 ]
 

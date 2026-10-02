@@ -21,7 +21,6 @@ from metasim.utils import configclass
 
 from robopy.motor.dynamixel_control_table import get_motor_capabilities
 from robopy.roboverse.assets import resolve_rakuda_mjcf
-from robopy.roboverse.mount import STAND_HEIGHT
 from robopy.sim.mjcf_export import (
     RAKUDA_ACTUATED_JOINTS,
     RAKUDA_BASE_BODY,
@@ -48,10 +47,13 @@ __all__ = [
 #:
 #: Standing on the floor is rarely what you want, mind: the Rakuda's hands stop
 #: 0.112 m above whatever it is bolted to, so on the floor it can reach nothing
-#: on the floor.  :class:`robopy.roboverse.mount.RakudaMount` puts it on a
-#: pedestal at a height derived from the work surface instead, which is what all
-#: the bundled tasks do.
-RAKUDA_STAND_HEIGHT_M: float = STAND_HEIGHT
+#: on the floor.  Putting it on a pedestal at a height derived from the work
+#: surface is a scene-building decision rather than a fact about the robot, so
+#: it lives with the examples -- ``examples/roboverse/mount.py``.
+#:
+#: This is the number itself, and it belongs here: it is a measurement of the
+#: model, and nothing can place this robot correctly without it.
+RAKUDA_STAND_HEIGHT_M: float = 0.25752
 
 #: The waist joint.  It turns the whole upper body, both arms with it.
 RAKUDA_TORSO_JOINT: str = "torso_yaw_dof"

@@ -11,7 +11,7 @@ for something that learns.
 
 The arm control -- differential IK on a scratch state, a straight-line hand
 path, the finger direction constrained but not the roll -- lives in
-:mod:`robopy.roboverse.ik`, along with the reasons each of those matters.
+``examples/roboverse/ik.py``, along with the reasons each of those matters.
 """
 
 from __future__ import annotations
@@ -33,7 +33,8 @@ except ImportError as exc:  # pragma: no cover - depends on the environment
         "From a robopy checkout:  pip install -e '.[sim]'"
     ) from exc
 
-from robopy.roboverse.ik import Arm, ScriptedRun
+import tasks  # noqa: F401  -- importing is what registers the task names
+from ik import Arm, ScriptedRun
 
 TASK = "rakuda.lift_block"
 ROBOT = "rakuda_gripper"

@@ -1,0 +1,66 @@
+#usda 1.0
+(
+    "CALVIN's floor. GENERATED, DO NOT EDIT BY HAND. regenerate: python examples/roboverse/calvin_room_asset.py"
+    defaultPrim = "calvin_room"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "calvin_room"
+{
+    def Mesh "Floor" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        float3[] extent = [(-15, -15, 0), (15, 15, 0)]
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        rel material:binding = </calvin_room/Looks/CalvinFloor>
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        uniform token physics:approximation = "none"
+        point3f[] points = [(-15, -15, 0), (15, -15, 0), (15, 15, 0), (-15, 15, 0)]
+        texCoord2f[] primvars:st = [(0, 0), (15, 0), (15, 15), (0, 15)] (
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "none"
+    }
+
+    def "Looks"
+    {
+        def Material "CalvinFloor"
+        {
+            token outputs:surface.connect = </calvin_room/Looks/CalvinFloor/PreviewSurface.outputs:surface>
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                token inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "diffuseTexture"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @textures/checker_blue.png@
+                float4 inputs:scale = (0.588, 0.588, 0.588, 1)
+                float2 inputs:st.connect = </calvin_room/Looks/CalvinFloor/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </calvin_room/Looks/CalvinFloor/diffuseTexture.outputs:rgb>
+                float inputs:metallic = 0
+                float inputs:roughness = 0.75
+                float inputs:specular = 0.1
+                token outputs:surface
+            }
+        }
+    }
+}
+

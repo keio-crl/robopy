@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import xml.etree.ElementTree as ET
 import zipfile
@@ -37,6 +38,65 @@ __all__ = [
 
 #: URDF joint types that contribute a degree of freedom.
 MOVABLE_JOINT_TYPES: Tuple[str, ...] = ("revolute", "continuous", "prismatic", "planar", "floating")
+
+#: Mass at or below which a link is treated as carrying none.  CAD exports
+#: write 1e-9 for a pure coordinate frame; a real part is grams at least.
+NEGLIGIBLE_MASS_KG: float = 1e-8
+
+
+def _principal_moments(
+    ixx: float, ixy: float, ixz: float, iyy: float, iyz: float, izz: float
+) -> Tuple[float, float, float]:
+    """Eigenvalues of a symmetric 3x3 inertia tensor, in closed form.
+
+    Written out rather than delegated to NumPy so this module keeps its promise
+    of needing nothing but the standard library -- a URDF should be inspectable
+    on a machine that has none of the simulation extras installed.  The formula
+    is the standard trigonometric solution for the symmetric case, which is
+    exact here and avoids an iterative solver.
+
+    Returns:
+        The three principal moments, ascending.
+    """
+    trace = (ixx + iyy + izz) / 3.0
+    # Deviatoric part; its invariants give the eigenvalues directly.
+    a, b, c = ixx - trace, iyy - trace, izz - trace
+    p2 = a * a + b * b + c * c + 2.0 * (ixy * ixy + ixz * ixz + iyz * iyz)
+    if p2 <= 0.0:
+        return (trace, trace, trace)
+    p = math.sqrt(p2 / 6.0)
+    # determinant of the deviatoric tensor, divided by p**3
+    det = a * (b * c - iyz * iyz) - ixy * (ixy * c - iyz * ixz) + ixz * (ixy * iyz - b * ixz)
+    r = det / (2.0 * p * p * p)
+    phi = math.acos(max(-1.0, min(1.0, r))) / 3.0
+    first = trace + 2.0 * p * math.cos(phi)
+    third = trace + 2.0 * p * math.cos(phi + 2.0 * math.pi / 3.0)
+    second = 3.0 * trace - first - third
+    return tuple(sorted((first, second, third)))  # type: ignore[return-value]
+
+
+def _inertia_problem(name: str, values: Dict[str, float]) -> str | None:
+    """Why this tensor describes no rigid body, or ``None`` if it does.
+
+    Two conditions, both necessary: the tensor must be positive semi-definite,
+    and its principal moments must satisfy the triangle inequality -- no single
+    moment may exceed the sum of the other two.  Numbers can look entirely
+    reasonable one at a time and still fail the second.
+    """
+    if not all(math.isfinite(v) for v in values.values()):
+        return f"link '{name}': inertia has a non-finite entry"
+    moments = _principal_moments(
+        values["ixx"], values["ixy"], values["ixz"], values["iyy"], values["iyz"], values["izz"]
+    )
+    scale = max(abs(m) for m in moments) or 1.0
+    if moments[0] < -1e-9 * scale:
+        return f"link '{name}': inertia is not positive semi-definite (moments {moments})"
+    if moments[2] > moments[0] + moments[1] + 1e-9 * scale:
+        return (
+            f"link '{name}': principal moments {moments[0]:.6g}, {moments[1]:.6g}, "
+            f"{moments[2]:.6g} break the triangle inequality, so they describe no rigid body"
+        )
+    return None
 
 
 @dataclass(frozen=True)
@@ -88,6 +148,27 @@ class UrdfAudit:
         unresolved_meshes: Mesh references that could not be resolved on disk.
         total_mass_kg: Sum of every ``<mass>`` value.
         links_without_inertial: Links that declare no ``<inertial>`` block.
+        root_links_without_inertial: Of those, the ones that are root links.
+            A static frame bolted to the world carries no mass by definition,
+            and its absence is not a defect.
+        massless_moving_links: Links inside a movable subtree that declare no
+            inertial, or a negligible mass.  Coordinate frames and duplicated
+            CAD sub-solids belong here legitimately, so this is a list to look
+            through rather than a list of faults.
+        massless_moving_parts: The subset of those that carry visual or
+            collision geometry.  These *are* faults: something the model draws,
+            hanging off a joint, that weighs nothing.  A frame has no geometry,
+            which is how the two are told apart without guessing from names.
+        link_masses_kg: Mass of every link that declares one.
+        movable_subtree_masses_kg: Total mass carried below each movable joint.
+            This is what a joint has to hold up, and the figure that says
+            whether a model's masses are distributed plausibly -- a total that
+            looks right can still have all of it in the base.
+        invalid_inertias: Links whose inertia tensor describes no rigid body.
+        hardware_validated: Whether these numbers were checked against the
+            actual machine.  Never inferred: no combination of numerical checks
+            can establish it, and it stays ``False`` until something that
+            measured the robot says otherwise.
         has_collision_geometry: Whether any link declares a ``<collision>``.
         ambiguous_names: Names used by both a joint and a link, which makes a
             frame lookup by that name ambiguous.
@@ -105,8 +186,15 @@ class UrdfAudit:
     unresolved_meshes: List[str] = field(default_factory=list)
     total_mass_kg: float = 0.0
     links_without_inertial: List[str] = field(default_factory=list)
+    root_links_without_inertial: List[str] = field(default_factory=list)
+    massless_moving_links: List[str] = field(default_factory=list)
+    massless_moving_parts: List[str] = field(default_factory=list)
+    link_masses_kg: Dict[str, float] = field(default_factory=dict)
+    movable_subtree_masses_kg: Dict[str, float] = field(default_factory=dict)
+    invalid_inertias: List[str] = field(default_factory=list)
     has_collision_geometry: bool = False
     ambiguous_names: List[str] = field(default_factory=list)
+    hardware_validated: bool = False
     warnings: List[str] = field(default_factory=list)
 
     @property
@@ -131,14 +219,38 @@ class UrdfAudit:
                 return j
         raise KeyError(f"No joint named '{name}' in {self.path}.")
 
-    def usable_for_dynamics(self, *, min_plausible_mass_kg: float = 0.5) -> bool:
-        """Whether the inertial data is plausible enough for dynamics.
+    def numerically_consistent(self, *, min_plausible_mass_kg: float = 0.5) -> bool:
+        """Whether the numbers in the file describe a coherent set of rigid bodies.
 
-        A CAD export whose total mass is a few milligrams describes geometry
-        correctly and dynamics not at all.  Returning ``False`` here is a reason
-        to build a geometry-only model, never a reason to invent masses.
+        Three things, all of them properties of the file:
+
+        * the total mass is not obviously placeholder data;
+        * nothing that moves is massless -- a link on a root frame may be, a
+          link swinging on a joint may not;
+        * every inertia tensor describes a rigid body.
+
+        This says the model is internally sound.  It says **nothing** about
+        whether the model matches the machine: that is
+        :attr:`hardware_validated`, which no amount of arithmetic can establish.
+        Passing here is a reason to compute with the model, not a reason to put
+        current through a motor.
         """
-        return self.total_mass_kg >= min_plausible_mass_kg and not self.links_without_inertial
+        return (
+            self.total_mass_kg >= min_plausible_mass_kg
+            and not self.massless_moving_parts
+            and not self.invalid_inertias
+        )
+
+    def usable_for_dynamics(self, *, min_plausible_mass_kg: float = 0.5) -> bool:
+        """Deprecated alias of :meth:`numerically_consistent`.
+
+        The old name invited the reading it was given: that a model passing it
+        was fit to drive hardware.  It never meant that, and the two questions
+        now have two names.  Kept so existing callers and the recorded audit
+        JSON keep working; prefer :meth:`numerically_consistent`, and
+        :attr:`hardware_validated` when the question is about the real robot.
+        """
+        return self.numerically_consistent(min_plausible_mass_kg=min_plausible_mass_kg)
 
     def to_json(self, indent: int = 2) -> str:
         """Serialise the audit as JSON."""
@@ -146,12 +258,25 @@ class UrdfAudit:
         payload["n_links"] = self.n_links
         payload["n_joints"] = self.n_joints
         payload["n_movable"] = self.n_movable
-        payload["usable_for_dynamics"] = self.usable_for_dynamics()
+        payload["numerically_consistent"] = self.numerically_consistent()
+        # Kept alongside the new name so a reader of an older report, and the
+        # committed audit record, still find the key they expect.
+        payload["usable_for_dynamics"] = payload["numerically_consistent"]
         return json.dumps(payload, indent=indent, ensure_ascii=False)
 
     def summary(self) -> str:
         """One-screen human-readable summary."""
         types = ", ".join(f"{k}={v}" for k, v in sorted(self.joint_type_counts.items()))
+        consistency = (
+            "internally consistent"
+            if self.numerically_consistent()
+            else "NOT consistent, geometry only"
+        )
+        validation = (
+            "validated on the machine"
+            if self.hardware_validated
+            else "NOT validated on the machine"
+        )
         lines = [
             f"URDF        : {self.path}",
             f"robot name  : {self.robot_name}",
@@ -163,9 +288,20 @@ class UrdfAudit:
             f"meshes      : {len(self.mesh_references)} referenced, "
             f"{len(self.unresolved_meshes)} unresolved",
             f"collision   : {'present' if self.has_collision_geometry else 'absent'}",
-            f"total mass  : {self.total_mass_kg:.7g} kg "
-            f"({'plausible' if self.usable_for_dynamics() else 'NOT usable for dynamics'})",
+            f"total mass  : {self.total_mass_kg:.7g} kg",
+            f"numbers     : {consistency}",
+            f"hardware    : {validation}",
         ]
+        if self.massless_moving_links:
+            lines.append(
+                f"massless     : {len(self.massless_moving_links)} moving link(s), of which "
+                f"{len(self.massless_moving_parts)} draw geometry "
+                f"(e.g. {', '.join(self.massless_moving_links[:3])})"
+            )
+        if self.movable_subtree_masses_kg:
+            heaviest = sorted(self.movable_subtree_masses_kg.items(), key=lambda kv: -kv[1])[:5]
+            lines.append("heaviest subtrees:")
+            lines.extend(f"  {joint:28} {mass:8.4f} kg" for joint, mass in heaviest)
         if self.warnings:
             lines.append("warnings    :")
             lines.extend(f"  - {w}" for w in self.warnings)
@@ -259,6 +395,7 @@ def audit_urdf(
     search_dirs.extend([path.parent, path.parent.parent, path.parent.parent.parent])
 
     audit = UrdfAudit(path=str(path), robot_name=root.get("name", ""))
+    links_with_geometry: set[str] = set()
 
     for link in root.findall("link"):
         name = link.get("name", "")
@@ -269,9 +406,22 @@ def audit_urdf(
         else:
             mass_el = inertial.find("mass")
             if mass_el is not None:
-                audit.total_mass_kg += _optional_float(mass_el.get("value")) or 0.0
+                mass = _optional_float(mass_el.get("value")) or 0.0
+                audit.total_mass_kg += mass
+                audit.link_masses_kg[name] = mass
+            tensor_el = inertial.find("inertia")
+            if tensor_el is not None:
+                values = {
+                    key: _optional_float(tensor_el.get(key)) or 0.0
+                    for key in ("ixx", "ixy", "ixz", "iyy", "iyz", "izz")
+                }
+                problem = _inertia_problem(name, values)
+                if problem is not None:
+                    audit.invalid_inertias.append(problem)
         if link.find("collision") is not None:
             audit.has_collision_geometry = True
+        if link.find("visual") is not None or link.find("collision") is not None:
+            links_with_geometry.add(name)
 
     for joint in root.findall("joint"):
         joint_type = joint.get("type", "")
@@ -299,6 +449,54 @@ def audit_urdf(
     children = {j.child for j in audit.joints}
     audit.root_links = [name for name in audit.link_names if name not in children]
 
+    # Where mass is allowed to be absent, and where it is not.  A root link is
+    # the machine's attachment to the world; below a movable joint, everything
+    # is a part that a torque has to move.
+    audit.root_links_without_inertial = [
+        name for name in audit.links_without_inertial if name in set(audit.root_links)
+    ]
+    children_by_link: Dict[str, List[JointInfo]] = {}
+    for joint in audit.joints:
+        children_by_link.setdefault(joint.parent, []).append(joint)
+
+    def _subtree(link: str) -> List[str]:
+        """Every link at or below ``link``, following the joint tree."""
+        seen: List[str] = []
+        stack = [link]
+        visited = set()
+        while stack:
+            current = stack.pop()
+            if current in visited:
+                continue
+            visited.add(current)
+            seen.append(current)
+            stack.extend(j.child for j in children_by_link.get(current, ()))
+        return seen
+
+    moving_links: set[str] = set()
+    for joint in audit.joints:
+        if not joint.is_movable:
+            continue
+        below = _subtree(joint.child)
+        moving_links.update(below)
+        audit.movable_subtree_masses_kg[joint.name] = sum(
+            audit.link_masses_kg.get(name, 0.0) for name in below
+        )
+
+    audit.massless_moving_links = [
+        name
+        for name in audit.link_names
+        if name in moving_links and audit.link_masses_kg.get(name, 0.0) <= NEGLIGIBLE_MASS_KG
+    ]
+    # Of those, the ones that are actually made of something.  A link with no
+    # geometry is a coordinate frame and weighs nothing by construction; a link
+    # that draws a part and weighs nothing is a hole in the model.  Telling them
+    # apart structurally beats guessing from names, which in a CAD export are
+    # whatever the assembly tree happened to be called.
+    audit.massless_moving_parts = [
+        name for name in audit.massless_moving_links if name in links_with_geometry
+    ]
+
     for mesh in root.iter("mesh"):
         uri = mesh.get("filename")
         if uri is None:
@@ -312,11 +510,28 @@ def audit_urdf(
         audit.warnings.append(
             f"Expected exactly one root link, found {len(audit.root_links)}: {audit.root_links}"
         )
-    if not audit.usable_for_dynamics():
+    if not audit.numerically_consistent():
         audit.warnings.append(
-            f"Total mass is {audit.total_mass_kg:.7g} kg. This model is usable for geometry only; "
-            "do not use it as a dynamic model and do not edit the masses to make it look valid."
+            f"Total mass is {audit.total_mass_kg:.7g} kg, with "
+            f"{len(audit.massless_moving_parts)} massless moving part(s) and "
+            f"{len(audit.invalid_inertias)} unusable inertia tensor(s). Treat this as geometry "
+            "only; do not edit the masses to make it look valid."
         )
+    elif audit.massless_moving_links:
+        audit.warnings.append(
+            f"{len(audit.massless_moving_links)} link(s) below a movable joint carry no mass: "
+            f"{', '.join(audit.massless_moving_links[:5])}"
+            f"{' ...' if len(audit.massless_moving_links) > 5 else ''}. None of them draws any "
+            "geometry, so they are coordinate frames or duplicated CAD sub-solids rather than "
+            "unweighed parts -- worth confirming against the assembly, not a fault in itself."
+        )
+    if not audit.hardware_validated:
+        audit.warnings.append(
+            "These numbers have not been checked against the actual machine. Consistent "
+            "arithmetic is not a measurement; do not enable current output on this basis."
+        )
+    for problem in audit.invalid_inertias:
+        audit.warnings.append(problem)
     if audit.unresolved_meshes:
         audit.warnings.append(
             f"{len(audit.unresolved_meshes)} mesh reference(s) did not resolve; pass "
